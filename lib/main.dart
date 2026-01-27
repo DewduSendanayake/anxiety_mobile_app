@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:usage_stats/usage_stats.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'background_service.dart';
+import 'background_service_helper.dart';
 
 // --- THEME CONSTANTS ---
 const Color kPrimaryColor = Color(0xFF00695C); // Medical Teal
@@ -498,13 +499,5 @@ class _DashboardPageState extends State<DashboardPage>
         "Pressure:${event.pressure.toStringAsFixed(2)}",
       );
     }
-  }
-}
-
-// Helper extension to show ID in dashboard easily (Optional)
-extension on BackgroundServiceHelper {
-  static Future<String> getCachedId() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('user_id') ?? "Unknown";
   }
 }
