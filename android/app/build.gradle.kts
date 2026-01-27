@@ -35,6 +35,7 @@ android {
                     targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        setProperty("archivesBaseName", "Anxiety_Research_App")
     }
 
     buildTypes {
