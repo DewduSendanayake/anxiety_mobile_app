@@ -13,10 +13,11 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:screen_state/screen_state.dart';
 import 'package:sensors_plus/sensors_plus.dart';
+import 'background_service_helper.dart';
 
 // REPLACE WITH YOUR ACTUAL GOOGLE SCRIPT URL
 const String kGoogleScriptUrl =
-    "https://script.google.com/macros/s/AKfycbwmqB4FQj94HiUxIaSUepInscrnMKMg-ZRTjo4Xw9eFC6K6sBMz50WWyOC-BU1gf41Jnw/exec";
+    "https://script.google.com/macros/s/AKfycbw3Bk7JZedOD35lDep6_ITtbJTkKCGoK0h8yKSZxpo1FkjNWc1FM7yGEimMwSOzttCGGQ/exec";
 
 Future<void> initializeService() async {
   final service = FlutterBackgroundService();
@@ -213,18 +214,10 @@ Future<void> _collectAndSync(String userId) async {
 
 Future<void> _sendData(String userId, String dataType, String value) async {
   try {
-    var response = await http.post(
-      Uri.parse(kGoogleScriptUrl),
-      body: jsonEncode({
-        "userId": userId,
-        "dataType": dataType,
-        "value": value,
-        "timestamp": DateTime.now().toIso8601String(),
-      }),
-    );
-    if (response.statusCode == 200) {
-      debugPrint("Data Sent: $dataType");
-    }
+    final prefs = await SharedPreferences.getInstance();
+    String currentId = prefs.getString('user_id') ?? userId;
+    await BackgroundServiceHelper.sendToSheet(currentId, dataType, value);
+    debugPrint("Data Sent: $dataType");
   } catch (e) {
     debugPrint("Network Error: $e");
   }
