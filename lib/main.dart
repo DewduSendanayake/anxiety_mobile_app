@@ -342,6 +342,11 @@ class _DashboardPageState extends State<DashboardPage>
   String _statusMessage = "Ready to record";
   double _currentPressure = 0.0;
   bool _isPressed = false;
+  String _cachedId = "";
+  DateTime? _lastSentAt;
+  double _lastPressureSent = 0.0;
+  static const Duration _minSendInterval = Duration(milliseconds: 300);
+  static const double _minPressureDelta = 0.03;
 
   @override
   Widget build(BuildContext context) {
@@ -473,7 +478,7 @@ class _DashboardPageState extends State<DashboardPage>
 
             // --- FOOTER ---
             Text(
-              "ID: ${BackgroundServiceHelper.getCachedId()}",
+              _cachedId.isNotEmpty ? "ID: $_cachedId" : "ID: (loading)",
               style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
             ),
           ],
@@ -482,22 +487,42 @@ class _DashboardPageState extends State<DashboardPage>
     );
   }
 
+  @override
+  void initState() {
+    super.initState();
+    _loadCachedId();
+  }
+
+  Future<void> _loadCachedId() async {
+    String id = await BackgroundServiceHelper.getCachedId();
+    if (mounted) setState(() => _cachedId = id);
+  }
+
   void _handleTouch(PointerEvent event, bool isPressed) async {
     setState(() {
       _isPressed = isPressed;
       _currentPressure = isPressed ? event.pressure : 0.0;
     });
-
     if (isPressed) {
+      final now = DateTime.now();
       final prefs = await SharedPreferences.getInstance();
       String uid = prefs.getString('user_id') ?? "Unknown";
 
-      // Send to helper
-      await BackgroundServiceHelper.sendToSheet(
-        uid,
-        "Touch_Event",
-        "Pressure:${event.pressure.toStringAsFixed(2)}",
-      );
+      bool enoughTime =
+          _lastSentAt == null ||
+          now.difference(_lastSentAt!) >= _minSendInterval;
+      bool enoughDelta =
+          (event.pressure - _lastPressureSent).abs() >= _minPressureDelta;
+
+      if (enoughTime && enoughDelta) {
+        _lastSentAt = now;
+        _lastPressureSent = event.pressure;
+        await BackgroundServiceHelper.sendToSheet(
+          uid,
+          "Touch_Event",
+          "Pressure:${event.pressure.toStringAsFixed(2)}",
+        );
+      }
     }
   }
 }
