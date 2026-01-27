@@ -45,16 +45,20 @@ dependencies:
   geolocator: ^13.0.0       # Location
   usage_stats: ^1.2.0       # App Usage
   call_log: ^4.0.0          # Call History
-  telephony: ^0.2.0         # SMS
-  sensors_plus: ^6.0.0      # Movement (Accelerometer)
+  # telephony: ^0.2.0         # SMS
+  flutter_sms_inbox: ^1.0.3
+  sensors_plus: ^5.0.0      # Movement (Accelerometer)
   battery_plus: ^6.0.0      # Battery status
 
   # Background Execution
   flutter_background_service: ^5.0.0
-  flutter_local_notifications: ^18.0.0
+  flutter_local_notifications: ^17.0.0
 
   # Permissions
   permission_handler: ^11.3.0
+
+  screen_state: ^2.0.0
+  device_info_plus: ^9.0.0
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
