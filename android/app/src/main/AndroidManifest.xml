@@ -16,7 +16,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
-    <application android:label="Anxiety Research" android:icon="@mipmap/ic_launcher">
+    <application android:label="SLIIT Anxiety Research" android:icon="@mipmap/ic_launcher">
 
         <meta-data android:name="flutterEmbedding" android:value="2" />
 
