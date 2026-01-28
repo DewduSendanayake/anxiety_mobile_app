@@ -11,13 +11,15 @@ import 'package:usage_stats/usage_stats.dart';
 import 'package:flutter_sms_inbox/flutter_sms_inbox.dart'; // UPDATED PACKAGE
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/intl.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:screen_state/screen_state.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'background_service_helper.dart';
 
-// REPLACE WITH YOUR ACTUAL GOOGLE SCRIPT URL
+// GOOGLE SCRIPT URL
 const String kGoogleScriptUrl =
-    "https://script.google.com/macros/s/AKfycbw3Bk7JZedOD35lDep6_ITtbJTkKCGoK0h8yKSZxpo1FkjNWc1FM7yGEimMwSOzttCGGQ/exec";
+    "https://script.google.com/macros/s/AKfycbyHA5394Trxj3DYwTsop2xwJeS07mmA3JUea_xc3ZxWcYhx_WZPpN9EwdSF936kl4ll/exec";
 
 Future<void> initializeService() async {
   final service = FlutterBackgroundService();
@@ -57,6 +59,28 @@ void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
   String userId = prefs.getString('user_id') ?? "Unknown_User";
+
+  // Attempt to resend any offline-queued items when background service starts
+  try {
+    await BackgroundServiceHelper.retryOfflineQueue();
+  } catch (e) {
+    debugPrint('Retry offline queue on service start failed: $e');
+  }
+
+  // Setup connectivity listener in background service to retry when online
+  try {
+    Connectivity().onConnectivityChanged.listen((result) async {
+      if (result != ConnectivityResult.none) {
+        try {
+          await BackgroundServiceHelper.retryOfflineQueue();
+        } catch (e) {
+          debugPrint('Background service connectivity retry failed: $e');
+        }
+      }
+    });
+  } catch (e) {
+    debugPrint('Background connectivity listener setup failed: $e');
+  }
 
   // 1. SETUP NOTIFICATIONS
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -130,6 +154,56 @@ void onStart(ServiceInstance service) async {
 
     await _collectAndSync(userId);
   });
+
+  // 5. DAILY: Rating Notification Checker (Every minute)
+  Timer.periodic(const Duration(minutes: 1), (timer) async {
+    try {
+      await _maybeShowRatingNotification(
+        userId,
+        flutterLocalNotificationsPlugin,
+      );
+    } catch (e) {
+      debugPrint('Rating check error: $e');
+    }
+  });
+}
+
+Future<void> _maybeShowRatingNotification(
+  String userId,
+  FlutterLocalNotificationsPlugin plugin,
+) async {
+  final prefs = await SharedPreferences.getInstance();
+  bool enabled = prefs.getBool('rating_enabled') ?? true;
+  int hour = prefs.getInt('rating_hour') ?? 20;
+  int minute = prefs.getInt('rating_minute') ?? 0;
+  String lastShown = prefs.getString('last_rating_shown') ?? "";
+  String lastSubmitted = prefs.getString('last_rating_submitted') ?? "";
+  String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+
+  if (!enabled) return;
+  if (lastSubmitted == today) return; // user already submitted today
+  if (lastShown == today) return; // notification already shown today
+
+  DateTime now = DateTime.now();
+  if (now.hour == hour && now.minute == minute) {
+    final androidDetails = AndroidNotificationDetails(
+      'rating_channel',
+      'Daily Rating',
+      importance: Importance.high,
+      priority: Priority.high,
+    );
+    final details = NotificationDetails(android: androidDetails);
+
+    await plugin.show(
+      999,
+      'How was your stress today?',
+      'Tap to rate 0–5',
+      details,
+      payload: 'stress_rating',
+    );
+
+    await prefs.setString('last_rating_shown', today);
+  }
 }
 
 Future<void> _collectAndSync(String userId) async {

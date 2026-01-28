@@ -7,6 +7,12 @@ import 'package:usage_stats/usage_stats.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'background_service.dart';
 import 'background_service_helper.dart';
+import 'notification_helper.dart';
+import 'rating_settings.dart';
+import 'package:intl/intl.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 // --- THEME CONSTANTS ---
 const Color kPrimaryColor = Color(0xFF00695C); // Medical Teal
@@ -17,6 +23,30 @@ const Color kBackgroundColor = Color(0xFFF5F7FA); // Light Grey-Blue
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await NotificationHelper.init();
+  // Try to resend any offline-queued items on app initialization
+  try {
+    await BackgroundServiceHelper.retryOfflineQueue();
+  } catch (e) {
+    // Non-fatal; will retry later
+    debugPrint('Retry offline queue on init failed: $e');
+  }
+
+  // Listen for connectivity changes and retry when device becomes online
+  try {
+    Connectivity().onConnectivityChanged.listen((result) async {
+      if (result != ConnectivityResult.none) {
+        try {
+          await BackgroundServiceHelper.retryOfflineQueue();
+        } catch (e) {
+          debugPrint('Retry offline queue on connectivity change failed: $e');
+        }
+      }
+    });
+  } catch (e) {
+    debugPrint('Connectivity listener setup failed: $e');
+  }
 
   // Set status bar color for premium feel
   SystemChrome.setSystemUIOverlayStyle(
@@ -37,6 +67,7 @@ class ResearchApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'Anxiety Research',
       theme: ThemeData(
         useMaterial3: true,
@@ -110,9 +141,29 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _requestPermissions() async {
     setState(() => _isLoading = true);
 
-    if (!kIsWeb && Platform.isAndroid) {
+    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+      // 1) Request foreground location first
+      PermissionStatus foreground = await Permission.location.request();
+
+      // If foreground denied permanently, ask user to open settings
+      if (foreground.isPermanentlyDenied) {
+        await _showOpenSettingsDialog(
+          'Location permission is permanently denied. Please enable Location permission in system settings.',
+        );
+      }
+
+      // 2) If foreground granted, request background (always) permission
+      if (foreground.isGranted) {
+        PermissionStatus background = await Permission.locationAlways.request();
+        if (background.isPermanentlyDenied) {
+          await _showOpenSettingsDialog(
+            'Background location permission is permanently denied. Please enable "Allow all the time" in system settings to allow background collection.',
+          );
+        }
+      }
+
+      // Other permissions
       await [
-        Permission.locationAlways,
         Permission.phone,
         Permission.sms,
         Permission.notification,
@@ -152,6 +203,12 @@ class _LoginPageState extends State<LoginPage> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('user_id', _idController.text);
     await initializeService();
+    // After initializing background service, retry any offline queue items
+    try {
+      await BackgroundServiceHelper.retryOfflineQueue();
+    } catch (e) {
+      debugPrint('Retry offline queue after login failed: $e');
+    }
 
     if (mounted) {
       Navigator.pushReplacement(
@@ -159,6 +216,32 @@ class _LoginPageState extends State<LoginPage> {
         MaterialPageRoute(builder: (context) => const DashboardPage()),
       );
     }
+  }
+
+  Future<void> _showOpenSettingsDialog(String message) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Permission Required'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.of(ctx).pop();
+                await openAppSettings();
+              },
+              child: const Text('Open Settings'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -354,6 +437,17 @@ class _DashboardPageState extends State<DashboardPage>
       appBar: AppBar(
         title: const Text("Monitoring Dashboard"),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const RatingSettingsPage(),
+                ),
+              );
+            },
+          ),
           IconButton(icon: const Icon(Icons.info_outline), onPressed: () {}),
         ],
       ),
@@ -491,11 +585,55 @@ class _DashboardPageState extends State<DashboardPage>
   void initState() {
     super.initState();
     _loadCachedId();
+    // If app was opened via notification payload, show rating dialog
+    NotificationHelper.onNotificationClick = () {
+      if (mounted) showRatingDialog();
+    };
   }
 
   Future<void> _loadCachedId() async {
     String id = await BackgroundServiceHelper.getCachedId();
     if (mounted) setState(() => _cachedId = id);
+  }
+
+  Future<void> showRatingDialog() async {
+    final prefs = await SharedPreferences.getInstance();
+    String uid = prefs.getString('user_id') ?? "Unknown";
+    String lastSubmitted = prefs.getString('last_rating_submitted') ?? "";
+    String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    if (lastSubmitted == today) return; // already submitted today
+
+    int? selected = await showDialog<int>(
+      context: navigatorKey.currentContext ?? context,
+      builder: (ctx) {
+        return SimpleDialog(
+          title: const Text('How was your stress today?'),
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Wrap(
+                spacing: 8,
+                children: List.generate(6, (i) {
+                  return ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx, i),
+                    child: Text(i.toString()),
+                  );
+                }),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (selected != null) {
+      await BackgroundServiceHelper.sendToSheet(
+        uid,
+        "Stress_Rating",
+        selected.toString(),
+      );
+      await prefs.setString('last_rating_submitted', today);
+    }
   }
 
   void _handleTouch(PointerEvent event, bool isPressed) async {

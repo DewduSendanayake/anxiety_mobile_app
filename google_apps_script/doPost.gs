@@ -6,10 +6,7 @@
  */
 
 function doPost(e) {
-  // 1. PRE-LOCK PREPARATION
-  // Do all the heavy lifting here so we don't block other users.
-
-  // A. Parse the incoming data
+  // Parse incoming data
   var payload;
   try {
     if (e && e.postData && e.postData.contents) {
@@ -21,29 +18,26 @@ function doPost(e) {
     return jsonError("JSON Parse Error: " + err.toString());
   }
 
-  // B. Normalize to array (handle single object or batch array)
   var entries = Array.isArray(payload) ? payload : [payload];
-  if (entries.length === 0) return jsonResponse("success"); // Nothing to do
+  if (entries.length === 0) return jsonResponse("success");
 
-  // C. Prepare the rows in memory (Formatting dates, etc.)
-  var rows = [];
   var tz = Session.getScriptTimeZone() || "UTC";
+  var grouped = {};
 
+  function sanitizeSheetName(id) {
+    if (!id) return "Unknown";
+    var s = String(id)
+      .replace(/[:\\\/?*\[\]]/g, "_")
+      .substring(0, 90);
+    return "User_" + s;
+  }
+
+  // Prepare grouped rows
   for (var i = 0; i < entries.length; i++) {
     var item = entries[i] || {};
-
-    // IMPORTANT: Use the device timestamp if available, otherwise use Server time
-    // This ensures offline data has the correct time when it finally syncs.
-    var ts;
-    if (item.timestamp) {
-      ts = new Date(item.timestamp);
-    } else {
-      ts = new Date();
-    }
-
+    var ts = item.timestamp ? new Date(item.timestamp) : new Date();
     var dateReadable = Utilities.formatDate(ts, tz, "yyyy-MM-dd");
     var timeReadable = Utilities.formatDate(ts, tz, "HH:mm:ss");
-
     var value = item.value;
     var valueStr = "";
     if (value === null || value === undefined) {
@@ -54,64 +48,132 @@ function doPost(e) {
       valueStr = String(value);
     }
 
-    rows.push([
-      ts, // Timestamp Object (for sorting)
-      item.userId || "", // User ID
-      item.dataType || "", // Data Type
-      valueStr, // Value
-      dateReadable, // Readable Date
-      timeReadable, // Readable Time
+    var userId = item.userId || "Unknown";
+    var sheetName = sanitizeSheetName(userId);
+    if (!grouped[sheetName]) grouped[sheetName] = [];
+
+    grouped[sheetName].push([
+      ts,
+      userId,
+      item.dataType || "",
+      valueStr,
+      dateReadable,
+      timeReadable,
     ]);
   }
 
-  // 2. CRITICAL SECTION (The "Traffic Jam" area)
-  // We keep this part as short as humanly possible.
+  // Critical section: write to spreadsheets inside lock
   var lock = LockService.getScriptLock();
-
   try {
-    // Wait up to 10 seconds for other processes to finish
     lock.waitLock(10000);
 
-    // Get the Sheet
     var props = PropertiesService.getScriptProperties();
+    var usePerUserSpreadsheets =
+      (props.getProperty("USE_PER_USER_SPREADSHEETS") || "false") === "true";
     var sheetId = props.getProperty("SHEET_ID");
-    var sheetName = props.getProperty("SHEET_NAME") || "Responses";
+    var headers = [
+      "Timestamp",
+      "User ID",
+      "Data Type",
+      "Value",
+      "Date",
+      "Time",
+    ];
 
-    var ss;
-    if (sheetId) {
-      ss = SpreadsheetApp.openById(sheetId);
+    if (usePerUserSpreadsheets) {
+      for (var sheetName in grouped) {
+        var rowsToWrite = grouped[sheetName];
+        if (!rowsToWrite || rowsToWrite.length === 0) continue;
+
+        var propKey = "SPREADSHEET_FOR_" + sheetName;
+        var userSpreadsheetId = props.getProperty(propKey);
+        var userSS = null;
+        if (userSpreadsheetId) {
+          try {
+            userSS = SpreadsheetApp.openById(userSpreadsheetId);
+          } catch (e) {
+            userSS = null;
+          }
+        }
+
+        if (!userSS) {
+          var title = sheetName + "_Data";
+          userSS = SpreadsheetApp.create(title);
+          userSpreadsheetId = userSS.getId();
+          props.setProperty(propKey, userSpreadsheetId);
+        }
+
+        var userSheet = userSS.getSheets()[0];
+        if (!userSheet) userSheet = userSS.insertSheet("Data");
+        if (userSheet.getLastRow() === 0) {
+          userSheet.appendRow(headers);
+          userSheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+          userSheet.setFrozenRows(1);
+        }
+
+        userSheet
+          .getRange(
+            userSheet.getLastRow() + 1,
+            1,
+            rowsToWrite.length,
+            rowsToWrite[0].length,
+          )
+          .setValues(rowsToWrite);
+      }
     } else {
-      ss = SpreadsheetApp.getActiveSpreadsheet();
-    }
-    var sheet = ss.getSheetByName(sheetName);
-    if (!sheet) sheet = ss.insertSheet(sheetName);
+      var ss = sheetId
+        ? SpreadsheetApp.openById(sheetId)
+        : SpreadsheetApp.getActiveSpreadsheet();
+      var existingSheets = ss.getSheets();
+      var userSheetCount = 0;
+      var existingNames = {};
+      for (var s = 0; s < existingSheets.length; s++) {
+        var nm = existingSheets[s].getName();
+        existingNames[nm] = true;
+        if (nm.indexOf("User_") === 0) userSheetCount++;
+      }
 
-    // Ensure Headers (Lightweight check)
-    if (sheet.getLastRow() === 0) {
-      var headers = [
-        "Timestamp",
-        "User ID",
-        "Data Type",
-        "Value",
-        "Date",
-        "Time",
-      ];
-      sheet.appendRow(headers);
-      sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
-      sheet.setFrozenRows(1);
-    }
+      var overflowName =
+        props.getProperty("OVERFLOW_SHEET_NAME") || "Other_Users";
+      var maxUserSheets = Number(props.getProperty("SHEET_USER_LIMIT")) || 20;
 
-    // WRITE DATA
-    // We already prepared 'rows' outside the lock, so this is instant.
-    sheet
-      .getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length)
-      .setValues(rows);
+      for (var sheetName in grouped) {
+        var targetName = sheetName;
+        if (!existingNames[targetName] && userSheetCount >= maxUserSheets) {
+          targetName = overflowName;
+        }
+
+        var sheet = ss.getSheetByName(targetName);
+        if (!sheet) {
+          sheet = ss.insertSheet(targetName);
+          sheet.appendRow(headers);
+          sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+          sheet.setFrozenRows(1);
+          existingNames[targetName] = true;
+          if (targetName.indexOf("User_") === 0) userSheetCount++;
+        } else if (sheet.getLastRow() === 0) {
+          sheet.appendRow(headers);
+          sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+          sheet.setFrozenRows(1);
+        }
+
+        var rowsToWrite = grouped[sheetName];
+        if (rowsToWrite.length > 0) {
+          sheet
+            .getRange(
+              sheet.getLastRow() + 1,
+              1,
+              rowsToWrite.length,
+              rowsToWrite[0].length,
+            )
+            .setValues(rowsToWrite);
+        }
+      }
+    }
   } catch (err) {
-    // Log error manually if possible
     console.error(err);
     return jsonError("Server Lock/Write Error: " + err.toString());
   } finally {
-    // Always release the lock
     lock.releaseLock();
   }
 
@@ -128,4 +190,21 @@ function jsonError(msg) {
   return ContentService.createTextOutput(
     JSON.stringify({ status: "error", message: msg }),
   ).setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Helper to set common script properties.
+ * Run once in the Apps Script editor to configure behavior.
+ */
+function setProperties() {
+  var props = PropertiesService.getScriptProperties();
+  // Number of per-user sheets allowed when not using per-user spreadsheets
+  props.setProperty("SHEET_USER_LIMIT", "20");
+  // Overflow sheet name when per-user sheet limit exceeded
+  props.setProperty("OVERFLOW_SHEET_NAME", "Other_Users");
+  // When true, create and use separate spreadsheets per user (recommended for scale)
+  props.setProperty("USE_PER_USER_SPREADSHEETS", "true");
+  Logger.log(
+    "Properties set: SHEET_USER_LIMIT=20, OVERFLOW_SHEET_NAME=Other_Users, USE_PER_USER_SPREADSHEETS=true",
+  );
 }
