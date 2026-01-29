@@ -31,7 +31,7 @@ android {
     defaultConfig {
         applicationId = "com.example.anxiety_mobile_app"
         minSdk = flutter.minSdkVersion
-        // Match Compile SDK
+                    // Match Compile SDK
                     targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
