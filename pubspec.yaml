@@ -35,6 +35,8 @@ dependencies:
   # New Dependencies can be added here
   ###############################
 
+  google_fonts: ^6.1.0
+
   # Networking
   http: ^1.2.0
 

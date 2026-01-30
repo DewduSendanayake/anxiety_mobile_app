@@ -1,3 +1,5 @@
+// Backwards-compatible re-export for moved background service implementation.
+export 'services/background/background_service.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -9,7 +11,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:call_log/call_log.dart';
 import 'package:usage_stats/usage_stats.dart';
 import 'package:flutter_sms_inbox/flutter_sms_inbox.dart'; // UPDATED PACKAGE
-import 'package:http/http.dart' as http;
+// HTTP not used here; keep network calls in helper
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';

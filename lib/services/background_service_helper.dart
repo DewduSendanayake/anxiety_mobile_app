@@ -1,11 +1,9 @@
-// Backwards-compatible re-export for moved background service helper.
-export 'services/background_service_helper.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
-import 'background_service.dart';
+import '../background_service.dart';
 
 class BackgroundServiceHelper {
   // A local memory buffer to hold data before sending
