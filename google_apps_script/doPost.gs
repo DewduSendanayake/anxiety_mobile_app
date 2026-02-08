@@ -9,12 +9,17 @@ function doPost(e) {
   // Parse incoming data
   var payload;
   try {
+    console.log("doPost called, e=", e);
     if (e && e.postData && e.postData.contents) {
       payload = JSON.parse(e.postData.contents);
     } else {
       payload = e.parameter || {};
     }
   } catch (err) {
+    console.error(
+      "JSON Parse Error for incoming contents:",
+      e && e.postData && e.postData.contents,
+    );
     return jsonError("JSON Parse Error: " + err.toString());
   }
 
@@ -178,6 +183,15 @@ function doPost(e) {
   }
 
   return jsonResponse("success");
+}
+
+/**
+ * Simple health check for quick testing from a browser.
+ * e.g. visit the webapp URL in a browser to verify deployment.
+ */
+function doGet(e) {
+  console.log("doGet called, params=", e && e.parameter);
+  return jsonResponse("ready");
 }
 
 function jsonResponse(status) {

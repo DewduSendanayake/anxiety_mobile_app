@@ -11,7 +11,12 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await NotificationHelper.init();
+  try {
+    await NotificationHelper.init();
+  } catch (e, st) {
+    debugPrint('Notification init error: $e');
+    debugPrint('$st');
+  }
 
   // 1. Queue Retry (Offline Architecture)
   try {

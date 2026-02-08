@@ -18,10 +18,9 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:screen_state/screen_state.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'background_service_helper.dart';
+import 'services/background/service_config.dart';
 
-// GOOGLE SCRIPT URL
-const String kGoogleScriptUrl =
-    "https://script.google.com/macros/s/AKfycbyHA5394Trxj3DYwTsop2xwJeS07mmA3JUea_xc3ZxWcYhx_WZPpN9EwdSF936kl4ll/exec";
+// Google Script URL is provided via ServiceConfig.googleScriptUrl
 
 Future<void> initializeService() async {
   final service = FlutterBackgroundService();

@@ -9,20 +9,26 @@ class NotificationHelper {
   static VoidCallback? onNotificationClick;
 
   static Future<void> init() async {
-    const AndroidInitializationSettings androidInit =
-        AndroidInitializationSettings('ic_launcher');
+    try {
+      const AndroidInitializationSettings androidInit =
+          AndroidInitializationSettings('ic_launcher');
 
-    const InitializationSettings initSettings = InitializationSettings(
-      android: androidInit,
-    );
+      const InitializationSettings initSettings = InitializationSettings(
+        android: androidInit,
+      );
 
-    await plugin.initialize(
-      initSettings,
-      onDidReceiveNotificationResponse: (response) {
-        // Route to the app via callback
-        if (onNotificationClick != null) onNotificationClick!();
-      },
-    );
+      await plugin.initialize(
+        initSettings,
+        onDidReceiveNotificationResponse: (response) {
+          // Route to the app via callback
+          if (onNotificationClick != null) onNotificationClick!();
+        },
+      );
+    } catch (e, st) {
+      // Don't rethrow — log and allow app to continue.
+      debugPrint('Notification plugin init failed: $e');
+      debugPrint('$st');
+    }
   }
 
   static Future<void> showRatingNotification() async {
