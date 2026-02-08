@@ -1,28 +1,44 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0")
+    }
+}
+
 allprojects {
     repositories {
         google()
         mavenCentral()
+    }
+    
+    // 2. FORCE all subprojects (like screen_state) to use the new Kotlin version
+    configurations.all {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "org.jetbrains.kotlin") {
+                useVersion("2.1.0")
+            }
+        }
     }
 }
 
 // Ensure all Android library/application subprojects compile against the desired SDK
 subprojects {
     afterEvaluate {
-        val androidExt = extensions.findByName("android")
-        if (androidExt != null) {
-            try {
-                val setCompileSdk = androidExt.javaClass.methods.firstOrNull { it.name == "setCompileSdk" || it.name == "setCompileSdkVersion" }
-                if (setCompileSdk != null) {
-                    setCompileSdk.invoke(androidExt, 36)
-                } else {
-                    // fallback to property if available
-                    try {
-                        val prop = androidExt.javaClass.getDeclaredField("compileSdk")
-                        prop.isAccessible = true
-                        prop.set(androidExt, 36)
-                    } catch (_: Exception) { }
+        val project = this
+        if (project.extensions.findByName("android") != null) {
+            configure<com.android.build.gradle.BaseExtension> {
+                // Force all plugins to use SDK 34/35/36 to resolve lStar issues
+                compileSdkVersion(36)
+                buildToolsVersion("34.0.0")
+
+                defaultConfig {
+                    // Ensure the target matches
+                    targetSdkVersion(36)
                 }
-            } catch (_: Exception) { }
+            }
         }
     }
 }
