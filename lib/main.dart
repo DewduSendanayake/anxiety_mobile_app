@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:anxiety_mobile_app/ema_and_gad7.dart' show EmaRatingSheet;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,31 +10,31 @@ import 'background_service.dart';
 import 'background_service_helper.dart';
 import 'notification_helper.dart';
 import 'rating_settings.dart';
+import 'profile_page.dart';
+import 'ema_and_gad7.dart';
 import 'package:intl/intl.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-// --- THEME CONSTANTS ---
-const Color kPrimaryColor = Color(0xFF00695C); // Medical Teal
-const Color kSecondaryColor = Color(0xFFB2DFDB); // Soft Teal
+// ─── Theme constants (exported so other files can import) ──
+const Color kPrimaryColor = Color(0xFF00695C);
+const Color kSecondaryColor = Color(0xFFB2DFDB);
 const Color kAccentColor = Color(0xFF009688);
 const Color kSurfaceColor = Colors.white;
-const Color kBackgroundColor = Color(0xFFF5F7FA); // Light Grey-Blue
+const Color kBackgroundColor = Color(0xFFF5F7FA);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await NotificationHelper.init();
-  // Try to resend any offline-queued items on app initialization
+  await NotificationHelper.init(onPayload: _handleNotificationPayload);
+
   try {
     await BackgroundServiceHelper.retryOfflineQueue();
   } catch (e) {
-    // Non-fatal; will retry later
     debugPrint('Retry offline queue on init failed: $e');
   }
 
-  // Listen for connectivity changes and retry when device becomes online
   try {
     Connectivity().onConnectivityChanged.listen((result) async {
       if (result != ConnectivityResult.none) {
@@ -48,7 +49,6 @@ void main() async {
     debugPrint('Connectivity listener setup failed: $e');
   }
 
-  // Set status bar color for premium feel
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -56,19 +56,43 @@ void main() async {
     ),
   );
 
-  runApp(
-    const MaterialApp(debugShowCheckedModeBanner: false, home: ResearchApp()),
-  );
+  runApp(const AnxietyResearchApp());
 }
 
-class ResearchApp extends StatelessWidget {
-  const ResearchApp({super.key});
+/// Central notification payload router
+void _handleNotificationPayload(String? payload) {
+  if (payload == null) return;
+  final ctx = navigatorKey.currentContext;
+  if (ctx == null) return;
+
+  if (payload.startsWith('ema_')) {
+    final period = payload.replaceFirst(
+      'ema_',
+      '',
+    ); // morning/afternoon/evening
+    showModalBottomSheet(
+      context: ctx,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: EmaRatingSheet(timePeriod: period),
+      ),
+    );
+  } else if (payload == 'gad7') {
+    Navigator.push(ctx, MaterialPageRoute(builder: (_) => const Gad7Screen()));
+  }
+}
+
+class AnxietyResearchApp extends StatelessWidget {
+  const AnxietyResearchApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: navigatorKey,
-      title: 'Anxiety Research',
+      title: 'SLIIT Anxiety Research',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
         scaffoldBackgroundColor: kBackgroundColor,
@@ -122,13 +146,76 @@ class ResearchApp extends StatelessWidget {
           contentPadding: const EdgeInsets.all(20),
         ),
       ),
-      home: const LoginPage(),
+      routes: {
+        '/dashboard': (_) => const DashboardPage(),
+        '/profile': (_) => const ProfilePage(),
+        '/gad7': (_) => const Gad7Screen(),
+      },
+      home: const SplashRouter(),
     );
   }
 }
 
+// ─────────────────────────────────────────────────────────
+// Splash/Router — decides where to send the user on launch
+// ─────────────────────────────────────────────────────────
+class SplashRouter extends StatefulWidget {
+  const SplashRouter({super.key});
+
+  @override
+  State<SplashRouter> createState() => _SplashRouterState();
+}
+
+class _SplashRouterState extends State<SplashRouter> {
+  @override
+  void initState() {
+    super.initState();
+    _route();
+  }
+
+  Future<void> _route() async {
+    await Future.delayed(const Duration(milliseconds: 400));
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString('user_id');
+    final profileComplete = prefs.getBool('profile_complete') ?? false;
+
+    if (!mounted) return;
+
+    if (userId == null || userId.isEmpty) {
+      // First time — go to login
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+      );
+    } else if (!profileComplete) {
+      // Logged in but profile not filled
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const ProfilePage()),
+      );
+    } else {
+      // Fully set up — dashboard
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const DashboardPage()),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(child: CircularProgressIndicator(color: kPrimaryColor)),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// Login Page
+// ─────────────────────────────────────────────────────────
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
+
   @override
   State<LoginPage> createState() => _LoginPageState();
 }
@@ -142,27 +229,21 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _isLoading = true);
 
     if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-      // 1) Request foreground location first
       PermissionStatus foreground = await Permission.location.request();
-
-      // If foreground denied permanently, ask user to open settings
       if (foreground.isPermanentlyDenied) {
         await _showOpenSettingsDialog(
-          'Location permission is permanently denied. Please enable Location permission in system settings.',
+          'Location permission is permanently denied. Please enable it in system settings.',
         );
       }
-
-      // 2) If foreground granted, request background (always) permission
       if (foreground.isGranted) {
         PermissionStatus background = await Permission.locationAlways.request();
         if (background.isPermanentlyDenied) {
           await _showOpenSettingsDialog(
-            'Background location permission is permanently denied. Please enable "Allow all the time" in system settings to allow background collection.',
+            'Background location is permanently denied. Please enable "Allow all the time" in system settings.',
           );
         }
       }
 
-      // Other permissions
       await [
         Permission.phone,
         Permission.sms,
@@ -180,9 +261,7 @@ class _LoginPageState extends State<LoginPage> {
       }
     }
 
-    // Simulate a check/delay for better UX
     await Future.delayed(const Duration(seconds: 1));
-
     setState(() {
       _permissionsGranted = true;
       _isLoading = false;
@@ -201,9 +280,9 @@ class _LoginPageState extends State<LoginPage> {
     }
 
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('user_id', _idController.text);
+    await prefs.setString('user_id', _idController.text.trim());
     await initializeService();
-    // After initializing background service, retry any offline queue items
+
     try {
       await BackgroundServiceHelper.retryOfflineQueue();
     } catch (e) {
@@ -211,9 +290,10 @@ class _LoginPageState extends State<LoginPage> {
     }
 
     if (mounted) {
+      // Always go to profile page first (router handles if already complete)
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => const DashboardPage()),
+        MaterialPageRoute(builder: (_) => const ProfilePage()),
       );
     }
   }
@@ -222,25 +302,23 @@ class _LoginPageState extends State<LoginPage> {
     if (!mounted) return;
     await showDialog<void>(
       context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Permission Required'),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.of(ctx).pop();
-                await openAppSettings();
-              },
-              child: const Text('Open Settings'),
-            ),
-          ],
-        );
-      },
+      builder: (ctx) => AlertDialog(
+        title: const Text('Permission Required'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await openAppSettings();
+            },
+            child: const Text('Open Settings'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -254,7 +332,6 @@ class _LoginPageState extends State<LoginPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // --- LOGO & HEADER ---
                 const Icon(
                   Icons.health_and_safety,
                   size: 64,
@@ -272,20 +349,20 @@ class _LoginPageState extends State<LoginPage> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  "Secure Anxiety Monitoring System",
+                  "SLIIT Anxiety Monitoring Study",
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
                 ),
                 const SizedBox(height: 40),
 
-                // --- STEP 1: PERMISSIONS CARD ---
+                // Step 1: Permissions
                 _buildCard(
                   title: "1. System Configuration",
                   isActive: !_permissionsGranted,
                   child: Column(
                     children: [
                       Text(
-                        "To ensure accurate data collection without interruptions, this app requires background access permissions.",
+                        "This app requires background access to collect behavioral signals for the research.",
                         style: TextStyle(
                           color: Colors.grey.shade700,
                           height: 1.5,
@@ -330,7 +407,7 @@ class _LoginPageState extends State<LoginPage> {
 
                 const SizedBox(height: 20),
 
-                // --- STEP 2: LOGIN CARD ---
+                // Step 2: Login
                 Opacity(
                   opacity: _permissionsGranted ? 1.0 : 0.5,
                   child: _buildCard(
@@ -414,15 +491,17 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
+// ─────────────────────────────────────────────────────────
+// Dashboard Page
+// ─────────────────────────────────────────────────────────
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
+
   @override
   State<DashboardPage> createState() => _DashboardPageState();
 }
 
-class _DashboardPageState extends State<DashboardPage>
-    with SingleTickerProviderStateMixin {
-  String _statusMessage = "Ready to record";
+class _DashboardPageState extends State<DashboardPage> {
   double _currentPressure = 0.0;
   bool _isPressed = false;
   String _cachedId = "";
@@ -432,30 +511,113 @@ class _DashboardPageState extends State<DashboardPage>
   static const double _minPressureDelta = 0.03;
 
   @override
+  void initState() {
+    super.initState();
+    _loadCachedId();
+    // Route notification taps to EMA / GAD-7
+    NotificationHelper.onNotificationClick = _handleNotificationPayload;
+    // Prompt GAD-7 if due
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkGad7OnOpen());
+  }
+
+  Future<void> _checkGad7OnOpen() async {
+    if (await isGad7DueThisWeek()) {
+      await Future.delayed(const Duration(seconds: 2));
+      if (mounted) {
+        final shouldOpen = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Weekly Assessment Due'),
+            content: const Text(
+              'Your weekly GAD-7 anxiety questionnaire is ready. It takes about 2 minutes.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Later'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Start Now'),
+              ),
+            ],
+          ),
+        );
+        if (shouldOpen == true && mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const Gad7Screen()),
+          );
+        }
+      }
+    }
+  }
+
+  void _handleNotificationPayload(String? payload) {
+    _handleNotificationPayloadGlobal(payload);
+  }
+
+  Future<void> _loadCachedId() async {
+    String id = await BackgroundServiceHelper.getCachedId();
+    if (mounted) setState(() => _cachedId = id);
+  }
+
+  void _handleTouch(PointerEvent event, bool isPressed) async {
+    setState(() {
+      _isPressed = isPressed;
+      _currentPressure = isPressed ? event.pressure : 0.0;
+    });
+    if (isPressed) {
+      final now = DateTime.now();
+      final prefs = await SharedPreferences.getInstance();
+      String uid = prefs.getString('user_id') ?? "Unknown";
+
+      bool enoughTime =
+          _lastSentAt == null ||
+          now.difference(_lastSentAt!) >= _minSendInterval;
+      bool enoughDelta =
+          (event.pressure - _lastPressureSent).abs() >= _minPressureDelta;
+
+      if (enoughTime && enoughDelta) {
+        _lastSentAt = now;
+        _lastPressureSent = event.pressure;
+        await BackgroundServiceHelper.sendToSheet(
+          uid,
+          "Touch_Event",
+          "Pressure:${event.pressure.toStringAsFixed(2)}",
+        );
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Monitoring Dashboard"),
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const RatingSettingsPage(),
-                ),
-              );
-            },
+            icon: const Icon(Icons.assignment_outlined),
+            tooltip: 'Weekly GAD-7',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const Gad7Screen()),
+            ),
           ),
-          IconButton(icon: const Icon(Icons.info_outline), onPressed: () {}),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const RatingSettingsPage()),
+            ),
+          ),
         ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           children: [
-            // --- STATUS CARD ---
+            // Status badge
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
@@ -488,7 +650,6 @@ class _DashboardPageState extends State<DashboardPage>
 
             const Spacer(),
 
-            // --- INSTRUCTION TEXT ---
             const Text(
               "Anxiety Event Recorder",
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
@@ -502,12 +663,12 @@ class _DashboardPageState extends State<DashboardPage>
 
             const SizedBox(height: 40),
 
-            // --- INTERACTIVE SENSOR PAD ---
+            // Sensor pad
             Listener(
-              onPointerDown: (event) => _handleTouch(event, true),
-              onPointerMove: (event) => _handleTouch(event, true),
-              onPointerUp: (event) => _handleTouch(event, false),
-              onPointerCancel: (event) => _handleTouch(event, false),
+              onPointerDown: (e) => _handleTouch(e, true),
+              onPointerMove: (e) => _handleTouch(e, true),
+              onPointerUp: (e) => _handleTouch(e, false),
+              onPointerCancel: (e) => _handleTouch(e, false),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 100),
                 width: 260,
@@ -522,19 +683,17 @@ class _DashboardPageState extends State<DashboardPage>
                         : [Colors.white, Colors.grey.shade100],
                   ),
                   boxShadow: [
-                    // Outer Glow
                     BoxShadow(
                       color: kPrimaryColor.withOpacity(_isPressed ? 0.4 : 0.1),
                       blurRadius: _isPressed ? 30 : 20,
                       spreadRadius: _isPressed ? 5 : 0,
                       offset: const Offset(0, 10),
                     ),
-                    // Inner Shadow for depth
                     if (!_isPressed)
-                      BoxShadow(
+                      const BoxShadow(
                         color: Colors.white,
                         blurRadius: 10,
-                        offset: const Offset(-5, -5),
+                        offset: Offset(-5, -5),
                       ),
                   ],
                   border: Border.all(
@@ -570,7 +729,6 @@ class _DashboardPageState extends State<DashboardPage>
 
             const Spacer(),
 
-            // --- FOOTER ---
             Text(
               _cachedId.isNotEmpty ? "ID: $_cachedId" : "ID: (loading)",
               style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
@@ -580,87 +738,26 @@ class _DashboardPageState extends State<DashboardPage>
       ),
     );
   }
+}
 
-  @override
-  void initState() {
-    super.initState();
-    _loadCachedId();
-    // If app was opened via notification payload, show rating dialog
-    NotificationHelper.onNotificationClick = () {
-      if (mounted) showRatingDialog();
-    };
-  }
+/// Global handler (used both from notification callback and inside dashboard)
+void _handleNotificationPayloadGlobal(String? payload) {
+  if (payload == null) return;
+  final ctx = navigatorKey.currentContext;
+  if (ctx == null) return;
 
-  Future<void> _loadCachedId() async {
-    String id = await BackgroundServiceHelper.getCachedId();
-    if (mounted) setState(() => _cachedId = id);
-  }
-
-  Future<void> showRatingDialog() async {
-    final prefs = await SharedPreferences.getInstance();
-    String uid = prefs.getString('user_id') ?? "Unknown";
-    String lastSubmitted = prefs.getString('last_rating_submitted') ?? "";
-    String today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    if (lastSubmitted == today) return; // already submitted today
-
-    int? selected = await showDialog<int>(
-      context: navigatorKey.currentContext ?? context,
-      builder: (ctx) {
-        return SimpleDialog(
-          title: const Text('How was your stress today?'),
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Wrap(
-                spacing: 8,
-                children: List.generate(6, (i) {
-                  return ElevatedButton(
-                    onPressed: () => Navigator.pop(ctx, i),
-                    child: Text(i.toString()),
-                  );
-                }),
-              ),
-            ),
-          ],
-        );
-      },
+  if (payload.startsWith('ema_')) {
+    final period = payload.replaceFirst('ema_', '');
+    showModalBottomSheet(
+      context: ctx,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: EmaRatingSheet(timePeriod: period),
+      ),
     );
-
-    if (selected != null) {
-      await BackgroundServiceHelper.sendToSheet(
-        uid,
-        "Stress_Rating",
-        selected.toString(),
-      );
-      await prefs.setString('last_rating_submitted', today);
-    }
-  }
-
-  void _handleTouch(PointerEvent event, bool isPressed) async {
-    setState(() {
-      _isPressed = isPressed;
-      _currentPressure = isPressed ? event.pressure : 0.0;
-    });
-    if (isPressed) {
-      final now = DateTime.now();
-      final prefs = await SharedPreferences.getInstance();
-      String uid = prefs.getString('user_id') ?? "Unknown";
-
-      bool enoughTime =
-          _lastSentAt == null ||
-          now.difference(_lastSentAt!) >= _minSendInterval;
-      bool enoughDelta =
-          (event.pressure - _lastPressureSent).abs() >= _minPressureDelta;
-
-      if (enoughTime && enoughDelta) {
-        _lastSentAt = now;
-        _lastPressureSent = event.pressure;
-        await BackgroundServiceHelper.sendToSheet(
-          uid,
-          "Touch_Event",
-          "Pressure:${event.pressure.toStringAsFixed(2)}",
-        );
-      }
-    }
+  } else if (payload == 'gad7') {
+    Navigator.push(ctx, MaterialPageRoute(builder: (_) => const Gad7Screen()));
   }
 }
