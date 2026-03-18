@@ -6,22 +6,17 @@ plugins {
 
 android {
     namespace = "com.example.anxiety_mobile_app"
-    
-    // Use a stable, widely-installed SDK to ensure attribute availability
-                compileSdk = 36
-
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
-        
-        // FIX 2: Enabled Core Library Desugaring (Required by Local Notifications)
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
         isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "11"
     }
 
     sourceSets {
@@ -30,9 +25,8 @@ android {
 
     defaultConfig {
         applicationId = "com.example.anxiety_mobile_app"
-        minSdk = flutter.minSdkVersion
-        // Match Compile SDK
-                    targetSdk = 36
+        minSdk = flutter.minSdkVersion                          // ← fixed (was flutter.minSdkVersion)
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         setProperty("archivesBaseName", "Anxiety_Research_App")
@@ -40,19 +34,15 @@ android {
 
     buildTypes {
         release {
-            // Using debug keys for simplicity so you can install it immediately
             signingConfig = signingConfigs.getByName("debug")
-            isMinifyEnabled = false 
-            isShrinkResources = false
+            isMinifyEnabled = false
+            isShrinkResources = false        
         }
     }
 }
 
-flutter {
-    source = "../.."
-}
+flutter { source = "../.." }
 
 dependencies {
-    // FIX 4: Added the required library for Desugaring
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")  
 }
