@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'background_service.dart';
+import 'package:flutter/foundation.dart';
 
 class BackgroundServiceHelper {
   static final List<Map<String, dynamic>> _buffer = [];
@@ -55,25 +56,24 @@ class BackgroundServiceHelper {
           )
           .timeout(const Duration(seconds: 25));
 
-      // Google Apps Script returns 302 redirect on success — follow it
       if (response.statusCode == 200 ||
           response.statusCode == 302 ||
           _isSuccessBody(response.body)) {
-        print("✅ Batch sent: ${batchToSend.length} items");
+        debugPrint("✅ Batch sent: ${batchToSend.length} items");
       } else {
         throw Exception(
           "Server Error ${response.statusCode}: ${response.body}",
         );
       }
     } catch (e) {
-      print("❌ Batch failed, saving to offline queue: $e");
+      debugPrint("❌ Batch failed, saving to offline queue: $e");
       await _saveToOfflineQueue(batchToSend);
     } finally {
       _isSyncing = false;
     }
   }
 
-  /// Check if the response body indicates success (handles redirect responses).
+  /// Check if the response body indicates success.
   static bool _isSuccessBody(String body) {
     try {
       final decoded = jsonDecode(body);
@@ -90,17 +90,16 @@ class BackgroundServiceHelper {
     final prefs = await SharedPreferences.getInstance();
     List<String> queue = prefs.getStringList('offline_queue') ?? [];
 
-    // Cap offline queue at 5000 items to prevent unbounded storage growth
-    // (5000 items × ~200 bytes = ~1MB max)
+    // Cap offline queue at 5000 items (~1MB max)
     for (var item in items) {
       if (queue.length >= 5000) {
-        print("⚠️ Offline queue full (5000 items). Oldest item dropped.");
+        debugPrint("⚠️ Offline queue full (5000 items). Oldest item dropped.");
         queue.removeAt(0);
       }
       queue.add(jsonEncode(item));
     }
     await prefs.setStringList('offline_queue', queue);
-    print("📦 Offline queue size: ${queue.length}");
+    debugPrint("📦 Offline queue size: ${queue.length}");
   }
 
   /// Retry all queued offline items. Call on app start and when connectivity restored.
@@ -109,9 +108,8 @@ class BackgroundServiceHelper {
     List<String> queue = prefs.getStringList('offline_queue') ?? [];
     if (queue.isEmpty) return;
 
-    print("🔄 Retrying offline queue: ${queue.length} items");
+    debugPrint("🔄 Retrying offline queue: ${queue.length} items");
 
-    // Send in chunks of 50 to avoid oversized requests
     const chunkSize = 50;
     List<String> remaining = [];
 
@@ -133,24 +131,23 @@ class BackgroundServiceHelper {
         if (response.statusCode == 200 ||
             response.statusCode == 302 ||
             _isSuccessBody(response.body)) {
-          print("✅ Offline chunk sent: ${batch.length} items");
+          debugPrint("✅ Offline chunk sent: ${batch.length} items");
         } else {
           remaining.addAll(chunk);
         }
       } catch (e) {
-        print("❌ Offline retry chunk failed: $e");
+        debugPrint("❌ Offline retry chunk failed: $e");
         remaining.addAll(chunk);
-        break; // Stop retrying if network is still down
+        break;
       }
     }
 
-    // Save only the items that still failed
     await prefs.setStringList('offline_queue', remaining);
 
     if (remaining.isEmpty) {
-      print("✅ Offline queue fully cleared");
+      debugPrint("✅ Offline queue fully cleared");
     } else {
-      print("⚠️ ${remaining.length} items still pending");
+      debugPrint("⚠️ ${remaining.length} items still pending");
     }
   }
 
