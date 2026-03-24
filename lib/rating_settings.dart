@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'main.dart'; // for kPrimaryColor
+import 'main.dart';
 
 class RatingSettingsPage extends StatefulWidget {
   const RatingSettingsPage({super.key});
@@ -26,7 +26,6 @@ class _RatingSettingsPageState extends State<RatingSettingsPage> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _enabled = prefs.getBool('rating_enabled') ?? true;
-
       _morningTime = TimeOfDay(
         hour: prefs.getInt('ema_morning_hour') ?? 9,
         minute: prefs.getInt('ema_morning_minute') ?? 0,
@@ -45,7 +44,6 @@ class _RatingSettingsPageState extends State<RatingSettingsPage> {
   Future<void> _save() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('rating_enabled', _enabled);
-
     await prefs.setInt('ema_morning_hour', _morningTime.hour);
     await prefs.setInt('ema_morning_minute', _morningTime.minute);
     await prefs.setInt('ema_afternoon_hour', _afternoonTime.hour);
@@ -74,7 +72,6 @@ class _RatingSettingsPageState extends State<RatingSettingsPage> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            // Master toggle
             Card(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -88,7 +85,7 @@ class _RatingSettingsPageState extends State<RatingSettingsPage> {
                   '3 check-ins per day (morning, afternoon, evening)',
                 ),
                 value: _enabled,
-                activeColor: kPrimaryColor,
+                activeTrackColor: kPrimaryColor,
                 onChanged: (v) async {
                   setState(() => _enabled = v);
                   await _save();
@@ -98,7 +95,6 @@ class _RatingSettingsPageState extends State<RatingSettingsPage> {
 
             const SizedBox(height: 16),
 
-            // Time pickers
             Opacity(
               opacity: _enabled ? 1.0 : 0.4,
               child: Card(
@@ -152,11 +148,10 @@ class _RatingSettingsPageState extends State<RatingSettingsPage> {
 
             const SizedBox(height: 20),
 
-            // Info card
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: kPrimaryColor.withOpacity(0.07),
+                color: kPrimaryColor.withValues(alpha: 0.07),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
@@ -187,14 +182,16 @@ class _RatingSettingsPageState extends State<RatingSettingsPage> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
+                // FIX: capture ScaffoldMessenger and Navigator BEFORE the await
+                // to avoid using BuildContext across async gaps
                 onPressed: () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  final navigator = Navigator.of(context);
                   await _save();
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Settings saved')),
-                    );
-                    Navigator.pop(context);
-                  }
+                  messenger.showSnackBar(
+                    const SnackBar(content: Text('Settings saved')),
+                  );
+                  navigator.pop();
                 },
                 child: const Text('Save Settings'),
               ),
