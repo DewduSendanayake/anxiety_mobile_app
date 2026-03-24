@@ -25,7 +25,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.anxiety_mobile_app"
-        minSdk = flutter.minSdkVersion                          // ← fixed (was flutter.minSdkVersion)
+        minSdk = flutter.minSdkVersion
         targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
