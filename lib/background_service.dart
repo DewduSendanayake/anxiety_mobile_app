@@ -9,18 +9,16 @@ import 'package:geolocator/geolocator.dart';
 import 'package:call_log/call_log.dart';
 import 'package:usage_stats/usage_stats.dart';
 import 'package:flutter_sms_inbox/flutter_sms_inbox.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:screen_state/screen_state.dart';
 import 'package:sensors_plus/sensors_plus.dart';
-import 'package:battery_plus/battery_plus.dart'; // NEW: battery sensor
+import 'package:battery_plus/battery_plus.dart';
 import 'background_service_helper.dart';
 
 // GOOGLE SCRIPT URL
-const String kGoogleScriptUrl =
-    "https://script.google.com/macros/s/AKfycbzZlkyTLxoJgHbV1IqXi4ugXIC9GM5a_MIgkhWEMkA9b-_25wowCmNdOyJjylHONLnl/exec";
+const String kGoogleScriptUrl = "https://script.google.com/macros/s/AKfycbzZlkyTLxoJgHbV1IqXi4ugXIC9GM5a_MIgkhWEMkA9b-_25wowCmNdOyJjylHONLnl/exec";
 
 // ─── Notification IDs ──────────────────────────────────────
 const int kForegroundNotifId = 888;
@@ -48,7 +46,6 @@ Future<void> initializeService() async {
       >()
       ?.createNotificationChannel(channel);
 
-  // Create EMA notification channel (high priority)
   const AndroidNotificationChannel emaChannel = AndroidNotificationChannel(
     'ema_channel',
     'Daily Check-ins',
@@ -81,17 +78,19 @@ void onStart(ServiceInstance service) async {
   final prefs = await SharedPreferences.getInstance();
   String userId = prefs.getString('user_id') ?? "Unknown_User";
 
-  // Retry offline queue on start
   try {
     await BackgroundServiceHelper.retryOfflineQueue();
   } catch (e) {
     debugPrint('Retry offline queue on service start failed: $e');
   }
 
-  // Connectivity listener
+  // ── FIX: connectivity_plus now delivers List<ConnectivityResult> ──
   try {
-    Connectivity().onConnectivityChanged.listen((result) async {
-      if (result != ConnectivityResult.none) {
+    Connectivity().onConnectivityChanged.listen((
+      List<ConnectivityResult> results,
+    ) async {
+      final isConnected = results.any((r) => r != ConnectivityResult.none);
+      if (isConnected) {
         try {
           await BackgroundServiceHelper.retryOfflineQueue();
         } catch (e) {
@@ -119,7 +118,8 @@ void onStart(ServiceInstance service) async {
   // ── REAL-TIME: SCREEN STATE ─────────────────────────────
   Screen screen = Screen();
   try {
-    screen.screenStateStream?.listen((ScreenStateEvent event) {
+    // FIX: removed unnecessary null-aware '?.' — screenStateStream is non-nullable
+    screen.screenStateStream.listen((ScreenStateEvent event) {
       String status = "Unknown";
       if (event == ScreenStateEvent.SCREEN_ON) status = "Screen_On";
       if (event == ScreenStateEvent.SCREEN_OFF) status = "Screen_Off";
@@ -163,7 +163,6 @@ void onStart(ServiceInstance service) async {
         );
       }
     }
-    // Refresh userId in case it changed
     final freshPrefs = await SharedPreferences.getInstance();
     userId = freshPrefs.getString('user_id') ?? userId;
 
@@ -188,8 +187,7 @@ void onStart(ServiceInstance service) async {
 }
 
 // ─────────────────────────────────────────────────────────
-// EMA Schedule: morning / afternoon / evening
-// Default windows: 09:00 | 14:00 | 20:00 (user-configurable)
+// EMA Schedule
 // ─────────────────────────────────────────────────────────
 Future<void> _checkEmaSchedule(
   String userId,
@@ -228,8 +226,8 @@ Future<void> _checkEmaSchedule(
     final lastSubmitted = prefs.getString('ema_submitted_$period') ?? '';
     final lastShown = prefs.getString('ema_notif_shown_$period') ?? '';
 
-    if (lastSubmitted == today) continue; // already done today
-    if (lastShown == today) continue; // notif already fired
+    if (lastSubmitted == today) continue;
+    if (lastShown == today) continue;
 
     if (now.hour == config['hour'] && now.minute == config['minute']) {
       await plugin.show(
@@ -252,14 +250,13 @@ Future<void> _checkEmaSchedule(
 }
 
 // ─────────────────────────────────────────────────────────
-// GAD-7 Weekly Reminder (fires Monday 09:05 if not done this week)
+// GAD-7 Weekly Reminder
 // ─────────────────────────────────────────────────────────
 Future<void> _checkGad7Reminder(
   FlutterLocalNotificationsPlugin plugin,
   SharedPreferences prefs,
 ) async {
   final now = DateTime.now();
-  // Only fire on Monday
   if (now.weekday != DateTime.monday) return;
   if (now.hour != 9 || now.minute != 5) return;
 
@@ -271,10 +268,10 @@ Future<void> _checkGad7Reminder(
   final thisWeek = '${now.year}-W${weekNum.toString().padLeft(2, '0')}';
   final lastWeek = prefs.getString('last_gad7_week') ?? '';
 
-  if (lastWeek == thisWeek) return; // already done this week
+  if (lastWeek == thisWeek) return;
 
   final lastNotifWeek = prefs.getString('gad7_notif_week') ?? '';
-  if (lastNotifWeek == thisWeek) return; // notif already sent
+  if (lastNotifWeek == thisWeek) return;
 
   await plugin.show(
     kGad7ReminderId,
@@ -386,7 +383,7 @@ Future<void> _collectAndSync(String userId) async {
     debugPrint("Usage Stats Error: $e");
   }
 
-  // E. BATTERY (NEW)
+  // E. BATTERY
   try {
     final battery = Battery();
     final level = await battery.batteryLevel;
@@ -396,10 +393,7 @@ Future<void> _collectAndSync(String userId) async {
       "Battery_Status",
       jsonEncode({
         'level_percent': level,
-        'state': state
-            .toString()
-            .split('.')
-            .last, // charging | discharging | full | unknown
+        'state': state.toString().split('.').last,
       }),
     );
   } catch (e) {
