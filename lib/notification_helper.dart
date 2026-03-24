@@ -13,7 +13,7 @@ class NotificationHelper {
     onNotificationClick = onPayload;
 
     const AndroidInitializationSettings androidInit =
-        AndroidInitializationSettings('ic_launcher');
+        AndroidInitializationSettings('@mipmap/ic_launcher');
 
     const InitializationSettings initSettings = InitializationSettings(
       android: androidInit,
