@@ -62,7 +62,6 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
       jsonEncode(data),
     );
 
-    // Mark this period as submitted for today
     await prefs.setString('ema_submitted_${widget.timePeriod}', today);
 
     if (mounted) Navigator.pop(context, true);
@@ -88,7 +87,6 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Handle bar
           Center(
             child: Container(
               width: 40,
@@ -131,7 +129,7 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
                   ),
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? kPrimaryColor.withOpacity(0.12)
+                        ? kPrimaryColor.withValues(alpha: 0.12)
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
@@ -170,9 +168,9 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
           ),
 
           const SizedBox(height: 24),
-          Text(
+          const Text(
             'What were you doing?',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
               color: Colors.black87,
@@ -190,7 +188,7 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
                 label: Text(ctx, style: const TextStyle(fontSize: 13)),
                 selected: isSelected,
                 onSelected: (_) => setState(() => _selectedContext = ctx),
-                selectedColor: kPrimaryColor.withOpacity(0.15),
+                selectedColor: kPrimaryColor.withValues(alpha: 0.15),
                 checkmarkColor: kPrimaryColor,
                 side: BorderSide(
                   color: isSelected ? kPrimaryColor : Colors.grey.shade300,
@@ -356,7 +354,6 @@ class _Gad7ScreenState extends State<Gad7Screen> {
     }
   }
 
-  /// Returns ISO week string like "2026-W12"
   String _weekKey() {
     final now = DateTime.now();
     final weekNum =
@@ -379,11 +376,10 @@ class _Gad7ScreenState extends State<Gad7Screen> {
       ),
       body: Column(
         children: [
-          // Info banner
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            color: kPrimaryColor.withOpacity(0.08),
+            color: kPrimaryColor.withValues(alpha: 0.08),
             child: Text(
               'Over the last 2 weeks, how often have you been bothered by the following problems?',
               style: TextStyle(
@@ -406,11 +402,13 @@ class _Gad7ScreenState extends State<Gad7Screen> {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(14),
                     border: _answers[qi] != null
-                        ? Border.all(color: kPrimaryColor.withOpacity(0.4))
+                        ? Border.all(
+                            color: kPrimaryColor.withValues(alpha: 0.4),
+                          )
                         : null,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
+                        color: Colors.black.withValues(alpha: 0.04),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -469,7 +467,7 @@ class _Gad7ScreenState extends State<Gad7Screen> {
                               ),
                               decoration: BoxDecoration(
                                 color: isSelected
-                                    ? kPrimaryColor.withOpacity(0.1)
+                                    ? kPrimaryColor.withValues(alpha: 0.1)
                                     : Colors.grey.shade50,
                                 borderRadius: BorderRadius.circular(10),
                                 border: Border.all(
@@ -524,14 +522,13 @@ class _Gad7ScreenState extends State<Gad7Screen> {
             ),
           ),
 
-          // Score preview + submit
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
+                  color: Colors.black.withValues(alpha: 0.06),
                   blurRadius: 12,
                   offset: const Offset(0, -4),
                 ),
