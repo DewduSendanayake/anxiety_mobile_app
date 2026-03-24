@@ -1,8 +1,6 @@
 import 'dart:io';
-import 'package:anxiety_mobile_app/ema_and_gad7.dart' show EmaRatingSheet;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:usage_stats/usage_stats.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,13 +9,11 @@ import 'background_service_helper.dart';
 import 'notification_helper.dart';
 import 'rating_settings.dart';
 import 'profile_page.dart';
-import 'ema_and_gad7.dart';
-import 'package:intl/intl.dart';
+import 'ema_and_gad7.dart'; // FIX: removed duplicate 'package:anxiety_mobile_app/ema_and_gad7.dart' import
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-// ─── Theme constants (exported so other files can import) ──
 const Color kPrimaryColor = Color(0xFF00695C);
 const Color kSecondaryColor = Color(0xFFB2DFDB);
 const Color kAccentColor = Color(0xFF009688);
@@ -27,7 +23,13 @@ const Color kBackgroundColor = Color(0xFFF5F7FA);
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await NotificationHelper.init(onPayload: _handleNotificationPayload);
+  runApp(const AnxietyResearchApp());
+
+  try {
+    await NotificationHelper.init(onPayload: _handleNotificationPayload);
+  } catch (e) {
+    debugPrint('NotificationHelper init failed: $e');
+  }
 
   try {
     await BackgroundServiceHelper.retryOfflineQueue();
@@ -36,8 +38,11 @@ void main() async {
   }
 
   try {
-    Connectivity().onConnectivityChanged.listen((result) async {
-      if (result != ConnectivityResult.none) {
+    Connectivity().onConnectivityChanged.listen((
+      List<ConnectivityResult> results,
+    ) async {
+      final isConnected = results.any((r) => r != ConnectivityResult.none);
+      if (isConnected) {
         try {
           await BackgroundServiceHelper.retryOfflineQueue();
         } catch (e) {
@@ -48,28 +53,15 @@ void main() async {
   } catch (e) {
     debugPrint('Connectivity listener setup failed: $e');
   }
-
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.dark,
-    ),
-  );
-
-  runApp(const AnxietyResearchApp());
 }
 
-/// Central notification payload router
 void _handleNotificationPayload(String? payload) {
   if (payload == null) return;
   final ctx = navigatorKey.currentContext;
   if (ctx == null) return;
 
   if (payload.startsWith('ema_')) {
-    final period = payload.replaceFirst(
-      'ema_',
-      '',
-    ); // morning/afternoon/evening
+    final period = payload.replaceFirst('ema_', '');
     showModalBottomSheet(
       context: ctx,
       isScrollControlled: true,
@@ -156,9 +148,6 @@ class AnxietyResearchApp extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────
-// Splash/Router — decides where to send the user on launch
-// ─────────────────────────────────────────────────────────
 class SplashRouter extends StatefulWidget {
   const SplashRouter({super.key});
 
@@ -182,19 +171,16 @@ class _SplashRouterState extends State<SplashRouter> {
     if (!mounted) return;
 
     if (userId == null || userId.isEmpty) {
-      // First time — go to login
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const LoginPage()),
       );
     } else if (!profileComplete) {
-      // Logged in but profile not filled
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const ProfilePage()),
       );
     } else {
-      // Fully set up — dashboard
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const DashboardPage()),
@@ -210,9 +196,6 @@ class _SplashRouterState extends State<SplashRouter> {
   }
 }
 
-// ─────────────────────────────────────────────────────────
-// Login Page
-// ─────────────────────────────────────────────────────────
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -290,7 +273,6 @@ class _LoginPageState extends State<LoginPage> {
     }
 
     if (mounted) {
-      // Always go to profile page first (router handles if already complete)
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const ProfilePage()),
@@ -354,8 +336,6 @@ class _LoginPageState extends State<LoginPage> {
                   style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
                 ),
                 const SizedBox(height: 40),
-
-                // Step 1: Permissions
                 _buildCard(
                   title: "1. System Configuration",
                   isActive: !_permissionsGranted,
@@ -404,10 +384,7 @@ class _LoginPageState extends State<LoginPage> {
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 20),
-
-                // Step 2: Login
                 Opacity(
                   opacity: _permissionsGranted ? 1.0 : 0.5,
                   child: _buildCard(
@@ -436,7 +413,6 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 30),
                 const Text(
                   "Your data is encrypted and used solely for research purposes.",
@@ -462,13 +438,13 @@ class _LoginPageState extends State<LoginPage> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
         ],
         border: isActive
-            ? Border.all(color: kPrimaryColor.withOpacity(0.3))
+            ? Border.all(color: kPrimaryColor.withValues(alpha: 0.3))
             : null,
       ),
       padding: const EdgeInsets.all(20),
@@ -491,9 +467,6 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
-// ─────────────────────────────────────────────────────────
-// Dashboard Page
-// ─────────────────────────────────────────────────────────
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
 
@@ -514,9 +487,7 @@ class _DashboardPageState extends State<DashboardPage> {
   void initState() {
     super.initState();
     _loadCachedId();
-    // Route notification taps to EMA / GAD-7
     NotificationHelper.onNotificationClick = _handleNotificationPayload;
-    // Prompt GAD-7 if due
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkGad7OnOpen());
   }
 
@@ -571,13 +542,11 @@ class _DashboardPageState extends State<DashboardPage> {
       final now = DateTime.now();
       final prefs = await SharedPreferences.getInstance();
       String uid = prefs.getString('user_id') ?? "Unknown";
-
       bool enoughTime =
           _lastSentAt == null ||
           now.difference(_lastSentAt!) >= _minSendInterval;
       bool enoughDelta =
           (event.pressure - _lastPressureSent).abs() >= _minPressureDelta;
-
       if (enoughTime && enoughDelta) {
         _lastSentAt = now;
         _lastPressureSent = event.pressure;
@@ -617,7 +586,6 @@ class _DashboardPageState extends State<DashboardPage> {
         padding: const EdgeInsets.all(24.0),
         child: Column(
           children: [
-            // Status badge
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
@@ -647,9 +615,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 ],
               ),
             ),
-
             const Spacer(),
-
             const Text(
               "Anxiety Event Recorder",
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
@@ -660,10 +626,7 @@ class _DashboardPageState extends State<DashboardPage> {
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey.shade600, fontSize: 15),
             ),
-
             const SizedBox(height: 40),
-
-            // Sensor pad
             Listener(
               onPointerDown: (e) => _handleTouch(e, true),
               onPointerMove: (e) => _handleTouch(e, true),
@@ -684,7 +647,9 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: kPrimaryColor.withOpacity(_isPressed ? 0.4 : 0.1),
+                      color: kPrimaryColor.withValues(
+                        alpha: _isPressed ? 0.4 : 0.1,
+                      ),
                       blurRadius: _isPressed ? 30 : 20,
                       spreadRadius: _isPressed ? 5 : 0,
                       offset: const Offset(0, 10),
@@ -709,7 +674,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       size: 60,
                       color: _isPressed
                           ? Colors.white
-                          : kPrimaryColor.withOpacity(0.5),
+                          : kPrimaryColor.withValues(alpha: 0.5),
                     ),
                     const SizedBox(height: 10),
                     Text(
@@ -726,9 +691,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 ),
               ),
             ),
-
             const Spacer(),
-
             Text(
               _cachedId.isNotEmpty ? "ID: $_cachedId" : "ID: (loading)",
               style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
@@ -740,7 +703,6 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 }
 
-/// Global handler (used both from notification callback and inside dashboard)
 void _handleNotificationPayloadGlobal(String? payload) {
   if (payload == null) return;
   final ctx = navigatorKey.currentContext;
