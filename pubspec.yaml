@@ -1,6 +1,13 @@
 name: anxiety_mobile_app
 
-description: "This is a mobile app for the collect anxiety patients data. The app collects data such as location, call logs, SMS logs, app usage, battery level, screen state, and sensor data. The collected data is then sent to a server for analysis. THIS APP IS FOR RESEARCH PURPOSES ONLY. IT IS NOT INTENDED FOR PRODUCTION USE. THE APP MAY NOT BE STABLE AND MAY CONTAIN BUGS. USE AT YOUR OWN RISK. THE DEVELOPERS ARE NOT RESPONSIBLE FOR ANY DAMAGE OR LOSS CAUSED BY THE USE OF THIS APP. BY USING THIS APP, YOU AGREE TO THE TERMS AND CONDITIONS OF THIS LICENSE. IF YOU DO NOT AGREE TO THE TERMS AND CONDITIONS OF THIS LICENSE, DO NOT USE THIS APP. THIS APP IS PROVIDED AS IS AND WITHOUT ANY WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. THE DEVELOPERS ARE NOT LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE APP OR THE USE OR OTHER DEALINGS IN THE APP."
+description: >
+  A research-focused mobile application designed to collect behavioral and contextual data from consenting users to support anxiety-related studies. 
+  The app gathers data such as location, call and SMS logs, app usage, battery status, screen activity, and sensor signals, which are securely transmitted 
+  to a server for analysis.
+
+  This application is strictly intended for academic and research purposes only and is not designed for production use. 
+  It may be unstable and subject to changes. By using this app, users provide informed consent for data collection and acknowledge that the app is provided 
+  "as is" without warranties of any kind. The developers are not liable for any damages or data loss resulting from its use.
 
 publish_to: "none"
 
