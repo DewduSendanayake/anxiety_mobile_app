@@ -145,7 +145,6 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               const SizedBox(height: 28),
 
-              // Age
               _sectionLabel('Age'),
               TextFormField(
                 controller: _ageController,
@@ -226,7 +225,6 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               const SizedBox(height: 16),
 
-              // Sleep quality slider
               _sectionLabel(
                 'How would you rate your typical sleep quality? (1 = Very Poor, 5 = Excellent)',
               ),
@@ -319,6 +317,8 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  /// FIX: replaced deprecated RadioListTile groupValue/onChanged
+  /// with RadioGroup ancestor pattern (Flutter 3.32+)
   Widget _radioGroup(
     List<String> options,
     String? groupValue,
@@ -331,20 +331,21 @@ class _ProfilePageState extends State<ProfilePage> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey.shade300),
       ),
-      child: Column(
-        children: options
-            .map(
-              (o) => RadioListTile<String>(
-                title: Text(o),
-                value: o,
-                groupValue: groupValue,
-                onChanged: onChanged,
-                activeColor: kPrimaryColor,
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-              ),
-            )
-            .toList(),
+      child: RadioGroup<String>(
+        groupValue: groupValue,
+        onChanged: onChanged,
+        child: Column(
+          children: options
+              .map(
+                (o) => RadioListTile<String>(
+                  title: Text(o),
+                  value: o,
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              )
+              .toList(),
+        ),
       ),
     );
   }
