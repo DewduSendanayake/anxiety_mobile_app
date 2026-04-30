@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'background_service_helper.dart';
-import 'main.dart'; // for kPrimaryColor, kAccentColor, kBackgroundColor
+import 'theme/app_theme.dart';
+import 'pages/dashboard_page.dart';
+import 'main.dart'; 
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -12,6 +14,45 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    final profileJson = prefs.getString('user_profile_data');
+    if (profileJson != null) {
+      final data = jsonDecode(profileJson);
+      setState(() {
+        _ageController.text = data['age'] ?? '';
+        _gender = data['gender'];
+        _maritalStatus = data['marital_status'];
+        _employmentStatus = data['employment_status'];
+        _financialStatus = data['financial_status'];
+        _educationLevel = data['education_level'];
+        _livingSituation = data['living_situation'];
+        _anxietyDiagnosis = data['anxiety_diagnosis'];
+        _onMedication = data['on_medication'];
+        _sleepQuality = double.tryParse(data['sleep_quality_rating'] ?? '3') ?? 3;
+        
+        _morningTime = TimeOfDay(
+          hour: prefs.getInt('ema_morning_hour') ?? 9,
+          minute: prefs.getInt('ema_morning_minute') ?? 0,
+        );
+        _afternoonTime = TimeOfDay(
+          hour: prefs.getInt('ema_afternoon_hour') ?? 14,
+          minute: prefs.getInt('ema_afternoon_minute') ?? 0,
+        );
+        _eveningTime = TimeOfDay(
+          hour: prefs.getInt('ema_evening_hour') ?? 20,
+          minute: prefs.getInt('ema_evening_minute') ?? 0,
+        );
+      });
+    }
+  }
+
   final _formKey = GlobalKey<FormState>();
   bool _isSaving = false;
 
@@ -114,6 +155,7 @@ class _ProfilePageState extends State<ProfilePage> {
     );
 
     await prefs.setBool('profile_complete', true);
+    await prefs.setString('user_profile_data', jsonEncode(profile));
 
     // Save notification times
     await prefs.setInt('ema_morning_hour', _morningTime.hour);
@@ -124,14 +166,22 @@ class _ProfilePageState extends State<ProfilePage> {
     await prefs.setInt('ema_evening_minute', _eveningTime.minute);
 
     if (mounted) {
-      Navigator.pushReplacementNamed(context, '/dashboard');
+      setState(() => _isSaving = false);
+      if (Navigator.canPop(context)) {
+        Navigator.pop(context);
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => DashboardPage(userId: uid)),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kBackgroundColor,
+      backgroundColor: AppTheme.kBgTop,
       body: SafeArea(
         child: Form(
           key: _formKey,
@@ -139,7 +189,7 @@ class _ProfilePageState extends State<ProfilePage> {
             padding: const EdgeInsets.all(24),
             children: [
               const SizedBox(height: 8),
-              const Icon(Icons.person_pin, size: 52, color: kPrimaryColor),
+              const Icon(Icons.person_pin, size: 52, color: AppTheme.kPrimaryDeep),
               const SizedBox(height: 12),
               const Text(
                 'Participant Profile',
@@ -331,7 +381,7 @@ class _ProfilePageState extends State<ProfilePage> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: kPrimaryColor, width: 2),
+        borderSide: const BorderSide(color: AppTheme.kPrimaryDeep, width: 2),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     );
@@ -412,7 +462,7 @@ class _ProfilePageState extends State<ProfilePage> {
             min: 1,
             max: 5,
             divisions: 4,
-            activeColor: kPrimaryColor,
+            activeColor: AppTheme.kPrimaryDeep,
             label: labels[_sleepQuality.round() - 1],
             onChanged: (v) => setState(() => _sleepQuality = v),
           ),
@@ -446,18 +496,18 @@ class _ProfilePageState extends State<ProfilePage> {
         side: BorderSide(color: Colors.grey.shade300),
       ),
       child: ListTile(
-        leading: Icon(icon, color: kPrimaryColor),
+        leading: Icon(icon, color: AppTheme.kPrimaryDeep),
         title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
         trailing: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: kPrimaryColor.withValues(alpha: 0.1),
+            color: AppTheme.kPrimaryDeep.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Text(
             time.format(context),
             style: const TextStyle(
-              color: kPrimaryColor,
+              color: AppTheme.kPrimaryDeep,
               fontWeight: FontWeight.bold,
             ),
           ),
