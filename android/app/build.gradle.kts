@@ -1,7 +1,17 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// KOTLIN DSL UPDATE: Using 'val' instead of 'def' and importing Java classes
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
 android {
@@ -11,7 +21,6 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        // High SDKs often require Java 11 or 17
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
         isCoreLibraryDesugaringEnabled = true
@@ -29,9 +38,24 @@ android {
         versionName = flutter.versionName
     }
 
+    // KOTLIN DSL UPDATE: Safely extracting properties as strings
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties.getProperty("keyAlias")
+            keyPassword = keystoreProperties.getProperty("keyPassword")
+            storePassword = keystoreProperties.getProperty("storePassword")
+            
+            val storeFilePath = keystoreProperties.getProperty("storeFile")
+            if (storeFilePath != null) {
+                storeFile = file(storeFilePath)
+            }
+        }
+    }
+
     buildTypes {
-        release {
-            signingConfig = signingConfigs.getByName("debug")
+        // KOTLIN DSL UPDATE: Using getByName for modifying existing build types
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false 
             isShrinkResources = false
         }
@@ -43,6 +67,5 @@ flutter {
 }
 
 dependencies {
-    // Upgraded desugar version for better compatibility with SDK 34+
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
