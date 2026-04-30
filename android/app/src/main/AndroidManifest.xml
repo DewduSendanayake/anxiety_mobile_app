@@ -23,7 +23,7 @@
 
         <meta-data android:name="flutterEmbedding" android:value="2" />
 
-        <service android:name="id.flutter.flutter_background_service.BackgroundService" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="true" android:foregroundServiceType="location|dataSync" />
+        <service android:name="id.flutter.flutter_background_service.BackgroundService" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="true" android:foregroundServiceType="location|dataSync" android:stopWithTask="false" />
 
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop" android:theme="@style/LaunchTheme" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode" android:hardwareAccelerated="true" android:windowSoftInputMode="adjustResize">
 
