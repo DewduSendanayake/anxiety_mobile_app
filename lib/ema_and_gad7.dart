@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'background_service_helper.dart';
-import 'main.dart'; // for kPrimaryColor
+import 'theme/app_theme.dart';
+import 'main.dart'; 
 
 // ─────────────────────────────────────────────────────────
 // EMA Rating Bottom Sheet (called 3x daily)
@@ -129,11 +130,11 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
                   ),
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? kPrimaryColor.withValues(alpha: 0.12)
+                        ? AppTheme.kPrimaryDeep.withValues(alpha: 0.12)
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: isSelected ? kPrimaryColor : Colors.transparent,
+                      color: isSelected ? AppTheme.kPrimaryDeep : Colors.transparent,
                       width: 2,
                     ),
                   ),
@@ -149,14 +150,14 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          color: isSelected ? kPrimaryColor : Colors.grey,
+                          color: isSelected ? AppTheme.kPrimaryDeep : Colors.grey,
                         ),
                       ),
                       Text(
                         _labels[i],
                         style: TextStyle(
                           fontSize: 9,
-                          color: isSelected ? kPrimaryColor : Colors.grey,
+                          color: isSelected ? AppTheme.kPrimaryDeep : Colors.grey,
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -188,10 +189,10 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
                 label: Text(ctx, style: const TextStyle(fontSize: 13)),
                 selected: isSelected,
                 onSelected: (_) => setState(() => _selectedContext = ctx),
-                selectedColor: kPrimaryColor.withValues(alpha: 0.15),
-                checkmarkColor: kPrimaryColor,
+                selectedColor: AppTheme.kPrimaryDeep.withValues(alpha: 0.15),
+                checkmarkColor: AppTheme.kPrimaryDeep,
                 side: BorderSide(
-                  color: isSelected ? kPrimaryColor : Colors.grey.shade300,
+                  color: isSelected ? AppTheme.kPrimaryDeep : Colors.grey.shade300,
                 ),
               );
             }).toList(),
@@ -379,7 +380,7 @@ class _Gad7ScreenState extends State<Gad7Screen> {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            color: kPrimaryColor.withValues(alpha: 0.08),
+            color: AppTheme.kPrimaryDeep.withValues(alpha: 0.08),
             child: Text(
               'Over the last 2 weeks, how often have you been bothered by the following problems?',
               style: TextStyle(
@@ -403,7 +404,7 @@ class _Gad7ScreenState extends State<Gad7Screen> {
                     borderRadius: BorderRadius.circular(14),
                     border: _answers[qi] != null
                         ? Border.all(
-                            color: kPrimaryColor.withValues(alpha: 0.4),
+                            color: AppTheme.kPrimaryDeep.withValues(alpha: 0.4),
                           )
                         : null,
                     boxShadow: [
@@ -425,7 +426,7 @@ class _Gad7ScreenState extends State<Gad7Screen> {
                             CircleAvatar(
                               radius: 13,
                               backgroundColor: _answers[qi] != null
-                                  ? kPrimaryColor
+                                  ? AppTheme.kPrimaryDeep
                                   : Colors.grey.shade200,
                               child: Text(
                                 '${qi + 1}',
@@ -467,12 +468,12 @@ class _Gad7ScreenState extends State<Gad7Screen> {
                               ),
                               decoration: BoxDecoration(
                                 color: isSelected
-                                    ? kPrimaryColor.withValues(alpha: 0.1)
+                                    ? AppTheme.kPrimaryDeep.withValues(alpha: 0.1)
                                     : Colors.grey.shade50,
                                 borderRadius: BorderRadius.circular(10),
                                 border: Border.all(
                                   color: isSelected
-                                      ? kPrimaryColor
+                                      ? AppTheme.kPrimaryDeep
                                       : Colors.grey.shade200,
                                   width: isSelected ? 2 : 1,
                                 ),
@@ -484,7 +485,7 @@ class _Gad7ScreenState extends State<Gad7Screen> {
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: isSelected
-                                          ? kPrimaryColor
+                                          ? AppTheme.kPrimaryDeep
                                           : Colors.grey.shade400,
                                     ),
                                   ),
@@ -506,7 +507,7 @@ class _Gad7ScreenState extends State<Gad7Screen> {
                                   if (isSelected)
                                     const Icon(
                                       Icons.check_circle,
-                                      color: kPrimaryColor,
+                                      color: AppTheme.kPrimaryDeep,
                                       size: 18,
                                     ),
                                 ],
