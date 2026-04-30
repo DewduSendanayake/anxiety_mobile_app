@@ -61,7 +61,7 @@ class _LoginPageState extends State<LoginPage> {
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
-          pageBuilder: (_, __, ___) => const DashboardPage(),
+          pageBuilder: (_, __, ___) => const ProfilePage(),
           transitionsBuilder: (_, a, __, c) =>
               FadeTransition(opacity: a, child: c),
           transitionDuration: const Duration(milliseconds: 800),
