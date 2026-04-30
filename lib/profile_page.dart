@@ -27,6 +27,11 @@ class _ProfilePageState extends State<ProfilePage> {
   String? _onMedication;
   double _sleepQuality = 3;
 
+  // --- Notification Times ---
+  TimeOfDay _morningTime = const TimeOfDay(hour: 9, minute: 0);
+  TimeOfDay _afternoonTime = const TimeOfDay(hour: 14, minute: 0);
+  TimeOfDay _eveningTime = const TimeOfDay(hour: 20, minute: 0);
+
   static const _genders = ['Male', 'Female', 'Non-binary', 'Prefer not to say'];
   static const _maritalStatuses = [
     'Single',
@@ -109,6 +114,14 @@ class _ProfilePageState extends State<ProfilePage> {
     );
 
     await prefs.setBool('profile_complete', true);
+
+    // Save notification times
+    await prefs.setInt('ema_morning_hour', _morningTime.hour);
+    await prefs.setInt('ema_morning_minute', _morningTime.minute);
+    await prefs.setInt('ema_afternoon_hour', _afternoonTime.hour);
+    await prefs.setInt('ema_afternoon_minute', _afternoonTime.minute);
+    await prefs.setInt('ema_evening_hour', _eveningTime.hour);
+    await prefs.setInt('ema_evening_minute', _eveningTime.minute);
 
     if (mounted) {
       Navigator.pushReplacementNamed(context, '/dashboard');
@@ -231,6 +244,39 @@ class _ProfilePageState extends State<ProfilePage> {
               const SizedBox(height: 8),
               _buildSlider(),
               const SizedBox(height: 32),
+
+              const Divider(),
+              const SizedBox(height: 24),
+              const Text(
+                'Daily Check-in Preferences',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Choose when you want to be prompted for your daily anxiety check-ins (1–5 scale).',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 20),
+
+              _timeTile(
+                'Morning Check-in',
+                _morningTime,
+                (t) => setState(() => _morningTime = t),
+                Icons.wb_sunny_outlined,
+              ),
+              _timeTile(
+                'Afternoon Check-in',
+                _afternoonTime,
+                (t) => setState(() => _afternoonTime = t),
+                Icons.wb_cloudy_outlined,
+              ),
+              _timeTile(
+                'Evening Check-in',
+                _eveningTime,
+                (t) => setState(() => _eveningTime = t),
+                Icons.nightlight_round_outlined,
+              ),
+              const SizedBox(height: 40),
 
               SizedBox(
                 width: double.infinity,
@@ -382,6 +428,44 @@ class _ProfilePageState extends State<ProfilePage> {
                 .toList(),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _timeTile(
+    String label,
+    TimeOfDay time,
+    ValueChanged<TimeOfDay> onChanged,
+    IconData icon,
+  ) {
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade300),
+      ),
+      child: ListTile(
+        leading: Icon(icon, color: kPrimaryColor),
+        title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+        trailing: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: kPrimaryColor.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            time.format(context),
+            style: const TextStyle(
+              color: kPrimaryColor,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        onTap: () async {
+          final picked = await showTimePicker(context: context, initialTime: time);
+          if (picked != null) onChanged(picked);
+        },
       ),
     );
   }
