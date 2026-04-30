@@ -1,80 +1,71 @@
-# 🛠 Team Setup & Handover Guide
-**Project: Anxiety Research Mobile App (Digital Phenotyping)**
+# 🛠 Team Setup & Deployment Guide
+**Project: SLIIT Anxiety Research Mobile App (2026)**
 
-This document provides step-by-step instructions for team members to set up the development environment and build the app.
-
----
-
-## 1. System Dependencies (Pre-requisites)
-Every team member must have the following installed:
-
-*   **Flutter SDK (Stable)**: [Download here](https://docs.flutter.dev/get-started/install). 
-    *   *Verification*: Run `flutter doctor` in your terminal.
-*   **Java JDK 17**: Required for Android builds.
-*   **Android SDK**: API Level 34 (Android 14) is required.
-*   **Git**: To clone the project.
+This guide ensures all team members can build and deploy the application with identical security and configuration settings.
 
 ---
 
-## 2. Project Initialization
-1.  **Clone the project**:
-    ```bash
-    git clone <your-repository-url>
-    cd anxiety_mobile_app
-    ```
-2.  **Install Flutter packages**:
-    ```bash
-    flutter pub get
-    ```
+## 1. Environment Setup
+Every team member must have:
+*   **Flutter SDK**: [Download](https://docs.flutter.dev/get-started/install). Verify with `flutter doctor`.
+*   **Java JDK 17**: Required for building the Android APK.
+*   **Android SDK**: API Level 34 (Android 14) or higher.
 
 ---
 
-## 3. Security Configuration (DO NOT SKIP)
-For security, the API keys are not in the code. You must set them up locally:
+## 2. Google Sheets Backend Setup
+The app uses a custom Google Apps Script to handle data. **One person** should host the master script:
 
-1.  Create a file at `lib/config.dart`.
-2.  Paste this code inside:
-    ```dart
-    class AppConfig {
-      static const String googleScriptUrl = String.fromEnvironment('SCRIPT_URL');
-      static const String authToken = String.fromEnvironment('AUTH_TOKEN');
-    }
-    ```
-3.  **Note**: This file is ignored by Git. You must manually provide the keys when running the app.
-
----
-
-## 4. How to Run & Build
-
-### Option A: Using Android Studio (Recommended)
-1.  Open the project in Android Studio.
-2.  Go to **Run** -> **Edit Configurations...**
-3.  In the **Additional run args** field, enter:
-    `--dart-define=SCRIPT_URL="YOUR_URL" --dart-define=AUTH_TOKEN="YOUR_TOKEN"`
-4.  Click **OK** and press the Green Run button.
-
-### Option B: Using Only the SDK (Command Line)
-If you don't use an IDE, use these commands:
-
-*   **To Run**:
-    ```bash
-    flutter run --dart-define=SCRIPT_URL="YOUR_URL" --dart-define=AUTH_TOKEN="YOUR_TOKEN"
-    ```
-*   **To Build Release APK**:
-    ```bash
-    flutter build apk --obfuscate --split-debug-info=./debug-info \
-      --dart-define=SCRIPT_URL="YOUR_URL" \
-      --dart-define=AUTH_TOKEN="YOUR_TOKEN"
-    ```
+1.  Create a new Google Sheet.
+2.  Go to **Extensions > Apps Script**.
+3.  Copy the code from `google_apps_script/doPost.gs` into the editor.
+4.  **Initialize Security**:
+    *   Find the function `setupScript()` in the script editor.
+    *   Select it in the toolbar and click **Run**. This creates the study folder and sets the `AUTH_TOKEN`.
+5.  **Deploy**:
+    *   Click **Deploy > New Deployment**.
+    *   Select **Web App**.
+    *   Set "Execute as" to **Me**.
+    *   Set "Who has access" to **Anyone**. (The `AUTH_TOKEN` will protect it).
+    *   Copy the **Web App URL**. This is your `SCRIPT_URL`.
 
 ---
 
-## 5. Troubleshooting
-*   **"Timer not found"**: Ensure `import 'dart:async';` is at the top of the file.
-*   **"Background Service not found"**: Run `flutter pub get` again.
-*   **Data not appearing in Sheets**: Check that your `AUTH_TOKEN` exactly matches the one in your Google Apps Script.
-*   **Background service stops**: Ensure the test phone has **"Battery Optimization" set to "Unrestricted"** for this app.
+## 3. Building the Application
+To protect research methodology, we use **Obfuscated Builds**. Use the following values for all team builds:
+
+*   **Master Auth Token**: `7c09db655b5f697a4faf0b18a517d5fb` (Set by `setupScript`)
+
+### Build Command (Windows PowerShell):
+```powershell
+flutter build apk --obfuscate --split-debug-info=./debug-info `
+  --dart-define=SCRIPT_URL="YOUR_WEB_APP_URL" `
+  --dart-define=AUTH_TOKEN="7c09db655b5f697a4faf0b18a517d5fb"
+```
 
 ---
-**Research Lead**: Dulhara KKaushalya
-**Date**: April 2026
+
+## 4. Participant Onboarding Flow
+When testing the app, follow this sequence:
+1.  **Login**: Enter a unique Participant ID (e.g., `P001`).
+2.  **Permissions**: Accept **all** permissions (Location, Usage, etc.).
+3.  **Profile**: Fill in the demographic data. This is a **one-time** setup.
+4.  **Battery**: If the Dashboard shows a warning, tap it and set the app to **"Unrestricted"** in Android Battery Settings.
+
+---
+
+## 5. Modifying the App
+*   **Theme**: Colors and fonts are managed in `lib/theme/app_theme.dart`.
+*   **Data Types**: To add new sensors, update `lib/services/background/data_collector.dart`.
+*   **Sync Logic**: Managed in `lib/services/background/background_service_helper.dart`.
+
+---
+
+## 6. Common Issues & Fixes
+*   **"Unauthorized" Error**: Your `AUTH_TOKEN` in the build command does not match the one in Google Script. Run `diagnoseSetup()` in Apps Script to verify.
+*   **Missing Data**: Ensure you have a stable internet connection for the first sync. The app will queue data offline if the connection is lost.
+*   **Build Failure**: Run `flutter clean` then `flutter pub get` to reset the build cache.
+
+---
+**Lead Developer**: Dulhara Kaushalya
+**Study Period**: May 2026 - June 2026
