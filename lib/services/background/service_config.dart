@@ -1,7 +1,14 @@
 class ServiceConfig {
-  // Security: In production, consider moving this to an .env file
-  static const String googleScriptUrl =
-      "https://script.google.com/macros/s/AKfycbxO6aA5rbKY2zyDymVdZUJR4fa6YkCdhUXEmlrlfHzQlszF0HR3x8j7wnlwLDyO9h2D/exec";
+  static const String googleScriptUrl = String.fromEnvironment(
+    'SCRIPT_URL',
+    defaultValue:
+        "https://script.google.com/macros/s/AKfycbzZlkyTLxoJgHbV1IqXi4ugXIC9GM5a_MIgkhWEMkA9b-_25wowCmNdOyJjylHONLnl/exec",
+  );
+
+  static const String authToken = String.fromEnvironment(
+    'AUTH_TOKEN',
+    defaultValue: "7c09db655b5f697a4faf0b18a517d5fb",
+  );
 
   // Notification Channels
   static const String channelId = 'research_channel_01';
