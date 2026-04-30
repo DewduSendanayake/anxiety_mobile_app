@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,6 +11,7 @@ import '../services/rating_settings.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import '../ema_and_gad7.dart';
+import '../profile_page.dart';
 import '../main.dart';
 
 class DashboardPage extends StatefulWidget {
@@ -199,13 +201,23 @@ class _DashboardPageState extends State<DashboardPage>
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.settings_rounded, color: AppTheme.kTextLight),
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const RatingSettingsPage()),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.person_outline_rounded, color: AppTheme.kTextDark),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ProfilePage()),
+            ),
           ),
-        ),
+          IconButton(
+            icon: const Icon(Icons.settings_rounded, color: AppTheme.kTextDark),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const RatingSettingsPage()),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: Container(
         decoration: const BoxDecoration(
