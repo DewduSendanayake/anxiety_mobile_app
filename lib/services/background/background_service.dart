@@ -5,6 +5,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:battery_plus/battery_plus.dart';
 
 import '../background_service_helper.dart';
 import 'service_config.dart';
@@ -40,6 +41,7 @@ Future<void> initializeService() async {
       initialNotificationTitle: 'Research Active',
       initialNotificationContent: 'Collecting anonymous usage data...',
       foregroundServiceNotificationId: ServiceConfig.notificationId,
+      autoStartOnBoot: true,
     ),
     iosConfiguration: IosConfiguration(),
   );
@@ -76,6 +78,24 @@ void onStart(ServiceInstance service) async {
         .listen((event) => service.setAsBackgroundService());
   }
   service.on('stopService').listen((event) => service.stopSelf());
+
+  // ── REAL-TIME: BATTERY MONITOR ──────────────────────────
+  try {
+    final battery = Battery();
+    battery.onBatteryStateChanged.listen((BatteryState state) async {
+      final level = await battery.batteryLevel;
+      await prefs.setInt('last_battery_level', level);
+      if (level <= 15 && state == BatteryState.discharging) {
+        await BackgroundServiceHelper.sendToSheet(
+          userId,
+          "Critical_Battery_Warning",
+          "Level: $level%",
+        );
+      }
+    });
+  } catch (e) {
+    debugPrint("Battery Monitor Error: $e");
+  }
 
   // 3. Start Real-Time Sensors
   final sensorListener = SensorListener();
