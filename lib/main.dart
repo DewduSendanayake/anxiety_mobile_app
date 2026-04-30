@@ -181,6 +181,14 @@ class _SplashRouterState extends State<SplashRouter> {
         MaterialPageRoute(builder: (_) => const ProfilePage()),
       );
     } else {
+      // Ensure service is running if already logged in
+      try {
+        await initializeService();
+      } catch (e) {
+        debugPrint('Service init failed in SplashRouter: $e');
+      }
+
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const DashboardPage()),
@@ -482,13 +490,53 @@ class _DashboardPageState extends State<DashboardPage> {
   double _lastPressureSent = 0.0;
   static const Duration _minSendInterval = Duration(milliseconds: 300);
   static const double _minPressureDelta = 0.03;
+  bool _isServiceRunning = false;
+  bool _isBatteryOptimized = false;
+  Timer? _statusTimer;
 
   @override
   void initState() {
     super.initState();
     _loadCachedId();
+    _checkSystemStatus();
+    _statusTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => _checkSystemStatus(),
+    );
     NotificationHelper.onNotificationClick = _handleNotificationPayload;
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkGad7OnOpen());
+  }
+
+  @override
+  void dispose() {
+    _statusTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkSystemStatus() async {
+    final running = await BackgroundServiceHelper.isServiceRunning();
+    final optimized = await Permission.ignoreBatteryOptimizations.isDenied;
+
+    if (mounted) {
+      setState(() {
+        _isServiceRunning = running;
+        _isBatteryOptimized = optimized;
+      });
+    }
+
+    // Auto-restart if dead
+    if (!running) {
+      try {
+        await initializeService();
+      } catch (e) {
+        debugPrint('Auto-restart service failed: $e');
+      }
+    }
+  }
+
+  Future<void> _fixBatteryOptimization() async {
+    await Permission.ignoreBatteryOptimizations.request();
+    _checkSystemStatus();
   }
 
   Future<void> _checkGad7OnOpen() async {
@@ -589,9 +637,15 @@ class _DashboardPageState extends State<DashboardPage> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: const Color(0xFFE8F5E9),
+                color: _isServiceRunning
+                    ? const Color(0xFFE8F5E9)
+                    : const Color(0xFFFFEBEE),
                 borderRadius: BorderRadius.circular(30),
-                border: Border.all(color: Colors.green.shade200),
+                border: Border.all(
+                  color: _isServiceRunning
+                      ? Colors.green.shade200
+                      : Colors.red.shade200,
+                ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -599,22 +653,58 @@ class _DashboardPageState extends State<DashboardPage> {
                   Container(
                     width: 10,
                     height: 10,
-                    decoration: const BoxDecoration(
-                      color: Colors.green,
+                    decoration: BoxDecoration(
+                      color: _isServiceRunning ? Colors.green : Colors.red,
                       shape: BoxShape.circle,
                     ),
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    "System Active & Recording",
+                    _isServiceRunning
+                        ? "System Active & Recording"
+                        : "System Inactive - Restarting...",
                     style: TextStyle(
-                      color: Colors.green.shade800,
+                      color: _isServiceRunning
+                          ? Colors.green.shade800
+                          : Colors.red.shade800,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
             ),
+            if (_isBatteryOptimized) ...[
+              const SizedBox(height: 12),
+              GestureDetector(
+                onTap: _fixBatteryOptimization,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.orange.shade200),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          "Battery optimization is ON. This may stop data collection. Tap to fix.",
+                          style: TextStyle(fontSize: 13, color: Colors.orange),
+                        ),
+                      ),
+                      Icon(
+                        Icons.chevron_right,
+                        color: Colors.orange,
+                        size: 20,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
             const Spacer(),
             const Text(
               "Anxiety Event Recorder",
