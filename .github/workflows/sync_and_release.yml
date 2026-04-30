@@ -13,7 +13,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Sync to Research Repository
+      - name: Sync to Research Repository via PR
         env:
           RESEARCH_REPO_PAT: ${{ secrets.RESEARCH_REPO_PAT }}
         run: |
@@ -22,12 +22,30 @@ jobs:
           
           # Clone the research repo securely
           git clone https://x-access-token:${RESEARCH_REPO_PAT}@github.com/dulhara79/R26-DS-012.git research-repo
+          cd research-repo
           
-          # Ensure target directory exists according to the architecture plan
-          mkdir -p research-repo/apps/anxiety_mobile_app
+          SYNC_BRANCH="sync/anxiety-mobile-app"
           
-          # Sync files (Strict exclusions for security and cleanliness)
+          # Fetch remote branches. Check out the sync branch if it exists, otherwise create it.
+          git fetch origin
+          if git ls-remote --exit-code --heads origin $SYNC_BRANCH; then
+            echo "Branch exists remotely. Checking out..."
+            git checkout $SYNC_BRANCH
+          else
+            echo "Branch does not exist. Creating new branch from main..."
+            git checkout -b $SYNC_BRANCH
+          fi
+          
+          # Ensure target directory exists
+          mkdir -p apps/anxiety_mobile_app
+          
+          # Move back to workspace root to run rsync safely
+          cd ..
+          
+          # Sync files. 
+          # CRITICAL: We explicitly exclude 'research-repo' to prevent an infinite recursive copy!
           rsync -av --delete \
+            --exclude 'research-repo' \
             --exclude '.git' \
             --exclude '.github' \
             --exclude '.idea' \
@@ -38,14 +56,33 @@ jobs:
             --exclude '.env' \
             ./ research-repo/apps/anxiety_mobile_app/
           
-          # Commit and push to research repo
+          # Commit and push
           cd research-repo
           git add apps/anxiety_mobile_app/
+          
           if git diff --staged --quiet; then
             echo "No changes to sync."
           else
             git commit -m "chore(sync): Update anxiety_mobile_app from development repo (commit ${{ github.sha }})"
-            git push origin main
+            
+            # Push updates to the sync branch
+            git push origin $SYNC_BRANCH
+            
+            # Check if a PR already exists for this branch
+            export GH_TOKEN=$RESEARCH_REPO_PAT
+            PR_EXISTS=$(gh pr list --head $SYNC_BRANCH --json number --jq '.[0].number' --repo dulhara79/R26-DS-012)
+            
+            if [ -z "$PR_EXISTS" ]; then
+              echo "No open PR found. Creating a new Pull Request..."
+              gh pr create \
+                --title "Sync: Update Anxiety Mobile App Code" \
+                --body "Automated update of the mobile app code from the development repository. Source commit: ${{ github.sha }}" \
+                --base main \
+                --head $SYNC_BRANCH \
+                --repo dulhara79/R26-DS-012
+            else
+              echo "Pull Request #$PR_EXISTS already exists. New commits have been automatically added to it."
+            fi
           fi
 
   build:
@@ -63,10 +100,8 @@ jobs:
 
       - name: Decode Android Keystore
         run: |
-          # Decodes the base64 keystore stored in GitHub Secrets
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
           
-          # Generates the key.properties file dynamically
           echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" > android/key.properties
           echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/key.properties
           echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/key.properties
@@ -77,12 +112,10 @@ jobs:
 
       - name: Build Production APK & AAB
         run: |
-          # Build APK for direct installations/testing
           flutter build apk --release --obfuscate --split-debug-info=./debug-info \
             --dart-define=SCRIPT_URL="${{ secrets.SCRIPT_URL }}" \
             --dart-define=AUTH_TOKEN="${{ secrets.AUTH_TOKEN }}"
             
-          # Build App Bundle for Google Play Store production
           flutter build appbundle --release --obfuscate --split-debug-info=./debug-info \
             --dart-define=SCRIPT_URL="${{ secrets.SCRIPT_URL }}" \
             --dart-define=AUTH_TOKEN="${{ secrets.AUTH_TOKEN }}"
