@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'background_service.dart';
+import 'config.dart';
 import 'package:flutter/foundation.dart';
 
 class BackgroundServiceHelper {
@@ -11,10 +12,10 @@ class BackgroundServiceHelper {
   static const int _batchIntervalSeconds = 10;
   static Timer? _timer;
 
-  // ── Must match the AUTH_TOKEN set in Apps Script setupScript() ──
-  static const String _authToken = "7c09db655b5f697a4faf0b18a517d5fb";
+  // ── AUTH TOKEN (Injected at build time via --dart-define=AUTH_TOKEN=...) ──
+  static const String _authToken = AppConfig.authToken;
 
-  /// Add data to the buffer. Starts the flush timer if not already running.
+  /// Add data to the buffer. Saves to persistent storage immediately to prevent loss on shutdown.
   static Future<void> sendToSheet(
     String userId,
     String type,
@@ -28,50 +29,18 @@ class BackgroundServiceHelper {
       "token": _authToken,
     };
 
-    _buffer.add(dataMap);
+    // Immediate persistence: Save to offline queue right away.
+    // The flush timer will attempt to send it to the sheet shortly.
+    await _saveToOfflineQueue([dataMap]);
 
     _timer ??= Timer(
       const Duration(seconds: _batchIntervalSeconds),
-      _flushBuffer,
+      retryOfflineQueue, // Use retry instead of flush for a unified logic
     );
   }
 
-  /// Flush the buffer — send everything as one POST request.
-  static Future<void> _flushBuffer() async {
-    _timer?.cancel();
-    _timer = null;
-
-    if (_buffer.isEmpty || _isSyncing) return;
-    _isSyncing = true;
-
-    final List<Map<String, dynamic>> batchToSend = List.from(_buffer);
-    _buffer.clear();
-
-    try {
-      final response = await http
-          .post(
-            Uri.parse(kGoogleScriptUrl),
-            headers: {"Content-Type": "application/json"},
-            body: jsonEncode(batchToSend),
-          )
-          .timeout(const Duration(seconds: 25));
-
-      if (response.statusCode == 200 ||
-          response.statusCode == 302 ||
-          _isSuccessBody(response.body)) {
-        debugPrint("✅ Batch sent: ${batchToSend.length} items");
-      } else {
-        throw Exception(
-          "Server Error ${response.statusCode}: ${response.body}",
-        );
-      }
-    } catch (e) {
-      debugPrint("❌ Batch failed, saving to offline queue: $e");
-      await _saveToOfflineQueue(batchToSend);
-    } finally {
-      _isSyncing = false;
-    }
-  }
+  // _flushBuffer is no longer needed with immediate persistence.
+  // We rely on retryOfflineQueue which handles chunking and sending.
 
   /// Check if the response body indicates success.
   static bool _isSuccessBody(String body) {
@@ -90,10 +59,11 @@ class BackgroundServiceHelper {
     final prefs = await SharedPreferences.getInstance();
     List<String> queue = prefs.getStringList('offline_queue') ?? [];
 
-    // Cap offline queue at 5000 items (~1MB max)
+    // Cap offline queue at 10,000 items (~2-3MB max)
+    // 10k items covers ~10 days of heavy data for one user
     for (var item in items) {
-      if (queue.length >= 5000) {
-        debugPrint("⚠️ Offline queue full (5000 items). Oldest item dropped.");
+      if (queue.length >= 10000) {
+        debugPrint("⚠️ Offline queue full (10,000 items). Oldest item dropped.");
         queue.removeAt(0);
       }
       queue.add(jsonEncode(item));
@@ -104,11 +74,20 @@ class BackgroundServiceHelper {
 
   /// Retry all queued offline items. Call on app start and when connectivity restored.
   static Future<void> retryOfflineQueue() async {
+    _timer?.cancel();
+    _timer = null;
+
+    if (_isSyncing) return;
+    _isSyncing = true;
+
     final prefs = await SharedPreferences.getInstance();
     List<String> queue = prefs.getStringList('offline_queue') ?? [];
-    if (queue.isEmpty) return;
+    if (queue.isEmpty) {
+      _isSyncing = false;
+      return;
+    }
 
-    debugPrint("🔄 Retrying offline queue: ${queue.length} items");
+    debugPrint("🔄 Syncing queue: ${queue.length} items");
 
     const chunkSize = 50;
     List<String> remaining = [];
@@ -145,10 +124,12 @@ class BackgroundServiceHelper {
     await prefs.setStringList('offline_queue', remaining);
 
     if (remaining.isEmpty) {
-      debugPrint("✅ Offline queue fully cleared");
+      debugPrint("✅ Queue fully cleared");
     } else {
       debugPrint("⚠️ ${remaining.length} items still pending");
     }
+
+    _isSyncing = false;
   }
 
   static Future<String> getCachedId() async {
@@ -160,5 +141,10 @@ class BackgroundServiceHelper {
   static Future<int> getOfflineQueueSize() async {
     final prefs = await SharedPreferences.getInstance();
     return (prefs.getStringList('offline_queue') ?? []).length;
+  }
+
+  /// Check if the background service is currently running.
+  static Future<bool> isServiceRunning() async {
+    return await FlutterBackgroundService().isRunning();
   }
 }
