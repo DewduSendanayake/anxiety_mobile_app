@@ -16,9 +16,10 @@ import 'package:screen_state/screen_state.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:battery_plus/battery_plus.dart';
 import 'background_service_helper.dart';
+import 'config.dart';
 
-// GOOGLE SCRIPT URL
-const String kGoogleScriptUrl = "https://script.google.com/macros/s/AKfycbzZlkyTLxoJgHbV1IqXi4ugXIC9GM5a_MIgkhWEMkA9b-_25wowCmNdOyJjylHONLnl/exec";
+// GOOGLE SCRIPT URL (Injected at build time via --dart-define=SCRIPT_URL=...)
+const String kGoogleScriptUrl = AppConfig.googleScriptUrl;
 
 // ─── Notification IDs ──────────────────────────────────────
 const int kForegroundNotifId = 888;
@@ -62,14 +63,25 @@ Future<void> initializeService() async {
     androidConfiguration: AndroidConfiguration(
       onStart: onStart,
       autoStart: true,
+      autoStartOnBoot: true,
       isForegroundMode: true,
       notificationChannelId: 'research_channel_01',
       initialNotificationTitle: 'Research Active',
       initialNotificationContent: 'Collecting anonymous usage data...',
       foregroundServiceNotificationId: kForegroundNotifId,
     ),
-    iosConfiguration: IosConfiguration(),
+    iosConfiguration: IosConfiguration(
+      autoStart: true,
+      onForeground: onStart,
+      onBackground: onIosBackground,
+    ),
   );
+}
+
+@pragma('vm:entry-point')
+bool onIosBackground(ServiceInstance service) {
+  WidgetsFlutterBinding.ensureInitialized();
+  return true;
 }
 
 @pragma('vm:entry-point')
@@ -118,30 +130,51 @@ void onStart(ServiceInstance service) async {
   // ── REAL-TIME: SCREEN STATE ─────────────────────────────
   Screen screen = Screen();
   try {
-    // FIX: removed unnecessary null-aware '?.' — screenStateStream is non-nullable
-    screen.screenStateStream.listen((ScreenStateEvent event) {
-      String status = "Unknown";
-      if (event == ScreenStateEvent.SCREEN_ON) status = "Screen_On";
-      if (event == ScreenStateEvent.SCREEN_OFF) status = "Screen_Off";
-      if (event == ScreenStateEvent.SCREEN_UNLOCKED) status = "Screen_Unlocked";
-      _sendData(userId, "Screen_Event", status);
-    });
+    screen.screenStateStream.listen(
+      (ScreenStateEvent event) {
+        String status = "Unknown";
+        if (event == ScreenStateEvent.SCREEN_ON) status = "Screen_On";
+        if (event == ScreenStateEvent.SCREEN_OFF) status = "Screen_Off";
+        if (event == ScreenStateEvent.SCREEN_UNLOCKED)
+          status = "Screen_Unlocked";
+        _sendData(userId, "Screen_Event", status);
+      },
+      onError: (e) => debugPrint("Screen State Stream Error: $e"),
+      cancelOnError: false,
+    );
   } catch (e) {
-    debugPrint("Screen State Error: $e");
+    debugPrint("Screen State Setup Error: $e");
   }
 
   // ── REAL-TIME: ACCELEROMETER ────────────────────────────
   try {
-    accelerometerEventStream().listen((AccelerometerEvent event) {
-      double magnitude = sqrt(
-        event.x * event.x + event.y * event.y + event.z * event.z,
-      );
-      if (magnitude > 15.0) {
-        _sendData(userId, "High_Motion_Event", magnitude.toStringAsFixed(2));
+    accelerometerEventStream().listen(
+      (AccelerometerEvent event) {
+        double magnitude = sqrt(
+          event.x * event.x + event.y * event.y + event.z * event.z,
+        );
+        if (magnitude > 15.0) {
+          _sendData(userId, "High_Motion_Event", magnitude.toStringAsFixed(2));
+        }
+      },
+      onError: (e) => debugPrint("Accelerometer Sensor Error: $e"),
+      cancelOnError: false,
+    );
+  } catch (e) {
+    debugPrint("Sensor Setup Error: $e");
+  }
+
+  // ── REAL-TIME: BATTERY MONITOR ──────────────────────────
+  try {
+    final battery = Battery();
+    battery.onBatteryStateChanged.listen((BatteryState state) async {
+      final level = await battery.batteryLevel;
+      if (level <= 15 && state == BatteryState.discharging) {
+        _sendData(userId, "Critical_Battery_Warning", "Level: $level%");
       }
     });
   } catch (e) {
-    debugPrint("Sensor Error: $e");
+    debugPrint("Battery Monitor Error: $e");
   }
 
   // ── PERIODIC: HEAVY TASKS (Every 15 min) ───────────────
@@ -167,6 +200,13 @@ void onStart(ServiceInstance service) async {
     userId = freshPrefs.getString('user_id') ?? userId;
 
     await _collectAndSync(userId);
+
+    // Heartbeat to confirm service is alive
+    await _sendData(
+      userId,
+      "Service_Heartbeat",
+      "Isolate_Active_${DateTime.now().toIso8601String()}",
+    );
   });
 
   // ── EVERY MINUTE: EMA check-in + GAD-7 reminders ───────
