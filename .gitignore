@@ -13,6 +13,7 @@ pubspec.lock
 # Android
 android/.gradle/
 android/app/*.keystore
+android/key.properties
 **/local.properties
 /.gradle/
 *.apk
@@ -111,3 +112,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+apk_build_command.txt
+windows/flutter/generated_plugins.cmake
+linux/flutter/generated_plugins.cmake
