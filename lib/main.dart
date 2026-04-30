@@ -4,8 +4,12 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'theme/app_theme.dart';
 import 'pages/login_page.dart';
+import 'pages/dashboard_page.dart';
+import 'profile_page.dart';
 import 'background_service_helper.dart';
 import 'services/notification_helper.dart';
+import 'services/background/background_service.dart' as bg;
+import 'package:shared_preferences/shared_preferences.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -44,6 +48,13 @@ void main() async {
     ),
   );
 
+  // 4. Initialize Background Service
+  try {
+    await bg.initializeService();
+  } catch (e) {
+    debugPrint('Background Service Init Error: $e');
+  }
+
   runApp(const ResearchApp());
 }
 
@@ -57,7 +68,40 @@ class ResearchApp extends StatelessWidget {
       title: 'Mindful Tracker',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      home: const LoginPage(),
+      home: const SplashRouter(),
+    );
+  }
+}
+
+class SplashRouter extends StatelessWidget {
+  const SplashRouter({super.key});
+
+  Future<Widget> _getHome() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString('user_id');
+    final profileComplete = prefs.getBool('profile_complete') ?? false;
+
+    if (userId == null || userId.isEmpty) {
+      return const LoginPage();
+    } else if (!profileComplete) {
+      return const ProfilePage();
+    } else {
+      return DashboardPage(userId: userId);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Widget>(
+      future: _getHome(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        return snapshot.data ?? const LoginPage();
+      },
     );
   }
 }
