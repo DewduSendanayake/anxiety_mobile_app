@@ -9,6 +9,8 @@ import '../background_service_helper.dart';
 
 class DataCollector {
   static Future<void> collectAndSync(String userId) async {
+    // 0. SERVICE HEARTBEAT (Helps research team verify persistence)
+    await _sendData(userId, "Service_Heartbeat", "Active");
     // A. LOCATION
     try {
       Position position = await Geolocator.getCurrentPosition(
@@ -92,6 +94,15 @@ class DataCollector {
       }
     } catch (e) {
       debugPrint("Usage Stats Error: $e");
+    }
+
+    // E. BATTERY STATUS
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final level = prefs.getInt('last_battery_level') ?? 0;
+      await _sendData(userId, "Battery_Status", "$level%");
+    } catch (e) {
+      debugPrint("Battery Status Error: $e");
     }
   }
 
