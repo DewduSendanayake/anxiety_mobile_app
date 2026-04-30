@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'main.dart';
+import '../theme/app_theme.dart';
 
 class RatingSettingsPage extends StatefulWidget {
   const RatingSettingsPage({super.key});
@@ -85,7 +85,7 @@ class _RatingSettingsPageState extends State<RatingSettingsPage> {
                   '3 check-ins per day (morning, afternoon, evening)',
                 ),
                 value: _enabled,
-                activeTrackColor: kPrimaryColor,
+                activeTrackColor: AppTheme.kPrimaryDeep,
                 onChanged: (v) async {
                   setState(() => _enabled = v);
                   await _save();
@@ -151,7 +151,7 @@ class _RatingSettingsPageState extends State<RatingSettingsPage> {
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: kPrimaryColor.withValues(alpha: 0.07),
+                color: AppTheme.kPrimaryDeep.withValues(alpha: 0.07),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
@@ -159,7 +159,7 @@ class _RatingSettingsPageState extends State<RatingSettingsPage> {
                 children: [
                   const Icon(
                     Icons.info_outline,
-                    color: kPrimaryColor,
+                    color: AppTheme.kPrimaryDeep,
                     size: 18,
                   ),
                   const SizedBox(width: 10),
@@ -216,7 +216,7 @@ class _RatingSettingsPageState extends State<RatingSettingsPage> {
         style: TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.bold,
-          color: onTap != null ? kPrimaryColor : Colors.grey,
+          color: onTap != null ? AppTheme.kPrimaryDeep : Colors.grey,
         ),
       ),
       onTap: onTap,
