@@ -1,0 +1,102 @@
+name: Sync and Release (Main)
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  sync:
+    name: Sync to Research Repo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync to Research Repository
+        env:
+          RESEARCH_REPO_PAT: ${{ secrets.RESEARCH_REPO_PAT }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Clone the research repo securely
+          git clone https://x-access-token:${RESEARCH_REPO_PAT}@github.com/dulhara79/R26-DS-012.git research-repo
+          
+          # Ensure target directory exists according to the architecture plan
+          mkdir -p research-repo/apps/anxiety_mobile_app
+          
+          # Sync files (Strict exclusions for security and cleanliness)
+          rsync -av --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude '.idea' \
+            --exclude 'build' \
+            --exclude '.dart_tool' \
+            --exclude '*.jks' \
+            --exclude 'android/key.properties' \
+            --exclude '.env' \
+            ./ research-repo/apps/anxiety_mobile_app/
+          
+          # Commit and push to research repo
+          cd research-repo
+          git add apps/anxiety_mobile_app/
+          if git diff --staged --quiet; then
+            echo "No changes to sync."
+          else
+            git commit -m "chore(sync): Update anxiety_mobile_app from development repo (commit ${{ github.sha }})"
+            git push origin main
+          fi
+
+  build:
+    name: Build Production Artifacts
+    runs-on: ubuntu-latest
+    needs: sync
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Decode Android Keystore
+        run: |
+          # Decodes the base64 keystore stored in GitHub Secrets
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
+          
+          # Generates the key.properties file dynamically
+          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" > android/key.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/key.properties
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/key.properties
+          echo "storeFile=upload-keystore.jks" >> android/key.properties
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Production APK & AAB
+        run: |
+          # Build APK for direct installations/testing
+          flutter build apk --release --obfuscate --split-debug-info=./debug-info \
+            --dart-define=SCRIPT_URL="${{ secrets.SCRIPT_URL }}" \
+            --dart-define=AUTH_TOKEN="${{ secrets.AUTH_TOKEN }}"
+            
+          # Build App Bundle for Google Play Store production
+          flutter build appbundle --release --obfuscate --split-debug-info=./debug-info \
+            --dart-define=SCRIPT_URL="${{ secrets.SCRIPT_URL }}" \
+            --dart-define=AUTH_TOKEN="${{ secrets.AUTH_TOKEN }}"
+
+      - name: Upload Production APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14
+
+      - name: Upload Production AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-aab
+          path: build/app/outputs/bundle/release/app-release.aab
+          retention-days: 14
