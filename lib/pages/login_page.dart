@@ -7,7 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:usage_stats/usage_stats.dart';
 
 import '../theme/app_theme.dart';
-import '../background_service.dart'; // Ensure this import path is correct
+import '../background_service.dart';
+import '../profile_page.dart';
 import 'dashboard_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -61,7 +62,7 @@ class _LoginPageState extends State<LoginPage> {
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
-          pageBuilder: (_, __, ___) => const ProfilePage(),
+          pageBuilder: (_, __, ___) => ProfilePage(),
           transitionsBuilder: (_, a, __, c) =>
               FadeTransition(opacity: a, child: c),
           transitionDuration: const Duration(milliseconds: 800),
