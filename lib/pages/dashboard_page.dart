@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,7 +8,11 @@ import '../theme/app_theme.dart';
 import '../background_service_helper.dart';
 import '../services/notification_helper.dart';
 import '../services/rating_settings.dart';
-import '../main.dart'; // to access navigatorKey if needed
+import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import '../ema_and_gad7.dart';
+import '../profile_page.dart';
+import '../main.dart';
 
 class DashboardPage extends StatefulWidget {
   final String? userId;
@@ -23,6 +28,8 @@ class _DashboardPageState extends State<DashboardPage>
   double _currentPressure = 0.0;
   bool _isPressed = false;
   DateTime? _lastSentAt;
+  bool _isServiceRunning = false;
+  bool _isOptimized = false;
 
   late AnimationController _breatheController;
   late Animation<double> _breatheAnimation;
@@ -42,9 +49,41 @@ class _DashboardPageState extends State<DashboardPage>
     );
 
     // Setup notification click listener
-    NotificationHelper.onNotificationClick = () {
-      if (mounted) showRatingDialog();
+    NotificationHelper.onNotificationClick = (payload) {
+      if (mounted) {
+        if (payload != null && payload.startsWith('ema_rating_')) {
+          final period = payload.replaceFirst('ema_rating_', '');
+          showEmaSheet(period);
+        } else {
+          showRatingDialog();
+        }
+      }
     };
+
+    _startStatusCheck();
+  }
+
+  void _startStatusCheck() {
+    Timer.periodic(const Duration(seconds: 10), (timer) async {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      final isRunning = await FlutterBackgroundService().isRunning();
+      final optimized = await Permission.ignoreBatteryOptimizations.isDenied;
+
+      if (mounted) {
+        setState(() {
+          _isServiceRunning = isRunning;
+          _isOptimized = optimized;
+        });
+
+        // Auto-restart logic
+        if (!isRunning) {
+          FlutterBackgroundService().startService();
+        }
+      }
+    });
   }
 
   @override
@@ -115,6 +154,15 @@ class _DashboardPageState extends State<DashboardPage>
     }
   }
 
+  void showEmaSheet(String period) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => EmaRatingSheet(timePeriod: period),
+    );
+  }
+
   void _handleTouch(PointerEvent event, bool isPressed) async {
     setState(() {
       _isPressed = isPressed;
@@ -153,13 +201,23 @@ class _DashboardPageState extends State<DashboardPage>
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.settings_rounded, color: AppTheme.kTextLight),
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const RatingSettingsPage()),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.person_outline_rounded, color: AppTheme.kTextDark),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ProfilePage()),
+            ),
           ),
-        ),
+          IconButton(
+            icon: const Icon(Icons.settings_rounded, color: AppTheme.kTextDark),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const RatingSettingsPage()),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: Container(
         decoration: const BoxDecoration(
@@ -174,7 +232,69 @@ class _DashboardPageState extends State<DashboardPage>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              if (_isOptimized)
+                GestureDetector(
+                  onTap: () => openAppSettings(),
+                  child: Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.symmetric(horizontal: 20),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 10,
+                      horizontal: 16,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.orangeAccent.withOpacity(0.9),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.warning_amber_rounded, color: Colors.white),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            "Battery optimization is active. Tap to set to 'Unrestricted' for continuous recording.",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               const Spacer(flex: 2),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: _isServiceRunning ? Colors.greenAccent : Colors.redAccent,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: (_isServiceRunning ? Colors.greenAccent : Colors.redAccent).withOpacity(0.5),
+                          blurRadius: 8,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    _isServiceRunning ? "System Active & Recording" : "System Inactive - Restarting...",
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white.withOpacity(0.9),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
               Text(
                 "How are you feeling?",
                 style: GoogleFonts.poppins(

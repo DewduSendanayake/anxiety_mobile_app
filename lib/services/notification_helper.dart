@@ -6,7 +6,7 @@ class NotificationHelper {
       FlutterLocalNotificationsPlugin();
 
   // Called when the user taps the notification
-  static VoidCallback? onNotificationClick;
+  static void Function(String?)? onNotificationClick;
 
   static Future<void> init() async {
     try {
@@ -21,7 +21,7 @@ class NotificationHelper {
         initSettings,
         onDidReceiveNotificationResponse: (response) {
           // Route to the app via callback
-          if (onNotificationClick != null) onNotificationClick!();
+          if (onNotificationClick != null) onNotificationClick!(response.payload);
         },
       );
     } catch (e, st) {

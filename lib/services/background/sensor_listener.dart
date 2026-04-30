@@ -33,7 +33,7 @@ class SensorListener {
           status = "Screen_Unlocked";
 
         _sendData(userId, "Screen_Event", status);
-      });
+      }, onError: (e) => debugPrint("Screen State Stream Error: $e"));
     } catch (e) {
       debugPrint("Screen State Error: $e");
     }
@@ -51,7 +51,7 @@ class SensorListener {
         if (magnitude > 15.0) {
           _sendData(userId, "High_Motion_Event", magnitude.toStringAsFixed(2));
         }
-      });
+      }, onError: (e) => debugPrint("Accelerometer Stream Error: $e"));
     } catch (e) {
       debugPrint("Sensor Error: $e");
     }

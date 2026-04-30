@@ -115,3 +115,7 @@ app.*.map.json
 apk_build_command.txt
 windows/flutter/generated_plugins.cmake
 linux/flutter/generated_plugins.cmake
+
+# Custom secrets
+lib/config.dart
+.env
