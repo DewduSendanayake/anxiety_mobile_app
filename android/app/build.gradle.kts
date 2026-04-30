@@ -6,21 +6,19 @@ plugins {
 
 android {
     namespace = "com.example.anxiety_mobile_app"
-    compileSdk = 36
+    compileSdk = 36 
+
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        // High SDKs often require Java 11 or 17
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
         isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
-        jvmTarget = "11"
-    }
-
-    sourceSets {
-        getByName("main").java.srcDirs("src/main/kotlin")
+        jvmTarget = "17"
     }
 
     defaultConfig {
@@ -29,20 +27,22 @@ android {
         targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        setProperty("archivesBaseName", "Anxiety_Research_App")
     }
 
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
-            isMinifyEnabled = false
-            isShrinkResources = false        
+            isMinifyEnabled = false 
+            isShrinkResources = false
         }
     }
 }
 
-flutter { source = "../.." }
+flutter {
+    source = "../.."
+}
 
 dependencies {
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")  
+    // Upgraded desugar version for better compatibility with SDK 34+
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
