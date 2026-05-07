@@ -11,7 +11,7 @@ var DATATYPE_TO_FAMILY = {
   "EMA_Rating_afternoon": "EMA",
   "EMA_Rating_evening":   "EMA",
   "GAD7_Weekly":          "GAD7",
-  "PSS10_Monthly":        "PSS10",
+  "PSS10_Weekly":         "PSS10",
   "Demographics":         "Demographics",
 };
 
@@ -716,6 +716,17 @@ function rotateAuthToken(newToken) {
   if (!newToken || newToken.length < 16) { Logger.log("Token must be ≥16 chars."); return; }
   PropertiesService.getScriptProperties().setProperty("AUTH_TOKEN", newToken);
   Logger.log("Rotated. Update _authToken in background_service_helper.dart and rebuild APK.");
+}
+
+function generateAndSetNewToken() {
+  // Generates a secure, 32-character random string (UUID without dashes)
+  var newToken = Utilities.getUuid().replace(/-/g, '');
+  
+  // Save it using your existing function
+  rotateAuthToken(newToken);
+  
+  Logger.log("✅ NEW TOKEN GENERATED: " + newToken);
+  Logger.log("Copy the token above and update _authToken in your Flutter/Dart code!");
 }
 
 function deleteTestData() {
