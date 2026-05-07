@@ -49,6 +49,14 @@ Future<void> initializeService() async {
         importance: Importance.high,
       ),
     );
+    await androidPlugin.createNotificationChannel(
+      const AndroidNotificationChannel(
+        'pss_channel',
+        'Monthly Assessments',
+        description: 'Monthly Perceived Stress Scale (PSS-10) assessments',
+        importance: Importance.high,
+      ),
+    );
   }
 
   await service.configure(

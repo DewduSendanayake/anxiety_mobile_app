@@ -26,6 +26,9 @@ class DailyReminder {
 
       // 2. Check for Weekly GAD-7 Assessment (Mondays)
       await _checkWeeklyGad7(prefs, plugin, now, today);
+
+      // 3. Check for Weekly PSS-10 Assessment
+      await _checkWeeklyPss10(prefs, plugin, now, today);
     } catch (e) {
       debugPrint('Daily check error: $e');
     }
@@ -119,9 +122,9 @@ class DailyReminder {
       debugPrint("🔔 DailyReminder: Showing Weekly GAD-7 notification");
       
       await plugin.show(
-        999,
-        '📊 Weekly Assessment',
-        'It\'s time for your weekly GAD-7 check-in. Tap to begin.',
+        777,
+        '📊 Weekly Health Check',
+        'It\'s time for your weekly GAD-7 anxiety assessment. Tap to begin.',
         const NotificationDetails(
           android: AndroidNotificationDetails(
             'gad7_channel_v2',
@@ -137,6 +140,37 @@ class DailyReminder {
       );
 
       await prefs.setInt('gad7_reminder_ts', nowMs);
+    }
+  }
+
+  static Future<void> _checkWeeklyPss10(
+    SharedPreferences prefs,
+    FlutterLocalNotificationsPlugin plugin,
+    DateTime now,
+    String today,
+  ) async {
+    // Persistent logic: Notify daily between 9 AM and 9 PM until done for the week
+    if (now.hour < 9 || now.hour > 21) return;
+
+    String lastNotified = prefs.getString('pss10_notified_today') ?? "";
+    if (lastNotified == today) return;
+
+    if (await isPss10DueThisWeek()) {
+      await plugin.show(
+        888,
+        '🧘 Weekly Reflection',
+        'It\'s time for your weekly stress assessment. Tap to begin.',
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'pss_channel',
+            'Weekly Assessments',
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
+        ),
+        payload: 'pss10_monthly', // Route to PSS screen
+      );
+      await prefs.setString('pss10_notified_today', today);
     }
   }
 
