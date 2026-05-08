@@ -29,13 +29,13 @@ class ServiceConfig {
       'Digital Biomarkers of Anxiety: A Mobile Sensing Study';
 
   /// Principal Investigator
-  static const String piName = '[PI Name — UPDATE BEFORE SUBMISSION]';
+  static const String piName = '[Prof. Samantha Thelijjagoda]';
   static const String piAffiliation = 'Sri Lanka Institute of Information Technology (SLIIT)';
-  static const String piEmail = '[pi-email@sliit.lk — UPDATE]';
+  static const String piEmail = '[samantha.t@sliit.lk]';
 
   /// Research Supervisor
-  static const String supervisorName = '[Supervisor Name — UPDATE]';
-  static const String supervisorEmail = '[supervisor@sliit.lk — UPDATE]';
+  static const String supervisorName = '[Prof. Samantha Thelijjagoda]';
+  static const String supervisorEmail = '[samantha.t@sliit.lk]';
 
   /// Ethics Review Committee
   static const String ercName = 'Ethics Review Committee, Faculty of Medicine, University of Colombo';
@@ -43,10 +43,10 @@ class ServiceConfig {
   static const String ercSecretaryEmail = '[erc-secretary@cmb.ac.lk — UPDATE]';
 
   /// Research team contact (for participant queries)
-  static const String researchTeamEmail = '[research-team@sliit.lk — UPDATE]';
+  static const String researchTeamEmail = '[it22130648@my.sliit.lk, it22171542@my.sliit.lk, it22107596@my.sliit.lk, it22093950@my.sliit.lk]';
 
   /// Data retention period
-  static const String dataRetentionPeriod = '5 years after study completion and publication';
+  static const String dataRetentionPeriod = '1 years after study completion and publication';
 
   /// Data controller (legal entity responsible for the data)
   static const String dataController = 'SLIIT Research Team, SLIIT Malabe Campus';
