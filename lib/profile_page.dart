@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'background_service_helper.dart';
 import 'theme/app_theme.dart';
 import 'pages/dashboard_page.dart';
+import 'pages/main_navigation_page.dart';
 import 'pages/data_rights_page.dart';
 import 'services/background/service_config.dart';
 
@@ -173,7 +174,7 @@ class _ProfilePageState extends State<ProfilePage> {
       } else {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => DashboardPage(userId: uid)),
+          MaterialPageRoute(builder: (_) => MainNavigationPage(userId: uid)),
         );
       }
     }
