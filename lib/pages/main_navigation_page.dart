@@ -177,8 +177,8 @@ class _MainNavigationPageState extends State<MainNavigationPage>
                                   'Heart rate, breathing, body temperature & motion analysis via wearable sensors.',
                               icon: Icons.monitor_heart_rounded,
                               gradient: const [
-                                Color(0xFFFF6B6B),
-                                Color(0xFFee5a24),
+                                Color(0xFF667eea),
+                                Color(0xFF764ba2),
                               ],
                               accentIcon: Icons.favorite_rounded,
                               onTap: _navigateToPhysiological,
