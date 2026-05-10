@@ -326,11 +326,6 @@ class _DashboardPageState extends State<DashboardPage>
                 ],
               ),
 
-              const SizedBox(height: 24),
-
-              // ── Quick Assessments ──
-              _buildAssessmentSection(),
-
               const SizedBox(height: 20),
 
               // ── Footer ──
@@ -526,32 +521,36 @@ class _DashboardPageState extends State<DashboardPage>
               ),
               const SizedBox(height: 18),
 
-              // Risk bar
-              ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: Stack(
-                  children: [
-                    Container(
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                    ),
-                    AnimatedFractionallySizedBox(
-                      duration: const Duration(milliseconds: 600),
-                      curve: Curves.easeOutCubic,
-                      widthFactor: (risk / 100).clamp(0.02, 1.0),
-                      child: Container(
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(6),
+              // Risk bar — uses LayoutBuilder for safe animated width
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final barWidth =
+                      constraints.maxWidth * (risk / 100).clamp(0.02, 1.0);
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: Stack(
+                      children: [
+                        Container(
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
                         ),
-                      ),
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 600),
+                          curve: Curves.easeOutCubic,
+                          width: barWidth,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
               const SizedBox(height: 10),
               Row(
@@ -582,61 +581,6 @@ class _DashboardPageState extends State<DashboardPage>
     );
   }
 
-  Widget _buildAssessmentSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Quick Assessments',
-          style: GoogleFonts.poppins(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: AppTheme.kTextDark,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _AssessmentChip(
-                label: 'GAD-7',
-                subtitle: 'Anxiety',
-                icon: Icons.assignment_outlined,
-                color: const Color(0xFF5E60CE),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const Gad7Screen()),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _AssessmentChip(
-                label: 'PSS-10',
-                subtitle: 'Stress',
-                icon: Icons.psychology_outlined,
-                color: const Color(0xFF4facfe),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const Pss10Screen()),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _AssessmentChip(
-                label: 'EMA',
-                subtitle: 'Check-in',
-                icon: Icons.emoji_emotions_outlined,
-                color: const Color(0xFFFFA726),
-                onTap: () => _showEmaSheet('afternoon'),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -766,69 +710,6 @@ class _KpiCard extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Assessment Chip
-// ═══════════════════════════════════════════════════════════════════════════════
-
-class _AssessmentChip extends StatelessWidget {
-  final String label;
-  final String subtitle;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _AssessmentChip({
-    required this.label,
-    required this.subtitle,
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withValues(alpha: 0.2)),
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: 0.08),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.kTextDark,
-              ),
-            ),
-            Text(
-              subtitle,
-              style: GoogleFonts.poppins(
-                fontSize: 10,
-                color: AppTheme.kTextLight,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
