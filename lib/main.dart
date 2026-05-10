@@ -6,6 +6,7 @@ import 'theme/app_theme.dart';
 import 'pages/informed_consent_page.dart';
 import 'pages/login_page.dart';
 import 'pages/dashboard_page.dart';
+import 'pages/main_navigation_page.dart';
 import 'profile_page.dart';
 import 'background_service_helper.dart';
 import 'services/notification_helper.dart';
@@ -96,7 +97,7 @@ class SplashRouter extends StatelessWidget {
     } else if (!profileComplete) {
       return const ProfilePage();
     } else {
-      return DashboardPage(userId: userId);
+      return MainNavigationPage(userId: userId);
     }
   }
 
