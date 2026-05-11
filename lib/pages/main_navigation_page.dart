@@ -143,7 +143,7 @@ class _MainNavigationPageState extends State<MainNavigationPage>
 
                   // ── Header ──
                   Text(
-                    'Mindful Tracker',
+                    'Aura',
                     style: GoogleFonts.poppins(
                       fontSize: 30,
                       fontWeight: FontWeight.w700,
@@ -153,7 +153,7 @@ class _MainNavigationPageState extends State<MainNavigationPage>
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Choose a research module to begin.',
+                    'Track your inner world and find balance.',
                     style: GoogleFonts.poppins(
                       fontSize: 15,
                       color: Colors.white.withValues(alpha: 0.8),
