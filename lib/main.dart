@@ -71,7 +71,7 @@ class ResearchApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: navigatorKey,
-      title: 'Mindful Tracker',
+      title: 'Aura - Mindfulness Tracker',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       home: const SplashRouter(),
