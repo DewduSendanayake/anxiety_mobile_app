@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 import '../theme/app_theme.dart';
 import '../background_service_helper.dart';
@@ -326,6 +328,10 @@ class _DashboardPageState extends State<DashboardPage>
                 ],
               ),
 
+              const SizedBox(height: 24),
+              _buildAdviceCard(risk),
+              const SizedBox(height: 24),
+              _buildChartsSection(),
               const SizedBox(height: 20),
 
               // ── Footer ──
@@ -581,6 +587,197 @@ class _DashboardPageState extends State<DashboardPage>
     );
   }
 
+  Widget _buildAdviceCard(double risk) {
+    String title = "";
+    String advice = "";
+    IconData icon = Icons.lightbulb_outline_rounded;
+    Color color = Colors.blue;
+
+    if (risk <= 20) {
+      title = "Feeling Balanced";
+      advice = "Your anxiety levels seem to be lowering lately. You appear relaxed and well-rested. Keep up your current routine!";
+      color = const Color(0xFF4CAF50);
+      icon = Icons.spa_rounded;
+    } else if (risk <= 45) {
+      title = "Slightly Elevated";
+      advice = "Your physiological signals show mild stress. Consider taking a 5-minute break to do some deep breathing.";
+      color = const Color(0xFFFFA726);
+      icon = Icons.self_improvement_rounded;
+    } else if (risk <= 70) {
+      title = "Moderate Anxiety Detected";
+      advice = "Your metrics indicate elevated stress levels. It might be helpful to step away, hydrate, and practice a grounding exercise.";
+      color = const Color(0xFFFF7043);
+      icon = Icons.warning_amber_rounded;
+    } else {
+      title = "High Stress Alert";
+      advice = "Your anxiety levels seem to be going higher lately. Please prioritize your well-being right now. Try a guided meditation or reach out to a support system.";
+      color = const Color(0xFFEF5350);
+      icon = Icons.health_and_safety_rounded;
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.2),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  advice,
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: AppTheme.kTextDark.withValues(alpha: 0.8),
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChartsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '30-Day Physiological Trends',
+          style: GoogleFonts.poppins(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: AppTheme.kTextDark,
+          ),
+        ),
+        const SizedBox(height: 16),
+        _buildSingleChart('Heart Rate (bpm)', _generateMonthlyData(75, 15), const [Color(0xFFFF6B6B), Color(0xFFee5a24)]),
+        const SizedBox(height: 16),
+        _buildSingleChart('Breathing Rate (br/min)', _generateMonthlyData(16, 4), const [Color(0xFF4facfe), Color(0xFF00f2fe)]),
+        const SizedBox(height: 16),
+        _buildSingleChart('Body Temperature (°C)', _generateMonthlyData(36.8, 0.4), const [Color(0xFFF6D365), Color(0xFFFDA085)]),
+        const SizedBox(height: 16),
+        _buildSingleChart('Motion (g)', _generateMonthlyData(0.5, 1.2), const [Color(0xFFA18CD1), Color(0xFFFBC2EB)]),
+      ],
+    );
+  }
+
+  List<FlSpot> _generateMonthlyData(double base, double variance) {
+    return List.generate(30, (index) {
+      final x = (index + 1).toDouble();
+      final noise = (Random().nextDouble() - 0.5) * variance;
+      final trend = sin(index / 30 * pi * 2) * (variance * 0.5);
+      // Ensure positive values
+      return FlSpot(x, max(0.1, base + trend + noise));
+    });
+  }
+
+  Widget _buildSingleChart(String title, List<FlSpot> data, List<Color> gradient) {
+    double minY = data.map((e) => e.y).reduce(min) * 0.9;
+    double maxY = data.map((e) => e.y).reduce(max) * 1.1;
+
+    return Container(
+      height: 180,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.kTextLight,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: LineChart(
+              LineChartData(
+                minX: 1,
+                maxX: 30,
+                minY: minY,
+                maxY: maxY,
+                gridData: const FlGridData(show: false),
+                titlesData: const FlTitlesData(show: false),
+                borderData: FlBorderData(show: false),
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: data,
+                    isCurved: true,
+                    gradient: LinearGradient(colors: gradient),
+                    barWidth: 3,
+                    isStrokeCapRound: true,
+                    dotData: const FlDotData(show: false),
+                    belowBarData: BarAreaData(
+                      show: true,
+                      gradient: LinearGradient(
+                        colors: gradient.map((c) => c.withValues(alpha: 0.2)).toList(),
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                    ),
+                  ),
+                ],
+                lineTouchData: LineTouchData(
+                  touchTooltipData: LineTouchTooltipData(
+                    getTooltipItems: (touchedSpots) {
+                      return touchedSpots.map((spot) {
+                        return LineTooltipItem(
+                          spot.y.toStringAsFixed(1),
+                          GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        );
+                      }).toList();
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
