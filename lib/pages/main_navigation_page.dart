@@ -199,8 +199,8 @@ class _MainNavigationPageState extends State<MainNavigationPage>
                                   'Behavioural patterns, app usage, screen time & social interaction signals.',
                               icon: Icons.psychology_rounded,
                               gradient: const [
-                                Color(0xFF4facfe),
-                                Color(0xFF00f2fe),
+                                Color(0xFF764ba2),
+                                Color(0xFF667eea),
                               ],
                               accentIcon: Icons.bubble_chart_rounded,
                               onTap: _navigateToPhenotyping,
