@@ -90,26 +90,6 @@ class _DashboardPageState extends State<DashboardPage>
     };
     _simulator.start(interval: const Duration(seconds: 3));
 
-    // Notification click handler
-    NotificationHelper.onNotificationClick = (payload) {
-      if (mounted) {
-        if (payload != null && payload.startsWith('ema_rating_')) {
-          final period = payload.replaceFirst('ema_rating_', '');
-          _showEmaSheet(period);
-        } else if (payload == 'gad7_weekly') {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const Gad7Screen()),
-          );
-        } else if (payload == 'pss10_monthly') {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const Pss10Screen()),
-          );
-        }
-      }
-    };
-
     _startStatusCheck();
   }
 
