@@ -260,7 +260,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    'Participant',
+                    'User',
                     style: GoogleFonts.poppins(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
@@ -431,7 +431,7 @@ class _ProfilePageState extends State<ProfilePage> {
               const Icon(Icons.person_pin, size: 52, color: AppTheme.kPrimaryDeep),
               const SizedBox(height: 12),
               const Text(
-                'Participant Profile',
+                'User Profile',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87),
               ),
