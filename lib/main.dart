@@ -14,8 +14,44 @@ import 'background_service_helper.dart';
 import 'services/notification_helper.dart';
 import 'services/background/background_service.dart' as bg;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'ema_and_gad7.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+void _handleNotificationTap(String? payload) {
+  if (payload == null || payload.isEmpty) return;
+
+  final context = navigatorKey.currentContext;
+  if (context == null) {
+    debugPrint('Notification tap ignored: no navigator context yet. payload=$payload');
+    return;
+  }
+
+  if (payload.startsWith('ema_rating_')) {
+    final period = payload.replaceFirst('ema_rating_', '');
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => EmaRatingSheet(timePeriod: period),
+    );
+    return;
+  }
+
+  if (payload == 'gad7_weekly') {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const Gad7Screen()),
+    );
+    return;
+  }
+
+  if (payload == 'pss10_weekly' || payload == 'pss10_monthly') {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const Pss10Screen()),
+    );
+    return;
+  }
+}
 
 void main() async {
   // ── Global error handlers — prevent silent crashes ──────────────────────
@@ -36,6 +72,7 @@ void main() async {
     WidgetsFlutterBinding.ensureInitialized();
     try {
       await NotificationHelper.init();
+      NotificationHelper.onNotificationClick = _handleNotificationTap;
     } catch (e, st) {
       debugPrint('Notification init error: $e');
       debugPrint('$st');
@@ -91,6 +128,10 @@ void main() async {
     }
 
     runApp(const ResearchApp());
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _handleNotificationTap(NotificationHelper.consumeLaunchPayload());
+    });
   }, (error, stack) {
     // Zone-level fallback — catches anything that slips through.
     debugPrint('🔴 Uncaught zone error: $error');
