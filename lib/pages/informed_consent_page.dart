@@ -40,16 +40,17 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
   bool _hasScrolledToBottom = false;
   String _consentTimestamp = '';
 
-  // Six declarations — loaded from prefs in readOnly mode.
+  // Seven declarations — loaded from prefs in readOnly mode.
   bool _cbAge       = false;
   bool _cbPurpose   = false;
   bool _cbData      = false;
+  bool _cbPhysio    = false;
   bool _cbStorage   = false;
   bool _cbRights    = false;
   bool _cbVoluntary = false;
 
   bool get _allChecked =>
-      _cbAge && _cbPurpose && _cbData && _cbStorage && _cbRights && _cbVoluntary;
+      _cbAge && _cbPurpose && _cbData && _cbPhysio && _cbStorage && _cbRights && _cbVoluntary;
 
   bool get _canProceed => _hasScrolledToBottom && _allChecked;
 
@@ -79,6 +80,7 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
       _cbAge       = prefs.getBool('consent_cb_age')       ?? true;
       _cbPurpose   = prefs.getBool('consent_cb_purpose')   ?? true;
       _cbData      = prefs.getBool('consent_cb_data')      ?? true;
+      _cbPhysio    = prefs.getBool('consent_cb_physio')    ?? true;
       _cbStorage   = prefs.getBool('consent_cb_storage')   ?? true;
       _cbRights    = prefs.getBool('consent_cb_rights')    ?? true;
       _cbVoluntary = prefs.getBool('consent_cb_voluntary') ?? true;
@@ -105,6 +107,7 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
     await prefs.setBool('consent_cb_age',       _cbAge);
     await prefs.setBool('consent_cb_purpose',   _cbPurpose);
     await prefs.setBool('consent_cb_data',      _cbData);
+    await prefs.setBool('consent_cb_physio',    _cbPhysio);
     await prefs.setBool('consent_cb_storage',   _cbStorage);
     await prefs.setBool('consent_cb_rights',    _cbRights);
     await prefs.setBool('consent_cb_voluntary', _cbVoluntary);
@@ -194,8 +197,11 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
                           // ── Section 3 ─────────────────────────────────
                           _sectionTitle("3. What Data Will Be Collected?"),
                           _paragraph(
-                            "The table below lists every category of data collected. "
-                            "The application does NOT read the content of any SMS or phone call.",
+                            "The table below lists every category of data collected, including both "
+                            "digital phenotyping data from your smartphone and physiological data "
+                            "from a wearable chest-strap sensor (heart rate, breathing rate, body "
+                            "temperature, and motion). The application does NOT read the content "
+                            "of any SMS or phone call.",
                           ),
                           _dataTable(),
                           _divider(),
@@ -286,6 +292,11 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
                             value: _cbData,
                             key: 'data',
                             label: "I understand what data is collected from my device, including location, sensor data, communication metadata, and self-report responses, and I consent to this collection (Section 3).",
+                          ),
+                          _consentCheck(
+                            value: _cbPhysio,
+                            key: 'physio',
+                            label: "I consent to the collection of physiological data from a wearable chest-strap sensor, including heart rate, breathing rate, body temperature, and motion/accelerometer data, for anxiety risk monitoring and research purposes (Section 3).",
                           ),
                           _consentCheck(
                             value: _cbStorage,
@@ -484,6 +495,7 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
           case 'age':      _cbAge       = v ?? false; break;
           case 'purpose':  _cbPurpose   = v ?? false; break;
           case 'data':     _cbData      = v ?? false; break;
+          case 'physio':   _cbPhysio    = v ?? false; break;
           case 'storage':  _cbStorage   = v ?? false; break;
           case 'rights':   _cbRights    = v ?? false; break;
           case 'voluntary':_cbVoluntary = v ?? false; break;
@@ -674,6 +686,7 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
       if (!_cbAge)       "Confirm age ≥ 18",
       if (!_cbPurpose)   "Study purpose & procedures",
       if (!_cbData)      "Data collection",
+      if (!_cbPhysio)    "Physiological data collection",
       if (!_cbStorage)   "Overseas storage",
       if (!_cbRights)    "Your data rights",
       if (!_cbVoluntary) "Voluntary participation",
@@ -767,6 +780,10 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
       ["GAD-7 Score",       "7-item validated scale — total score + per-item responses.",                  "Weekly"],
       ["PSS-10 Score",      "10-item validated scale — total score + per-item responses.",                 "Weekly"],
       ["Demographics",      "Age, gender, education, employment, diagnosis, sleep quality. One-time only.","Enrolment"],
+      ["Heart Rate",        "BPM from wearable chest-strap ECG/PPG sensor. Continuous stream.",              "Real-time"],
+      ["Breathing Rate",    "Breaths per minute from chest impedance sensor.",                              "Real-time"],
+      ["Body Temperature", "Core temperature (°C) from skin-contact thermistor.",                          "Real-time"],
+      ["Motion (IMU)",      "3-axis accelerometer magnitude for restlessness detection.",                   "Real-time"],
     ];
 
     return Container(
