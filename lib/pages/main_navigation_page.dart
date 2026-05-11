@@ -74,8 +74,8 @@ class _MainNavigationPageState extends State<MainNavigationPage>
     Navigator.push(
       context,
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => DashboardPage(userId: widget.userId),
-        transitionsBuilder: (_, anim, __, child) => FadeTransition(
+        pageBuilder: (_, _, _) => DashboardPage(userId: widget.userId),
+        transitionsBuilder: (_, anim, _, child) => FadeTransition(
           opacity: CurvedAnimation(parent: anim, curve: Curves.easeIn),
           child: child,
         ),
@@ -88,9 +88,9 @@ class _MainNavigationPageState extends State<MainNavigationPage>
     Navigator.push(
       context,
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) =>
+        pageBuilder: (_, _, _) =>
             DigitalPhenotypingPage(userId: widget.userId),
-        transitionsBuilder: (_, anim, __, child) => FadeTransition(
+        transitionsBuilder: (_, anim, _, child) => FadeTransition(
           opacity: CurvedAnimation(parent: anim, curve: Curves.easeIn),
           child: child,
         ),
