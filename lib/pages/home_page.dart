@@ -93,12 +93,12 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
   double get _overallRisk {
     final physioNorm = _snapshot.riskScore; // 0-100
     final phenoNorm = _phenotypingRisk * 100; // 0-100
-    return (physioNorm * 0.5 + phenoNorm * 0.5).clamp(0, 100);
+    return (physioNorm * 0.75 + phenoNorm * 0.25).clamp(0, 100);
   }
 
   String _overallLabel(PhysioSnapshot snap) {
     final combined =
-        (snap.riskScore * 0.5 + _phenotypingRisk * 100 * 0.5).clamp(0, 100);
+        (snap.riskScore * 0.75 + _phenotypingRisk * 100 * 0.25).clamp(0, 100);
     if (combined <= 25) return 'Low';
     if (combined <= 50) return 'Moderate';
     if (combined <= 75) return 'Elevated';
