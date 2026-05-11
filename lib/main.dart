@@ -7,6 +7,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'theme/app_theme.dart';
 import 'pages/informed_consent_page.dart';
 import 'pages/login_page.dart';
+import 'pages/welcome_splash_page.dart';
 
 import 'pages/main_navigation_page.dart';
 import 'profile_page.dart';
@@ -184,7 +185,8 @@ class SplashRouter extends StatelessWidget {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        return snapshot.data ?? const LoginPage();
+        final nextPage = snapshot.data ?? const LoginPage();
+        return WelcomeSplashPage(nextPage: nextPage);
       },
     );
   }
