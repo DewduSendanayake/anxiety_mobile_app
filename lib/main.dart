@@ -25,11 +25,9 @@ void main() async {
   }
 
   // 1. Queue Retry (Offline Architecture)
-  try {
-    await BackgroundServiceHelper.retryOfflineQueue();
-  } catch (e) {
+  BackgroundServiceHelper.retryOfflineQueue().catchError((e) {
     debugPrint('Init Queue Retry Error: $e');
-  }
+  });
 
   // 2. Connectivity Listener (Auto-Upload when internet returns)
   try {
