@@ -113,8 +113,8 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 50),
                 if (!_permissionsGranted)
                   _buildGlassButton(
-                    text: "Grant Access",
-                    icon: Icons.fingerprint,
+                    text: "Next",
+                    icon: Icons.arrow_forward_rounded,
                     isLoading: _isLoading,
                     onTap: _requestPermissions,
                   ),
@@ -122,7 +122,7 @@ class _LoginPageState extends State<LoginPage> {
                   _buildInputField(),
                   const SizedBox(height: 20),
                   _buildGlassButton(
-                    text: "Begin Session",
+                    text: "Enter",
                     icon: Icons.arrow_forward_rounded,
                     isPrimary: true,
                     onTap: _login,
@@ -198,7 +198,7 @@ class _LoginPageState extends State<LoginPage> {
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 18, letterSpacing: 2),
           decoration: InputDecoration(
-            hintText: "Enter Participant ID",
+            hintText: "Enter a username",
             hintStyle: TextStyle(color: Colors.grey.shade400),
             border: InputBorder.none,
             contentPadding: const EdgeInsets.all(20),
