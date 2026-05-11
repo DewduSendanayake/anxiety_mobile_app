@@ -55,8 +55,11 @@ class _LoginPageState extends State<LoginPage> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('user_id', _idController.text);
 
-    // Initialize the background service
-    await initializeService();
+    try {
+      await initializeService();
+    } catch (e) {
+      debugPrint('Background service init error: $e');
+    }
 
     if (mounted) {
       Navigator.pushReplacement(
