@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 class NotificationHelper {
   static final FlutterLocalNotificationsPlugin plugin =
       FlutterLocalNotificationsPlugin();
+  static String? _launchPayload;
 
   // Called when the user taps the notification
   static void Function(String?)? onNotificationClick;
@@ -24,11 +25,24 @@ class NotificationHelper {
           if (onNotificationClick != null) onNotificationClick!(response.payload);
         },
       );
+
+      // Capture payload when app is opened by tapping a notification
+      // from a terminated state.
+      final launchDetails = await plugin.getNotificationAppLaunchDetails();
+      if (launchDetails?.didNotificationLaunchApp ?? false) {
+        _launchPayload = launchDetails?.notificationResponse?.payload;
+      }
     } catch (e, st) {
       // Don't rethrow — log and allow app to continue.
       debugPrint('Notification plugin init failed: $e');
       debugPrint('$st');
     }
+  }
+
+  static String? consumeLaunchPayload() {
+    final payload = _launchPayload;
+    _launchPayload = null;
+    return payload;
   }
 
   static Future<void> showRatingNotification() async {
