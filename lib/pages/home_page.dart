@@ -279,7 +279,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(24),
                         child: Image.asset(
-                          'assets/meditation_hero.jpg',
+                          'assets/welcome_illustration.png',
                           fit: BoxFit.contain,
                         ),
                       ),
