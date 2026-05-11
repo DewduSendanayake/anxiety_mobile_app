@@ -48,5 +48,4 @@ flutter build apk --obfuscate --split-debug-info=./debug-info \
 ## 🔒 Privacy & Security
 All API keys and authentication tokens are injected dynamically at build-time using `--dart-define`. The application is built with an absolute priority on user anonymity and data encryption.
 
-## 📜 License
 Developed for clinical research and personal mindfulness tracking. All data collection follows ethical guidelines for user privacy and anonymity.
