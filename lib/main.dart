@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -16,52 +18,84 @@ import 'package:shared_preferences/shared_preferences.dart';
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await NotificationHelper.init();
-  } catch (e, st) {
-    debugPrint('Notification init error: $e');
-    debugPrint('$st');
-  }
+  // ── Global error handlers — prevent silent crashes ──────────────────────
+  FlutterError.onError = (FlutterErrorDetails details) {
+    debugPrint('🔴 FlutterError: ${details.exceptionAsString()}');
+    debugPrint('${details.stack}');
+  };
 
-  // 1. Queue Retry (Offline Architecture)
-  BackgroundServiceHelper.retryOfflineQueue().catchError((e) {
-    debugPrint('Init Queue Retry Error: $e');
-  });
+  // Catch async errors that escape zones.
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('🔴 PlatformDispatcher error: $error');
+    debugPrint('$stack');
+    return true; // Prevent the app from being terminated.
+  };
 
-  // 2. Connectivity Listener (Auto-Upload when internet returns)
-  try {
-    Connectivity().onConnectivityChanged.listen((ConnectivityResult result) async {
-      if (result != ConnectivityResult.none) {
-        await BackgroundServiceHelper.retryOfflineQueue();
-      }
-    });
-  } catch (e) {
-    debugPrint('Connectivity Listener Error: $e');
-  }
-
-  // 3. UI System Styling (Edge-to-edge)
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.dark,
-    ),
-  );
-
-  // 4. Initialize Background Service (Only if User ID exists)
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getString('user_id');
-    if (userId != null && userId.isNotEmpty) {
-      await bg.initializeService();
-    } else {
-      debugPrint('Background Service: No User ID, skipping initialization.');
+  // Run the entire app inside an error zone for extra safety.
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    try {
+      await NotificationHelper.init();
+    } catch (e, st) {
+      debugPrint('Notification init error: $e');
+      debugPrint('$st');
     }
-  } catch (e) {
-    debugPrint('Background Service Init Error: $e');
-  }
 
-  runApp(const ResearchApp());
+    // 1. Queue Retry (Offline Architecture)
+    BackgroundServiceHelper.retryOfflineQueue().catchError((e) {
+      debugPrint('Init Queue Retry Error: $e');
+    });
+
+    // 2. Connectivity Listener (Auto-Upload when internet returns)
+    // NOTE: connectivity_plus ^4.0 returns List<ConnectivityResult>,
+    //       NOT a single ConnectivityResult. Using `dynamic` to be safe
+    //       across all versions.
+    try {
+      Connectivity().onConnectivityChanged.listen((event) async {
+        try {
+          final bool connected = event is List
+              ? (event as List).any((r) => r != ConnectivityResult.none)
+              : event != ConnectivityResult.none;
+          if (connected) {
+            await BackgroundServiceHelper.retryOfflineQueue();
+          }
+        } catch (e) {
+          debugPrint('Connectivity callback error: $e');
+        }
+      }, onError: (e) {
+        debugPrint('Connectivity stream error: $e');
+      });
+    } catch (e) {
+      debugPrint('Connectivity Listener Error: $e');
+    }
+
+    // 3. UI System Styling (Edge-to-edge)
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+      ),
+    );
+
+    // 4. Initialize Background Service (Only if User ID exists)
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('user_id');
+      if (userId != null && userId.isNotEmpty) {
+        await bg.initializeService();
+      } else {
+        debugPrint('Background Service: No User ID, skipping initialization.');
+      }
+    } catch (e) {
+      debugPrint('Background Service Init Error: $e');
+    }
+
+    runApp(const ResearchApp());
+  }, (error, stack) {
+    // Zone-level fallback — catches anything that slips through.
+    debugPrint('🔴 Uncaught zone error: $error');
+    debugPrint('$stack');
+  });
 }
 
 class ResearchApp extends StatelessWidget {
