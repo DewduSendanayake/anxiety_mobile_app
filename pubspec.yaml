@@ -66,4 +66,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/meditation_hero.jpg
+    - assets/welcome_illustration.png
 
