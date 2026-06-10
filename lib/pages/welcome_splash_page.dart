@@ -76,8 +76,8 @@ class _WelcomeSplashPageState extends State<WelcomeSplashPage>
     Navigator.pushReplacement(
       context,
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => widget.nextPage,
-        transitionsBuilder: (_, a, __, c) =>
+        pageBuilder: (_, _, _) => widget.nextPage,
+        transitionsBuilder: (_, a, _, c) =>
             FadeTransition(opacity: a, child: c),
         transitionDuration: const Duration(milliseconds: 600),
       ),
@@ -241,7 +241,7 @@ class _PulsingDotsState extends State<_PulsingDots>
       children: List.generate(3, (i) {
         return AnimatedBuilder(
           animation: _controller,
-          builder: (_, __) {
+          builder: (_, _) {
             // Stagger each dot
             final double delay = i * 0.2;
             final double t =
