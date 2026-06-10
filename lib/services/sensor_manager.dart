@@ -6,12 +6,12 @@ class SensorManager {
   final int samplingRate;
 
   // These in-memory lists store the high-frequency streaming data points
-  List<double> _ecgBuffer = [];
-  List<double> _respBuffer = [];
-  List<double> _tempBuffer = [];
-  List<double> _accXBuffer = [];
-  List<double> _accYBuffer = [];
-  List<double> _accZBuffer = [];
+  final List<double> _ecgBuffer = [];
+  final List<double> _respBuffer = [];
+  final List<double> _tempBuffer = [];
+  final List<double> _accXBuffer = [];
+  final List<double> _accYBuffer = [];
+  final List<double> _accZBuffer = [];
 
   Timer? _oneMinuteTimer;
   bool isCollecting = false;
