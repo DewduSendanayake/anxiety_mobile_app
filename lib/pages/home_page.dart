@@ -690,7 +690,7 @@ class _NotificationsSheet extends StatelessWidget {
                     shrinkWrap: true,
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                     itemCount: notifications.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (_, i) {
                       return Container(
                         padding: const EdgeInsets.all(14),
