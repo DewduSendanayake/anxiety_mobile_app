@@ -8,6 +8,7 @@ import 'theme/app_theme.dart';
 import 'pages/informed_consent_page.dart';
 import 'pages/login_page.dart';
 import 'pages/welcome_splash_page.dart';
+import 'pages/baseline_calibration_page.dart';
 
 import 'pages/main_navigation_page.dart';
 import 'profile_page.dart';
@@ -163,6 +164,7 @@ class SplashRouter extends StatelessWidget {
     final consentAccepted = prefs.getBool('consent_accepted') ?? false;
     final userId = prefs.getString('user_id');
     final profileComplete = prefs.getBool('profile_complete') ?? false;
+    final calibrationComplete = prefs.getBool('calibration_complete') ?? false;
 
     if (!consentAccepted) {
       return const InformedConsentPage();
@@ -170,6 +172,8 @@ class SplashRouter extends StatelessWidget {
       return const LoginPage();
     } else if (!profileComplete) {
       return const ProfilePage();
+    } else if (!calibrationComplete) {
+      return BaselineCalibrationPage(userId: userId);
     } else {
       return MainNavigationPage(userId: userId);
     }
