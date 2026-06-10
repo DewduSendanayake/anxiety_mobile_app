@@ -40,6 +40,7 @@ class _DashboardPageState extends State<DashboardPage>
   Timer? _predictionTimer;
   int _bufferingCountdown = 60;
   Timer? _bufferingTimer;
+  double? _fusionRiskScore; // final score returned by the teammate's fusion model
 
   // ── Physiological Simulator ──────────────────────────────────
   final PhysioSimulator _simulator = PhysioSimulator();
@@ -156,6 +157,29 @@ class _DashboardPageState extends State<DashboardPage>
 
       _bufferingTimer?.cancel();
       _bufferingTimer = null;
+
+      // ── Send trajectory to fusion model (fire-and-forget) ──────────────
+      // Compute a single physiological risk score = peak scaled value in the
+      // 10-step forecast. The fusion teammate uses this number + the full
+      // trajectory array to assign a weight and produce a final risk decision.
+      if (parsedForecast.isNotEmpty && _cachedId.isNotEmpty) {
+        final double peakRisk = parsedForecast
+            .map(_scaleForecastValue)
+            .reduce((a, b) => a > b ? a : b);
+        ApiService.sendToFusionModel(
+          userId: _cachedId,
+          trajectory: parsedForecast,
+          physiologicalRiskScore: peakRisk,
+        ).then((fusionResult) {
+          if (fusionResult['success'] == true && mounted) {
+            setState(() {
+              // Store whatever holistic score the fusion model returns
+              // (key name TBC with teammate — defaulting to 'final_risk_score')
+              _fusionRiskScore = (fusionResult['final_risk_score'] as num?)?.toDouble();
+            });
+          }
+        });
+      }
     } else if (status == 'buffering') {
       setState(() {
         _predictionStatus = "buffering";
