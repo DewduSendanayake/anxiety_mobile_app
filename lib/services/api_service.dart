@@ -90,4 +90,52 @@ class ApiService {
       return {'status': 'error', 'message': 'Network offline'};
     }
   }
+
+  // ─── FUSION ENDPOINT ─────────────────────────────────────────────────────────
+  // Sends our physiological trajectory to the teammate's multi-modal fusion model.
+  // The fusion model receives our 10-step forecast and a single aggregated
+  // physiological risk score, then weights and combines them with other modalities
+  // (e.g. digital phenotyping) to produce a final holistic risk decision.
+  //
+  // TODO: Replace [fusionBaseUrl] with the teammate's actual endpoint URL
+  //       once their Hugging Face Space is deployed.
+  static const String _fusionBaseUrl =
+      'https://PLACEHOLDER_FUSION_ENDPOINT.hf.space'; // ← swap this URL
+
+  static Future<Map<String, dynamic>> sendToFusionModel({
+    required String userId,
+    required List<double> trajectory,
+    required double physiologicalRiskScore,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_fusionBaseUrl/fuse'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'user_id': userId,
+              // 10-step future anxiety trajectory from our LSTM-AE
+              'physiological_trajectory': trajectory,
+              // Single aggregated risk score (0–100) derived from the trajectory
+              'physiological_risk_score': physiologicalRiskScore,
+              'timestamp': DateTime.now().toIso8601String(),
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        print('[Fusion] Score received: $decoded');
+        return {'success': true, ...decoded};
+      } else {
+        print('[Fusion] Endpoint rejected request: ${response.body}');
+        return {'success': false, 'message': 'Fusion endpoint error'};
+      }
+    } catch (e) {
+      // Silently fail — fusion is a cross-team integration and should never
+      // crash our own app if the teammate's server is offline.
+      print('[Fusion] Could not reach fusion endpoint: $e');
+      return {'success': false, 'message': 'Fusion offline'};
+    }
+  }
 }
