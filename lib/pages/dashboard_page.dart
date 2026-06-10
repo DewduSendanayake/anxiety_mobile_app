@@ -6,7 +6,6 @@ import 'package:fl_chart/fl_chart.dart';
 
 import '../theme/app_theme.dart';
 import '../background_service_helper.dart';
-import '../services/notification_helper.dart';
 import '../services/rating_settings.dart';
 import '../services/physio_simulator.dart';
 import 'package:permission_handler/permission_handler.dart';
