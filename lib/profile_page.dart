@@ -4,8 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'background_service_helper.dart';
 import 'theme/app_theme.dart';
-import 'pages/main_navigation_page.dart';
 import 'pages/data_rights_page.dart';
+import 'pages/baseline_calibration_page.dart';
 import 'services/background/service_config.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -190,12 +190,17 @@ class _ProfilePageState extends State<ProfilePage> {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
-      } else if (Navigator.canPop(context)) {
-        Navigator.pop(context);
       } else {
+        // First-time setup: go to calibration screen next
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => MainNavigationPage(userId: uid)),
+          PageRouteBuilder(
+            pageBuilder: (ctx, animation, secondaryAnimation) =>
+                BaselineCalibrationPage(userId: uid),
+            transitionsBuilder: (ctx, a, secondaryAnimation, c) =>
+                FadeTransition(opacity: a, child: c),
+            transitionDuration: const Duration(milliseconds: 800),
+          ),
         );
       }
     }
