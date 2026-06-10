@@ -578,7 +578,46 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
                 'Your personal mean and standard deviation are stored on the prediction server — never raw readings.',
           ),
 
-          const SizedBox(height: 40),
+          const SizedBox(height: 28),
+
+          // Calm state warning card
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Colors.amber.withValues(alpha: 0.3),
+                width: 1.5,
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.info_outline_rounded,
+                  color: Colors.amber,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'IMPORTANT: Only calibrate when you are feeling calm and relaxed. '
+                    'If you are currently stressed or active, please skip and calibrate later, '
+                    'as calibrating now will cause inaccurate stress predictions.',
+                    style: GoogleFonts.poppins(
+                      fontSize: 11.5,
+                      color: Colors.white.withValues(alpha: 0.9),
+                      height: 1.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 32),
 
           // Start button
           SizedBox(
