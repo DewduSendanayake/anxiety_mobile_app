@@ -602,7 +602,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
                 isStrokeCapRound: true,
                 dotData: FlDotData(
                   show: true,
-                  getDotPainter: (spot, _, __, ___) => FlDotCirclePainter(
+                  getDotPainter: (spot, _, _, _) => FlDotCirclePainter(
                     radius: spot.y > 0.7 ? 5 : 3,
                     color: spot.y > 0.7 ? _C.amber : Colors.transparent,
                     strokeColor: spot.y > 0.7 ? _C.amber : Colors.transparent,
@@ -928,7 +928,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
         barWidth: 2.5,
         dotData: FlDotData(
           show: true,
-          getDotPainter: (_, __, ___, ____) => FlDotCirclePainter(
+          getDotPainter: (_, _, _, _) => FlDotCirclePainter(
             radius: 3,
             color: _C.primary,
             strokeColor: _C.g100,
