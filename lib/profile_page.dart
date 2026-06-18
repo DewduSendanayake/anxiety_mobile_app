@@ -123,6 +123,7 @@ class _ProfilePageState extends State<ProfilePage> {
   ];
 
   Future<void> _saveProfile() async {
+    if (_isSaving) return;
     if (!_formKey.currentState!.validate()) return;
     if (_gender == null ||
         _maritalStatus == null ||
