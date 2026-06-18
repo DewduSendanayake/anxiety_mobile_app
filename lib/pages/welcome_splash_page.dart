@@ -73,15 +73,22 @@ class _WelcomeSplashPageState extends State<WelcomeSplashPage>
 
   void _navigateNext() {
     if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (_, _, _) => widget.nextPage,
-        transitionsBuilder: (_, a, _, c) =>
-            FadeTransition(opacity: a, child: c),
-        transitionDuration: const Duration(milliseconds: 600),
-      ),
+    final oldRoute = ModalRoute.of(context);
+    final newRoute = PageRouteBuilder(
+      pageBuilder: (_, _, _) => widget.nextPage,
+      transitionsBuilder: (_, a, _, c) =>
+          FadeTransition(opacity: a, child: c),
+      transitionDuration: const Duration(milliseconds: 600),
     );
+
+    if (oldRoute != null && !oldRoute.isCurrent) {
+      // A modal bottom sheet or dialog is open on top of the splash page.
+      // Replace the splash page silently underneath the modal route.
+      Navigator.of(context).replace(oldRoute: oldRoute, newRoute: newRoute);
+    } else {
+      // No modal is open; perform normal animated transition.
+      Navigator.pushReplacement(context, newRoute);
+    }
   }
 
   @override
