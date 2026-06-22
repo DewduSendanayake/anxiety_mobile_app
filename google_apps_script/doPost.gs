@@ -5,7 +5,7 @@
  * ================================================================
  */
 
-var ROTATED_TABS = ["Raw", "EMA"];
+var ROTATED_TABS = ["Raw", "EMA", "Physio"];
 var DATATYPE_TO_FAMILY = {
   "EMA_Rating_morning":   "EMA",
   "EMA_Rating_afternoon": "EMA",
@@ -17,12 +17,16 @@ var DATATYPE_TO_FAMILY = {
   "Consent_Withdrawal":   "Consent_Log",
   "Data_Deletion_Request": "Consent_Log",
   "Data_Export_Request":  "Consent_Log",
+  "Physio_Vitals":        "Physio",
 };
 
 var HEADERS = {
   "Raw": ["Timestamp","Date","Time","Participant ID","Data Type","Value"],
   "EMA": ["Timestamp","Date","Time","Participant ID","Period",
           "Stress","Anxiety","Fatigue","Social","Activity Context","Raw JSON"],
+  "Physio": ["Timestamp","Date","Time","Participant ID",
+             "Heart Rate","Breathing Rate","Body Temp",
+             "Motion Magnitude","Risk Score","Risk Label","Raw JSON"],
   "GAD7": ["Timestamp","Date","Participant ID","Total Score (0-21)","Severity",
            "Q1","Q2","Q3","Q4","Q5","Q6","Q7","Raw JSON"],
   "PSS10": ["Timestamp","Date","Participant ID","Total Score (0-40)",
@@ -279,6 +283,16 @@ function buildRows(entries, family, userId, tz, ss) {
         row = [ts, date, time, userId, period.toLowerCase(),
                ema.stress||"", ema.anxiety||"", ema.fatigue||"", ema.social||"",
                ema.context||"", valStr];
+      } else if (family === "Physio") {
+        var phy = safeJSON(valStr);
+        row = [ts, date, time, userId,
+               phy.heart_rate!==undefined?phy.heart_rate:"",
+               phy.breathing_rate!==undefined?phy.breathing_rate:"",
+               phy.body_temp!==undefined?phy.body_temp:"",
+               phy.motion_magnitude!==undefined?phy.motion_magnitude:"",
+               phy.risk_score!==undefined?phy.risk_score:"",
+               phy.risk_label||"",
+               valStr];
       } else if (family === "GAD7") {
         var gad = safeJSON(valStr);
         var ans = Array.isArray(gad.answers) ? gad.answers : [];
