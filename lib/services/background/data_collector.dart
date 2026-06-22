@@ -24,7 +24,7 @@ class DataCollector {
       debugPrint("📍 DataCollector: Requesting Location...");
       final Position position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium,
+          accuracy: LocationAccuracy.high,
         ),
       ).timeout(const Duration(seconds: 15));
 
