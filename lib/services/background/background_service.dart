@@ -93,6 +93,28 @@ void onStart(ServiceInstance service) async {
   // This routes queue writes to 'offline_queue_bg' instead of 'offline_queue_main'.
   BackgroundServiceHelper.isMainIsolate = false;
 
+  // Log every service start explicitly — lets the heartbeat-gap checker
+  // and ETL directly see *why* a gap ended (service restart) rather than
+  // only seeing that a new heartbeat appeared. Also lets you measure
+  // whether the PowerConnectedReceiver fix is reducing average gap length
+  // over time, by comparing Service_Restart timestamps against the previous
+  // gap analysis.
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    final String? uid = prefs.getString('user_id');
+    if (uid != null && uid.isNotEmpty) {
+      await BackgroundServiceHelper.sendToSheet(
+        uid,
+        "Service_Restart",
+        "Restarted_${DateTime.now().toIso8601String()}",
+        immediate: true,
+      );
+    }
+  } catch (e) {
+    debugPrint("Service restart logging error: $e");
+  }
+
   debugPrint("🔋 Background Service: onStart — initialising…");
 
   final prefs = await SharedPreferences.getInstance();
