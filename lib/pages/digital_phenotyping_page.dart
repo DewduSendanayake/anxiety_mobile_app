@@ -5,8 +5,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../theme/app_theme.dart';
 import '../profile_page.dart';
+import 'package:battery_plus/battery_plus.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:call_log/call_log.dart';
+import 'package:usage_stats/usage_stats.dart';
+import 'package:flutter_sms_inbox/flutter_sms_inbox.dart';
 import '../services/rating_settings.dart';
-
 // ─────────────────────────────────────────────
 // COLOUR TOKENS — deep forest-green forward theme
 // ─────────────────────────────────────────────
@@ -81,6 +85,14 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
 
   int _timeStep = 7;
 
+  // Real data state variables
+  bool _isLoadingRealData = true;
+  int _totalCallCount = 0;
+  int _totalSmsCount = 0;
+  double _screenTimeHours = 0.0;
+  String _locationDesc = "Locating...";
+  String _batteryDesc = "Checking...";
+
   // ── 24-hr risk curve (static per session from GATv2 output) ──
   final List<FlSpot> _riskCurveData = const [
     FlSpot(0,  0.20),
@@ -141,7 +153,66 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
       _physicalActivity.add(FlSpot(i.toDouble(), 20 + _rng.nextDouble() * 40));
       _digitalEngagement.add(FlSpot(i.toDouble(), 2  + _rng.nextDouble() * 6));
     }
+    _fetchRealData();
   }
+
+  Future<void> _fetchRealData() async {
+    try {
+      // 1. Call Logs (Last 24h)
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      final Iterable<CallLogEntry> entries = await CallLog.query(
+        dateFrom: now - (24 * 60 * 60 * 1000),
+      ).timeout(const Duration(seconds: 5), onTimeout: () => []);
+      _totalCallCount = entries.length;
+
+      // 2. SMS (Today)
+      final SmsQuery smsQuery = SmsQuery();
+      final List<SmsMessage> inbox = await smsQuery.querySms(kinds: [SmsQueryKind.inbox]).timeout(const Duration(seconds: 5), onTimeout: () => []);
+      final List<SmsMessage> sent = await smsQuery.querySms(kinds: [SmsQueryKind.sent]).timeout(const Duration(seconds: 5), onTimeout: () => []);
+      
+      bool isToday(DateTime? date) {
+        if (date == null) return false;
+        final dNow = DateTime.now();
+        return date.year == dNow.year && date.month == dNow.month && date.day == dNow.day;
+      }
+      _totalSmsCount = inbox.where((m) => isToday(m.date)).length + sent.where((m) => isToday(m.date)).length;
+
+      // 3. App Usage (Today)
+      final DateTime dEnd = DateTime.now();
+      final DateTime dStart = DateTime(dEnd.year, dEnd.month, dEnd.day); // Since midnight
+      final List<UsageInfo> usage = await UsageStats.queryUsageStats(dStart, dEnd).timeout(const Duration(seconds: 5), onTimeout: () => []);
+      double totalSeconds = 0;
+      for (final u in usage) {
+        totalSeconds += (int.tryParse(u.totalTimeInForeground ?? "0") ?? 0) / 1000;
+      }
+      _screenTimeHours = totalSeconds / 3600;
+
+      // 4. Battery
+      final battery = Battery();
+      final int level = await battery.batteryLevel.timeout(const Duration(seconds: 3), onTimeout: () => 0);
+      final BatteryState state = await battery.batteryState.timeout(const Duration(seconds: 3), onTimeout: () => BatteryState.unknown);
+      _batteryDesc = "$level% · ${state.name}";
+
+      // 5. Location
+      try {
+        final Position position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.low),
+        ).timeout(const Duration(seconds: 5));
+        _locationDesc = "${position.latitude.toStringAsFixed(2)}, ${position.longitude.toStringAsFixed(2)}";
+      } catch (e) {
+        _locationDesc = "Location unavailable";
+      }
+    } catch (e) {
+      debugPrint("Error fetching real data: $e");
+    }
+
+    if (mounted) {
+      setState(() {
+        _isLoadingRealData = false;
+      });
+    }
+  }
+
 
   BarChartGroupData _buildSocBar(int x, {double? toY}) => BarChartGroupData(
     x: x,
@@ -230,33 +301,47 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
                 const SizedBox(height: 24),
                 _buildSectionTitle('Data Collection Metrics', live: true),
                 const SizedBox(height: 10),
-                _buildMetricCard(
-                  icon: Icons.screen_lock_portrait_rounded,
-                  title: 'Screen State',
-                  value: 'Unlocked 42 times',
-                  subtitle: 'Average 4.2 hrs / day',
-                ),
-                const SizedBox(height: 10),
-                _buildMetricCard(
-                  icon: Icons.directions_walk_rounded,
-                  title: 'Physical Activity',
-                  value: 'Low Movement Detected',
-                  subtitle: 'Based on accelerometer data',
-                ),
-                const SizedBox(height: 10),
-                _buildMetricCard(
-                  icon: Icons.location_on_rounded,
-                  title: 'Location Cluster',
-                  value: 'LOC_2 · Home zone',
-                  subtitle: 'Stay-point via DBSCAN',
-                ),
-                const SizedBox(height: 10),
-                _buildMetricCard(
-                  icon: Icons.record_voice_over_rounded,
-                  title: 'Social Interactions',
-                  value: '3 conversations today',
-                  subtitle: 'Speech detection · no recording',
-                ),
+                if (_isLoadingRealData) 
+                  const Center(child: Padding(
+                    padding: EdgeInsets.all(20.0),
+                    child: CircularProgressIndicator(color: _C.primary),
+                  ))
+                else ...[
+                  _buildMetricCard(
+                    icon: Icons.screen_lock_portrait_rounded,
+                    title: 'Screen State',
+                    value: '${_screenTimeHours.toStringAsFixed(1)} hrs today',
+                    subtitle: 'Foreground app usage',
+                  ),
+                  const SizedBox(height: 10),
+                  _buildMetricCard(
+                    icon: Icons.directions_walk_rounded,
+                    title: 'Physical Activity',
+                    value: 'Monitoring Movement',
+                    subtitle: 'Based on GPS speed estimates',
+                  ),
+                  const SizedBox(height: 10),
+                  _buildMetricCard(
+                    icon: Icons.location_on_rounded,
+                    title: 'Location Status',
+                    value: _locationDesc,
+                    subtitle: 'Current GPS coordinate via Geolocator',
+                  ),
+                  const SizedBox(height: 10),
+                  _buildMetricCard(
+                    icon: Icons.record_voice_over_rounded,
+                    title: 'Social Interactions',
+                    value: '$_totalCallCount calls, $_totalSmsCount SMS',
+                    subtitle: 'Device logs over last 24h/today',
+                  ),
+                  const SizedBox(height: 10),
+                  _buildMetricCard(
+                    icon: Icons.battery_charging_full_rounded,
+                    title: 'Battery Health',
+                    value: _batteryDesc,
+                    subtitle: 'Current device power state',
+                  ),
+                ],
                 const SizedBox(height: 26),
                 _buildSectionTitle('Live Subject Details', live: true),
                 const SizedBox(height: 12),
