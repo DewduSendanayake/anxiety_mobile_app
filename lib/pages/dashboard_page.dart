@@ -32,6 +32,7 @@ class _DashboardPageState extends State<DashboardPage>
   String _cachedId = "";
   bool _isServiceRunning = false;
   bool _isOptimized = false;
+  bool _chestStrapConnected = false;
 
   // ── Prediction Pipeline State ──────────────────────────────
   String _predictionStatus = "loading"; // "loading", "buffering", "not_calibrated", "success", "error"
@@ -101,6 +102,10 @@ class _DashboardPageState extends State<DashboardPage>
     _simulator.start(interval: const Duration(seconds: 3));
 
     _startStatusCheck();
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkBluetoothConnection();
+    });
   }
 
   @override
@@ -111,6 +116,119 @@ class _DashboardPageState extends State<DashboardPage>
     _predictionTimer?.cancel();
     _bufferingTimer?.cancel();
     super.dispose();
+  }
+
+  // ── Chest Strap Bluetooth Flow ───────────────────────────────
+
+  Future<void> _checkBluetoothConnection() async {
+    bool isGranted = await Permission.bluetoothConnect.isGranted;
+    if (!isGranted) {
+      _showBluetoothPrompt();
+    } else {
+      setState(() {
+        _chestStrapConnected = true;
+      });
+    }
+  }
+
+  void _showBluetoothPrompt() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text('Connect Chest Strap', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        content: Text(
+          'Please connect your chest strap via Bluetooth to measure new physiological data.',
+          style: GoogleFonts.poppins(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _showDenyWarning();
+            },
+            child: Text('Deny', style: GoogleFonts.poppins(color: Colors.red)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              var status = await Permission.bluetoothConnect.request();
+              if (status.isGranted) {
+                setState(() => _chestStrapConnected = true);
+              } else {
+                _showDenyWarning();
+              }
+            },
+            child: Text('Connect', style: GoogleFonts.poppins(color: AppTheme.kPrimaryDeep)),
+          ),
+        ],
+      )
+    );
+  }
+
+  void _showDenyWarning() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text('Warning', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        content: Text(
+          'You won\'t be able to measure any new physio data like ECG. You will get results based on your old data, which will be less accurate.\n\nIs that OK?',
+          style: GoogleFonts.poppins(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _showAskAgainPrompt();
+            },
+            child: Text('No', style: GoogleFonts.poppins(color: Colors.red)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // Proceed with inaccurate data
+            },
+            child: Text('Yes', style: GoogleFonts.poppins(color: AppTheme.kPrimaryDeep)),
+          ),
+        ],
+      )
+    );
+  }
+
+  void _showAskAgainPrompt() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text('Bluetooth Required', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        content: Text(
+          'To get accurate results, please allow Bluetooth to connect the chest strap.',
+          style: GoogleFonts.poppins(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // Proceed anyway, nothing we can do
+            },
+            child: Text('No', style: GoogleFonts.poppins(color: Colors.red)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              var status = await Permission.bluetoothConnect.request();
+              if (status.isGranted) {
+                setState(() => _chestStrapConnected = true);
+              } else {
+                // Proceed anyway, nothing we can do
+              }
+            },
+            child: Text('Connect Bluetooth', style: GoogleFonts.poppins(color: AppTheme.kPrimaryDeep)),
+          ),
+        ],
+      )
+    );
   }
 
   // ── Data & Service Helpers ──────────────────────────────────
@@ -722,7 +840,7 @@ class _DashboardPageState extends State<DashboardPage>
               // Pipeline steps check-list
               Column(
                 children: [
-                  _buildPipelineStepRow(true, 'Chest strap BLE connection active'),
+                  _buildPipelineStepRow(_chestStrapConnected, 'Chest strap BLE connection active'),
                   const SizedBox(height: 10),
                   _buildPipelineStepRow(true, 'Baseline normalization parameters loaded'),
                   const SizedBox(height: 10),
