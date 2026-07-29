@@ -138,7 +138,7 @@ class _DashboardPageState extends State<DashboardPage>
       builder: (context) => AlertDialog(
         title: Text('Connect Chest Strap', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
         content: Text(
-          'Please connect your chest strap via Bluetooth to measure new physiological data.',
+          'Please connect your chest strap using Bluetooth so we can track your heart and breathing.',
           style: GoogleFonts.poppins(),
         ),
         actions: [
@@ -171,9 +171,9 @@ class _DashboardPageState extends State<DashboardPage>
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: Text('Warning', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        title: Text('Are you sure?', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
         content: Text(
-          'You won\'t be able to measure any new physio data like ECG. You will get results based on your old data, which will be less accurate.\n\nIs that OK?',
+          'Without the chest strap, we can\'t measure your heart rate right now. We will use your old results instead, which might not be very accurate.\n\nIs that okay?',
           style: GoogleFonts.poppins(),
         ),
         actions: [
@@ -182,14 +182,14 @@ class _DashboardPageState extends State<DashboardPage>
               Navigator.pop(context);
               _showAskAgainPrompt();
             },
-            child: Text('No', style: GoogleFonts.poppins(color: Colors.red)),
+            child: Text('No, go back', style: GoogleFonts.poppins(color: Colors.red)),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               // Proceed with inaccurate data
             },
-            child: Text('Yes', style: GoogleFonts.poppins(color: AppTheme.kPrimaryDeep)),
+            child: Text('Yes, that\'s fine', style: GoogleFonts.poppins(color: AppTheme.kPrimaryDeep)),
           ),
         ],
       )
@@ -201,9 +201,9 @@ class _DashboardPageState extends State<DashboardPage>
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: Text('Bluetooth Required', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        title: Text('Bluetooth Needed', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
         content: Text(
-          'To get accurate results, please allow Bluetooth to connect the chest strap.',
+          'To get the best results, please let us use Bluetooth to connect to your chest strap.',
           style: GoogleFonts.poppins(),
         ),
         actions: [
@@ -212,7 +212,7 @@ class _DashboardPageState extends State<DashboardPage>
               Navigator.pop(context);
               // Proceed anyway, nothing we can do
             },
-            child: Text('No', style: GoogleFonts.poppins(color: Colors.red)),
+            child: Text('Skip', style: GoogleFonts.poppins(color: Colors.red)),
           ),
           TextButton(
             onPressed: () async {
@@ -224,7 +224,7 @@ class _DashboardPageState extends State<DashboardPage>
                 // Proceed anyway, nothing we can do
               }
             },
-            child: Text('Connect Bluetooth', style: GoogleFonts.poppins(color: AppTheme.kPrimaryDeep)),
+            child: Text('Turn on Bluetooth', style: GoogleFonts.poppins(color: AppTheme.kPrimaryDeep)),
           ),
         ],
       )
