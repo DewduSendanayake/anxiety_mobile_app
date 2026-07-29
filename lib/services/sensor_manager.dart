@@ -24,7 +24,7 @@ class SensorManager {
     _clearBuffers();
 
     // Toggle this to true to auto-generate perfect raw waveforms without the chest strap
-    bool useSimulationMode = true;
+    bool useSimulationMode = false;
 
     // This periodic timer fires exactly every 60 seconds
     _oneMinuteTimer = Timer.periodic(const Duration(seconds: 60), (timer) async {
@@ -62,7 +62,8 @@ class SensorManager {
       }
 
       // Main safety guard clause: Don't transmit if buffers are empty
-      if (_ecgBuffer.isEmpty || _respBuffer.isEmpty) {
+      // Note: We removed the respBuffer check since the V3 hardware doesn't supply Respiration
+      if (_ecgBuffer.isEmpty) {
         print('Buffer warning: No raw sensor data accumulated in the last minute.');
         return;
       }
@@ -126,6 +127,17 @@ class SensorManager {
     isCollecting = false;
     _oneMinuteTimer?.cancel();
     _clearBuffers();
+  }
+
+  // CALLED BY BLUETOOTH SERVICE TO INJECT LIVE DATA
+  void addLiveData(double ecg, double accX, double accY, double accZ, double temp) {
+    if (!isCollecting) return;
+    _ecgBuffer.add(ecg);
+    _accXBuffer.add(accX);
+    _accYBuffer.add(accY);
+    _accZBuffer.add(accZ);
+    _tempBuffer.add(temp);
+    _respBuffer.add(0.0); // Padding because API expects it
   }
 
   void _clearBuffers() {

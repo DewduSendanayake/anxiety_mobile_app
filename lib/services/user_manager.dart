@@ -1,4 +1,5 @@
 import 'sensor_manager.dart';
+import 'bluetooth_service.dart';
 
 class UserManager {
   // This is the magic line that creates the single, permanent instance of UserManager
@@ -33,11 +34,19 @@ class UserManager {
     print('User session initialized for identity: $userId');
 
     // Automatically create a fresh SensorManager dedicated entirely to this user
-    sensorManager = SensorManager(userId: userId, samplingRate: 700);
+    sensorManager = SensorManager(userId: userId, samplingRate: 1); // Real hardware sends 1 packet per second
     
     // Instantly start the 60-second background background tracking loop
     sensorManager!.startCollection();
     print('Background data collection loop kicked off for $userId');
+
+    // Link Bluetooth service to pass data to SensorManager
+    BluetoothService().onDataReceived = (ecg, accX, accY, accZ, temp) {
+      sensorManager?.addLiveData(ecg, accX, accY, accZ, temp);
+    };
+
+    // Start scanning for the Chest Strap
+    BluetoothService().startScan();
   }
 
   // LOGOUT METHOD: Call this if the user wants to switch identities
@@ -47,6 +56,9 @@ class UserManager {
     // Safely stop the background timers and empty the chest strap memory buffers
     sensorManager?.stopCollection();
     sensorManager = null;
+    
+    // Disconnect bluetooth
+    BluetoothService().disconnect();
     
     // Clear out the user ID completely
     _currentUserId = null;

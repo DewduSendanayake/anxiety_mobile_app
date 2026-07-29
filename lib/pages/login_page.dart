@@ -35,6 +35,8 @@ class _LoginPageState extends State<LoginPage> {
         Permission.sms,
         Permission.notification,
         Permission.ignoreBatteryOptimizations,
+        Permission.bluetoothScan,
+        Permission.bluetoothConnect,
       ].request();
 
       bool isUsageGranted = await UsageStats.checkUsagePermission() ?? false;
