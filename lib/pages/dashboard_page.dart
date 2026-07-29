@@ -93,14 +93,30 @@ class _DashboardPageState extends State<DashboardPage>
     ));
     _entryController.forward();
 
-    // Start physiological data simulation
+    // We do NOT start the simulator here automatically anymore.
+    // It will only start if the user denies Bluetooth and accepts the fallback.
     _simulator.onData = (snap) {
       if (mounted) {
         setState(() => _snapshot = snap);
         _uploadPhysioData(snap);
       }
     };
-    _simulator.start(interval: const Duration(seconds: 3));
+
+    // Wire up Bluetooth UI updates
+    BluetoothService().onDataReceived = (ecg, accX, accY, accZ, temp) {
+      if (mounted && _chestStrapConnected) {
+        setState(() {
+          // Calculate a rough motion magnitude from the accelerometer
+          double motion = sqrt(accX*accX + accY*accY + accZ*accZ);
+          _snapshot = PhysioSnapshot(
+            heartRate: 0, // Hardware team hasn't added HR calculation to CSV yet
+            breathingRate: 0, 
+            bodyTemp: temp,
+            motionMagnitude: motion,
+          );
+        });
+      }
+    };
 
     _startStatusCheck();
     
@@ -188,7 +204,11 @@ class _DashboardPageState extends State<DashboardPage>
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              // Proceed with inaccurate data
+              // User accepted the fallback. Start the simulator to represent "old data"
+              _simulator.start(interval: const Duration(seconds: 3));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Using fallback/old data for physiological monitoring.')),
+              );
             },
             child: Text('Yes, that\'s fine', style: GoogleFonts.poppins(color: AppTheme.kPrimaryDeep)),
           ),
@@ -212,6 +232,10 @@ class _DashboardPageState extends State<DashboardPage>
             onPressed: () {
               Navigator.pop(context);
               // Proceed anyway, nothing we can do
+              _simulator.start(interval: const Duration(seconds: 3));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Using fallback/old data.')),
+              );
             },
             child: Text('Skip', style: GoogleFonts.poppins(color: Colors.red)),
           ),
