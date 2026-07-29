@@ -45,6 +45,7 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   fl_chart: ^1.2.0
+  app_settings: ^8.0.3
 
   #################################
 
