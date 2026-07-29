@@ -445,7 +445,7 @@ class _DashboardPageState extends State<DashboardPage>
         backgroundColor: Colors.transparent,
         elevation: 0,
         title: Text(
-          'Physiological Monitor',
+          'Vitals Monitor',
           style: GoogleFonts.poppins(
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -460,24 +460,7 @@ class _DashboardPageState extends State<DashboardPage>
                 onPressed: () => Navigator.pop(context),
               )
             : null,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.person_outline_rounded,
-                color: AppTheme.kTextDark),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ProfilePage()),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.tune_rounded, color: AppTheme.kTextDark),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const RatingSettingsPage()),
-            ),
-          ),
-          const SizedBox(width: 4),
-        ],
+
       ),
       body: SlideTransition(
         position: _entrySlide,

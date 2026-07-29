@@ -454,26 +454,6 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             ),
 
                             const SizedBox(height: 12),
-                            // Score breakdown
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _scoreChip(
-                                    'Physiological',
-                                    _snapshot.riskScore,
-                                    Icons.monitor_heart_rounded,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _scoreChip(
-                                    'Phenotyping',
-                                    _phenotypingRisk * 100,
-                                    Icons.psychology_rounded,
-                                  ),
-                                ),
-                              ],
-                            ),
                           ],
                         ),
                       );
@@ -534,47 +514,6 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
         fontSize: 10,
         color: Colors.white.withValues(alpha: active ? 1.0 : 0.5),
         fontWeight: active ? FontWeight.w700 : FontWeight.w400,
-      ),
-    );
-  }
-
-  Widget _scoreChip(String label, double score, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.15),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.white.withValues(alpha: 0.7), size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: GoogleFonts.poppins(
-                    fontSize: 10,
-                    color: Colors.white.withValues(alpha: 0.6),
-                  ),
-                ),
-                Text(
-                  '${score.toStringAsFixed(0)}/100',
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

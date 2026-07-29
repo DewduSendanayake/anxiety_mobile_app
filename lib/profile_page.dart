@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image_picker/image_picker.dart';
 import 'background_service_helper.dart';
 import 'theme/app_theme.dart';
 import 'pages/data_rights_page.dart';
@@ -19,6 +21,8 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   bool _isEditing = false;
   String _userId = '';
+  String? _profileImagePath;
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -58,10 +62,48 @@ class _ProfilePageState extends State<ProfilePage> {
           hour: prefs.getInt('ema_evening_hour') ?? 20,
           minute: prefs.getInt('ema_evening_minute') ?? 0,
         );
+        _profileImagePath = prefs.getString('profile_image_path');
       });
     } else {
-      setState(() => _userId = uid);
+      setState(() {
+        _userId = uid;
+        _profileImagePath = prefs.getString('profile_image_path');
+      });
     }
+  }
+
+  Future<void> _pickProfileImage() async {
+    try {
+      final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+      if (image != null) {
+        setState(() {
+          _profileImagePath = image.path;
+        });
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('profile_image_path', image.path);
+      }
+    } catch (e) {
+      debugPrint('Error picking image: $e');
+    }
+  }
+
+  Future<void> _saveTime(String period, TimeOfDay time) async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      if (period == 'morning') {
+        _morningTime = time;
+        prefs.setInt('ema_morning_hour', time.hour);
+        prefs.setInt('ema_morning_minute', time.minute);
+      } else if (period == 'afternoon') {
+        _afternoonTime = time;
+        prefs.setInt('ema_afternoon_hour', time.hour);
+        prefs.setInt('ema_afternoon_minute', time.minute);
+      } else if (period == 'evening') {
+        _eveningTime = time;
+        prefs.setInt('ema_evening_hour', time.hour);
+        prefs.setInt('ema_evening_minute', time.minute);
+      }
+    });
   }
 
   final _formKey = GlobalKey<FormState>();
@@ -169,14 +211,6 @@ class _ProfilePageState extends State<ProfilePage> {
     await prefs.setBool('profile_complete', true);
     await prefs.setString('user_profile_data', jsonEncode(profile));
 
-    // Save notification times
-    await prefs.setInt('ema_morning_hour', _morningTime.hour);
-    await prefs.setInt('ema_morning_minute', _morningTime.minute);
-    await prefs.setInt('ema_afternoon_hour', _afternoonTime.hour);
-    await prefs.setInt('ema_afternoon_minute', _afternoonTime.minute);
-    await prefs.setInt('ema_evening_hour', _eveningTime.hour);
-    await prefs.setInt('ema_evening_minute', _eveningTime.minute);
-
     if (mounted) {
       setState(() => _isSaving = false);
       if (widget.isTab) {
@@ -248,20 +282,48 @@ class _ProfilePageState extends State<ProfilePage> {
               child: Column(
                 children: [
                   // Avatar
-                  Container(
-                    width: 90,
-                    height: 90,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.2),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 3),
-                    ),
-                    child: Icon(
-                      _gender == 'Male' ? Icons.face_rounded
-                          : _gender == 'Female' ? Icons.face_3_rounded
-                          : Icons.person_rounded,
-                      color: Colors.white,
-                      size: 48,
+                  GestureDetector(
+                    onTap: _pickProfileImage,
+                    child: Stack(
+                      alignment: Alignment.bottomRight,
+                      children: [
+                        Container(
+                          width: 90,
+                          height: 90,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withValues(alpha: 0.2),
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 3),
+                            image: _profileImagePath != null
+                                ? DecorationImage(
+                                    image: FileImage(File(_profileImagePath!)),
+                                    fit: BoxFit.cover,
+                                  )
+                                : null,
+                          ),
+                          child: _profileImagePath == null
+                              ? Icon(
+                                  _gender == 'Male' ? Icons.face_rounded
+                                      : _gender == 'Female' ? Icons.face_3_rounded
+                                      : Icons.person_rounded,
+                                  color: Colors.white,
+                                  size: 48,
+                                )
+                              : null,
+                        ),
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.camera_alt_rounded,
+                            color: Color(0xFF667eea),
+                            size: 16,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -333,9 +395,9 @@ class _ProfilePageState extends State<ProfilePage> {
                   ]),
                   const SizedBox(height: 14),
                   _infoCard('Check-in Schedule', Icons.schedule_rounded, [
-                    _infoRow(Icons.wb_sunny_rounded, 'Morning', _morningTime.format(context)),
-                    _infoRow(Icons.wb_cloudy_rounded, 'Afternoon', _afternoonTime.format(context)),
-                    _infoRow(Icons.nightlight_round, 'Evening', _eveningTime.format(context)),
+                    _timeTile('Morning', _morningTime, (t) => _saveTime('morning', t), Icons.wb_sunny_rounded),
+                    _timeTile('Afternoon', _afternoonTime, (t) => _saveTime('afternoon', t), Icons.wb_cloudy_rounded),
+                    _timeTile('Evening', _eveningTime, (t) => _saveTime('evening', t), Icons.nightlight_round),
                   ]),
                   const SizedBox(height: 14),
                   _buildPrivacyCard(),
@@ -500,20 +562,6 @@ class _ProfilePageState extends State<ProfilePage> {
               _buildSlider(),
               const SizedBox(height: 32),
 
-              const Divider(),
-              const SizedBox(height: 24),
-              const Text('Daily Check-in Preferences', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              Text('Choose when you want to be prompted for your daily anxiety check-ins (1–5 scale).',
-                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
-              const SizedBox(height: 20),
-
-              _timeTile('Morning Check-in', _morningTime, (t) => setState(() => _morningTime = t), Icons.wb_sunny_outlined),
-              _timeTile('Afternoon Check-in', _afternoonTime, (t) => setState(() => _afternoonTime = t), Icons.wb_cloudy_outlined),
-              _timeTile('Evening Check-in', _eveningTime, (t) => setState(() => _eveningTime = t), Icons.nightlight_round_outlined),
-              const SizedBox(height: 40),
-
-              const SizedBox(height: 24),
               const Divider(),
               const SizedBox(height: 24),
               const Text('Privacy & Data Rights', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),

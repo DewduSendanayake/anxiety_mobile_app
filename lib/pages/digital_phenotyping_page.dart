@@ -391,27 +391,12 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
     backgroundColor: _C.scaffold,
     elevation: 0,
     title: Text(
-      'Digital Phenotyping',
+      'Activity Monitor',
       style: GoogleFonts.poppins(
         color: _C.textPrimary,
         fontWeight: FontWeight.w600,
         fontSize: 17,
       ),
-    ),
-    actions: [
-      _iconBtn(Icons.person_outline_rounded,
-          () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage()))),
-      _iconBtn(Icons.settings_rounded,
-          () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RatingSettingsPage()))),
-      const SizedBox(width: 8),
-    ],
-  );
-
-  Widget _iconBtn(IconData icon, VoidCallback onTap) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 4),
-    child: IconButton(
-      icon: Icon(icon, color: _C.textSecondary, size: 22),
-      onPressed: onTap,
     ),
   );
 

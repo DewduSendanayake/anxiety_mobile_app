@@ -55,8 +55,8 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _buildNavItem(0, Icons.home_rounded, Icons.home_outlined, 'Home'),
-                _buildNavItem(1, Icons.monitor_heart_rounded, Icons.monitor_heart_outlined, 'Physio'),
-                _buildNavItem(2, Icons.psychology_rounded, Icons.psychology_outlined, 'Phenotype'),
+                _buildNavItem(1, Icons.monitor_heart_rounded, Icons.monitor_heart_outlined, 'Vitals'),
+                _buildNavItem(2, Icons.psychology_rounded, Icons.psychology_outlined, 'Activity'),
                 _buildNavItem(3, Icons.person_rounded, Icons.person_outline_rounded, 'Profile'),
               ],
             ),
