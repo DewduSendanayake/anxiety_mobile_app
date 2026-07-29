@@ -14,6 +14,7 @@ import 'package:app_settings/app_settings.dart';
 import '../ema_and_gad7.dart';
 import '../profile_page.dart';
 import '../services/api_service.dart';
+import '../services/bluetooth_service.dart';
 import 'baseline_calibration_page.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
