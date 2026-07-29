@@ -48,9 +48,10 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
   bool _cbStorage   = false;
   bool _cbRights    = false;
   bool _cbVoluntary = false;
+  bool _cbLiability = false;
 
   bool get _allChecked =>
-      _cbAge && _cbPurpose && _cbData && _cbPhysio && _cbStorage && _cbRights && _cbVoluntary;
+      _cbAge && _cbPurpose && _cbData && _cbPhysio && _cbStorage && _cbRights && _cbVoluntary && _cbLiability;
 
   bool get _canProceed => _hasScrolledToBottom && _allChecked;
 
@@ -84,6 +85,7 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
       _cbStorage   = prefs.getBool('consent_cb_storage')   ?? true;
       _cbRights    = prefs.getBool('consent_cb_rights')    ?? true;
       _cbVoluntary = prefs.getBool('consent_cb_voluntary') ?? true;
+      _cbLiability = prefs.getBool('consent_cb_liability') ?? true;
       if (ts != null) {
         try {
           final dt = DateTime.parse(ts).toLocal();
@@ -111,6 +113,7 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
     await prefs.setBool('consent_cb_storage',   _cbStorage);
     await prefs.setBool('consent_cb_rights',    _cbRights);
     await prefs.setBool('consent_cb_voluntary', _cbVoluntary);
+    await prefs.setBool('consent_cb_liability', _cbLiability);
 
     if (mounted) {
       Navigator.pushReplacement(
@@ -313,6 +316,11 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
                             key: 'voluntary',
                             label: "I understand that participation is entirely voluntary and I may withdraw at any time without penalty (Section 7).",
                           ),
+                          _consentCheck(
+                            value: _cbLiability,
+                            key: 'liability',
+                            label: "I understand that this app is for research purposes only and is not a substitute for professional medical advice. I agree to use it at my own risk and hold the developers harmless from any liability or claims if anything goes wrong.",
+                          ),
 
                           const SizedBox(height: 14),
 
@@ -499,6 +507,7 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
           case 'storage':  _cbStorage   = v ?? false; break;
           case 'rights':   _cbRights    = v ?? false; break;
           case 'voluntary':_cbVoluntary = v ?? false; break;
+          case 'liability':_cbLiability = v ?? false; break;
         }
       });
     }
