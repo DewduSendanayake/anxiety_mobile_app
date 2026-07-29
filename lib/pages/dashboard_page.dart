@@ -104,7 +104,7 @@ class _DashboardPageState extends State<DashboardPage>
     };
 
     // Wire up Bluetooth UI updates
-    BluetoothService().onDataReceived = (ecg, accX, accY, accZ, temp) {
+    BleManager().onDataReceived = (ecg, accX, accY, accZ, temp) {
       if (mounted && _chestStrapConnected) {
         setState(() {
           // Calculate a rough motion magnitude from the accelerometer
