@@ -328,26 +328,11 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    'User',
+                    _userId.isNotEmpty ? _userId : 'Unknown User',
                     style: GoogleFonts.poppins(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
                       color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      _userId.isNotEmpty ? 'ID: $_userId' : 'ID: Not assigned',
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: Colors.white.withValues(alpha: 0.9),
-                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
