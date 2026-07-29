@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -51,9 +52,31 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _login() async {
-    if (_idController.text.isEmpty) return;
+    final enteredId = _idController.text.trim();
+    if (enteredId.isEmpty) return;
+
+    // Validate ID format (letters, numbers, underscores, full stops only)
+    final validCharacters = RegExp(r'^[a-zA-Z0-9_.]+$');
+    if (!validCharacters.hasMatch(enteredId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Username can only contain letters, numbers, underscores, and full stops.',
+            style: GoogleFonts.poppins(fontSize: 13),
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Generate a unique 4-digit suffix
+    final random = Random();
+    final suffix = random.nextInt(9000) + 1000; // 1000 to 9999
+    final finalId = '${enteredId}_$suffix';
+
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('user_id', _idController.text);
+    await prefs.setString('user_id', finalId);
 
     try {
       await initializeService();
