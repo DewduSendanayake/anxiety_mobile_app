@@ -41,12 +41,12 @@ class UserManager {
     print('Background data collection loop kicked off for $userId');
 
     // Link Bluetooth service to pass data to SensorManager
-    BluetoothService().onDataReceived = (ecg, accX, accY, accZ, temp) {
+    BleManager().onDataReceived = (ecg, accX, accY, accZ, temp) {
       sensorManager?.addLiveData(ecg, accX, accY, accZ, temp);
     };
 
     // Start scanning for the Chest Strap
-    BluetoothService().startScan();
+    BleManager().startScan();
   }
 
   // LOGOUT METHOD: Call this if the user wants to switch identities
@@ -58,7 +58,7 @@ class UserManager {
     sensorManager = null;
     
     // Disconnect bluetooth
-    BluetoothService().disconnect();
+    BleManager().disconnect();
     
     // Clear out the user ID completely
     _currentUserId = null;
