@@ -3,10 +3,10 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-class BluetoothService {
-  static final BluetoothService _instance = BluetoothService._internal();
-  factory BluetoothService() => _instance;
-  BluetoothService._internal();
+class BleManager {
+  static final BleManager _instance = BleManager._internal();
+  factory BleManager() => _instance;
+  BleManager._internal();
 
   BluetoothDevice? _connectedDevice;
   StreamSubscription<List<ScanResult>>? _scanSubscription;
