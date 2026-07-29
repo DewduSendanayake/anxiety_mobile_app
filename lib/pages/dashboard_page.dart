@@ -10,6 +10,7 @@ import '../services/rating_settings.dart';
 import '../services/physio_simulator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:app_settings/app_settings.dart';
 import '../ema_and_gad7.dart';
 import '../profile_page.dart';
 import '../services/api_service.dart';
@@ -173,7 +174,7 @@ class _DashboardPageState extends State<DashboardPage>
       builder: (context) => AlertDialog(
         title: Text('Are you sure?', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
         content: Text(
-          'Without the chest strap, we can\'t measure your heart rate right now. We will use your old results instead, which might not be very accurate.\n\nIs that okay?',
+          'Without the chest strap, we can\'t measure your heart, breathing, and other body signals right now. We will use your old results instead, which might not be very accurate.\n\nIs that okay?',
           style: GoogleFonts.poppins(),
         ),
         actions: [
@@ -217,11 +218,12 @@ class _DashboardPageState extends State<DashboardPage>
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
-              var status = await Permission.bluetoothConnect.request();
-              if (status.isGranted) {
+              await AppSettings.openAppSettings(type: AppSettingsType.bluetooth);
+              
+              // We re-check the permission just in case they granted it or turned it on
+              bool isGranted = await Permission.bluetoothConnect.isGranted;
+              if (isGranted) {
                 setState(() => _chestStrapConnected = true);
-              } else {
-                // Proceed anyway, nothing we can do
               }
             },
             child: Text('Turn on Bluetooth', style: GoogleFonts.poppins(color: AppTheme.kPrimaryDeep)),
