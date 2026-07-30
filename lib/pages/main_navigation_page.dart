@@ -73,7 +73,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     final List<Color> gradients = [
       const Color(0xFF667eea), // Home
       const Color(0xFF764ba2), // Physio
-      const Color(0xFF1A9E6E), // Phenotype
+      const Color(0xFF5E60CE), // Phenotype
       const Color(0xFF5E60CE), // Profile
     ];
 
