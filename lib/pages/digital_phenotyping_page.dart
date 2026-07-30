@@ -12,30 +12,43 @@ import 'package:usage_stats/usage_stats.dart';
 import 'package:flutter_sms_inbox/flutter_sms_inbox.dart';
 import '../services/rating_settings.dart';
 // ─────────────────────────────────────────────
-// COLOUR TOKENS — deep forest-green forward theme
+// COLOUR TOKENS — calming lavender/purple theme matching AppTheme
 // ─────────────────────────────────────────────
 class _C {
   // Backgrounds
-  static const scaffold   = Color(0xFFF0FBF6); // soft mint-green scaffold
+  static const scaffold   = Color(0xFFF5F3FF); // soft lavender-tinted scaffold (same as Dashboard & Profile)
   static const cardBase   = Color(0xFFFFFFFF); // white cards
-  static const cardGlass  = Color(0xFF0D3D26); // dark forest green for cluster card
-  static const chip       = Color(0xFFEDFAF5); // green-tinted icon chip
+  static const cardGlass  = Color(0xFF5E60CE); // deep purple for cluster card
+  static const chip       = Color(0xFFF0ECFF); // lavender-tinted icon chip
 
-  // Green scale
-  static const g900 = Color(0xFF0A2218);
-  static const g800 = Color(0xFF0D3D26);
-  static const g700 = Color(0xFF115C35);
-  static const g600 = Color(0xFF157A44);
-  static const g500 = Color(0xFF1A9E6E); // main emerald accent
-  static const g400 = Color(0xFF22C78A); // bright teal-green
-  static const g300 = Color(0xFF5DDBA9);
-  static const g200 = Color(0xFFA8F0D5);
-  static const g100 = Color(0xFFD6FAF0);
-  static const g50  = Color(0xFFEDFAF5);
+  // Purple / Lavender scale
+  static const p900 = Color(0xFF1E1B4B);
+  static const p800 = Color(0xFF2E1065);
+  static const p700 = Color(0xFF3B0764);
+  static const p600 = Color(0xFF4C1D95);
+  static const p500 = Color(0xFF5E60CE); // main primary deep purple (AppTheme.kPrimaryDeep)
+  static const p400 = Color(0xFF7C5CBF); // vibrant lavender purple
+  static const p300 = Color(0xFF9B7FD4); // soft purple
+  static const p200 = Color(0xFFC4B5FD); // light lavender
+  static const p100 = Color(0xFFF0ECFF); // soft lavender fill
+  static const p50  = Color(0xFFF5F3FF); // light background
+
+  // Compatibility scale aliases
+  static const g900 = p900;
+  static const g800 = p800;
+  static const g700 = p700;
+  static const g600 = p600;
+  static const g500 = p500;
+  static const g400 = p400;
+  static const g300 = p300;
+  static const g200 = p200;
+  static const g100 = p100;
+  static const g50  = p50;
 
   // Accent palette
-  static const primary    = Color(0xFF1A9E6E); // emerald green (main)
-  static const teal       = Color(0xFF0DBF8A); // bright teal
+  static const primary    = Color(0xFF5E60CE); // deep purple (main)
+  static const lavender   = Color(0xFF7C5CBF); // soft lavender
+  static const teal       = Color(0xFF8B5CF6); // purple-accent for charts
   static const amber      = Color(0xFFF59B24); // warm amber (risk)
   static const amberLight = Color(0xFFFEF3DC); // amber fill
   static const rose       = Color(0xFFEF5777); // high risk red-rose
@@ -43,17 +56,17 @@ class _C {
   static const cyan       = Color(0xFF00B4D8); // mood line cyan
 
   // Text
-  static const textPrimary   = Color(0xFF0A2218); // deep forest
-  static const textSecondary = Color(0xFF2D6B4F); // muted green-slate
-  static const textMuted     = Color(0xFF6B9E85); // dim green-grey
+  static const textPrimary   = Color(0xFF2D3142); // deep slate (AppTheme.kTextDark)
+  static const textSecondary = Color(0xFF5A607F); // muted slate
+  static const textMuted     = Color(0xFF9095A7); // dim slate-grey (AppTheme.kTextLight)
 
   // Risk tier
   static const riskHigh = Color(0xFFEF5777);
   static const riskMid  = Color(0xFFF59B24);
-  static const riskLow  = Color(0xFF1A9E6E);
+  static const riskLow  = Color(0xFF5E60CE);
 
   // Border
-  static const border = Color(0xFFC8EFE0); // green-tinted border
+  static const border = Color(0xFFE8E5F4); // soft lavender-tinted border
 }
 
 // ─────────────────────────────────────────────
@@ -390,6 +403,14 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
   AppBar _buildAppBar() => AppBar(
     backgroundColor: _C.scaffold,
     elevation: 0,
+    automaticallyImplyLeading: false,
+    leading: Navigator.canPop(context)
+        ? IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                color: _C.textPrimary, size: 20),
+            onPressed: () => Navigator.pop(context),
+          )
+        : null,
     title: Text(
       'Activity Monitor',
       style: GoogleFonts.poppins(
@@ -420,15 +441,15 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
   Widget _buildNudgeBanner() => Container(
     padding: const EdgeInsets.all(14),
     decoration: BoxDecoration(
-      color: _C.g50,
+      color: _C.p100,
       borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: _C.g200),
-      boxShadow: [BoxShadow(color: _C.g500.withOpacity(0.08),
+      border: Border.all(color: _C.p200),
+      boxShadow: [BoxShadow(color: _C.primary.withValues(alpha: 0.08),
           blurRadius: 12, offset: const Offset(0, 4))],
     ),
     child: Row(
       children: [
-        const Text('🌿', style: TextStyle(fontSize: 22)),
+        const Text('✨', style: TextStyle(fontSize: 22)),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
@@ -437,7 +458,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
               Text('Heads up — 2pm window approaching',
                   style: GoogleFonts.poppins(
                       fontSize: 13, fontWeight: FontWeight.w600,
-                      color: _C.g700)),
+                      color: _C.primary)),
               const SizedBox(height: 2),
               Text('Your graph shows afternoons tend to be harder. A short walk can help.',
                   style: GoogleFonts.poppins(fontSize: 11, color: _C.textSecondary)),
@@ -559,22 +580,21 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF0D3D26), Color(0xFF115C35), Color(0xFF157A44)],
+          colors: [Color(0xFF667eea), Color(0xFF764ba2)],
         ),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _C.g700),
         boxShadow: [BoxShadow(
-            color: _C.g500.withOpacity(0.22),
+            color: const Color(0xFF667eea).withValues(alpha: 0.25),
             blurRadius: 18, offset: const Offset(0, 6))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            const Text('🌱', style: TextStyle(fontSize: 16)),
+            const Text('✨', style: TextStyle(fontSize: 16)),
             const SizedBox(width: 6),
             Text('Phenotype',
-                style: GoogleFonts.poppins(fontSize: 12, color: _C.g300)),
+                style: GoogleFonts.poppins(fontSize: 12, color: Colors.white.withValues(alpha: 0.85))),
           ]),
           const SizedBox(height: 12),
           Text(data['name']!,
@@ -585,13 +605,13 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.12),
+              color: Colors.white.withValues(alpha: 0.18),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withOpacity(0.15)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
             ),
             child: Text(data['badge']!,
                 style: GoogleFonts.poppins(
-                    fontSize: 11, fontWeight: FontWeight.w600, color: _C.g200)),
+                    fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white)),
           ),
         ],
       ),
