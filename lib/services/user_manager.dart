@@ -1,5 +1,6 @@
 import 'sensor_manager.dart';
-import 'bluetooth_service.dart';
+import 'chest_strap_service.dart';
+import 'ble_bridge.dart';
 
 class UserManager {
   // This is the magic line that creates the single, permanent instance of UserManager
@@ -40,13 +41,8 @@ class UserManager {
     sensorManager!.startCollection();
     print('Background data collection loop kicked off for $userId');
 
-    // Link Bluetooth service to pass data to SensorManager
-    BleManager().onDataReceived = (ecg, accX, accY, accZ, temp) {
-      sensorManager?.addLiveData(ecg, accX, accY, accZ, temp);
-    };
-
-    // Start scanning for the Chest Strap
-    BleManager().startScan();
+    // Wire chest strap data to SensorManager via BleBridge
+    BleBridge().wireChestStrap();
   }
 
   // LOGOUT METHOD: Call this if the user wants to switch identities
@@ -58,7 +54,7 @@ class UserManager {
     sensorManager = null;
     
     // Disconnect bluetooth
-    BleManager().disconnect();
+    ChestStrapService().disconnect();
     
     // Clear out the user ID completely
     _currentUserId = null;
