@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../services/physio_simulator.dart';
+import '../services/chest_strap_service.dart';
 
 /// Home Page — the first tab the user sees.
 ///
@@ -18,14 +18,9 @@ class HomePage extends StatefulWidget {
 }
 
 class HomePageState extends State<HomePage> with TickerProviderStateMixin {
-  // ── Physiological simulator (same instance logic) ──────────
-  final PhysioSimulator _simulator = PhysioSimulator();
-  PhysioSnapshot _snapshot = const PhysioSnapshot(
-    heartRate: 72,
-    breathingRate: 16,
-    bodyTemp: 36.6,
-    motionMagnitude: 0.3,
-  );
+  // ── Chest Strap Service ──────────────────────────────────────
+  final ChestStrapService _chestStrap = ChestStrapService();
+  ChestStrapReading? _lastReading;
 
   // ── Phenotyping risk (static simulation) ────────────────────
   static const double _phenotypingRisk = 0.72; // from GATv2
@@ -63,12 +58,13 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
-    _simulator.onData = (snap) {
+    // Listen to real chest strap data
+    _lastReading = _chestStrap.lastReading; // Load persisted reading
+    _chestStrap.onDataReceived = (reading) {
       if (mounted) {
-        final oldLabel = _overallLabel(_snapshot);
-        setState(() => _snapshot = snap);
-        final newLabel = _overallLabel(snap);
-        // Check for anxiety escalation
+        final oldLabel = _overallLabel(_lastReading);
+        setState(() => _lastReading = reading);
+        final newLabel = _overallLabel(reading);
         if (_isEscalation(oldLabel, newLabel)) {
           _addNotification(
             'Anxiety escalation detected — your risk level changed from $oldLabel to $newLabel.',
@@ -76,12 +72,10 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
         }
       }
     };
-    _simulator.start(interval: const Duration(seconds: 3));
   }
 
   @override
   void dispose() {
-    _simulator.stop();
     _fadeController.dispose();
     _pulseController.dispose();
     super.dispose();
@@ -91,14 +85,14 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
   /// Combines physiological risk (0-100) and phenotyping risk (0.0-1.0)
   /// into an overall normalised score (0-100).
   double get _overallRisk {
-    final physioNorm = _snapshot.riskScore; // 0-100
-    final phenoNorm = _phenotypingRisk * 100; // 0-100
+    final physioNorm = _lastReading?.riskScore ?? 0.0;
+    final phenoNorm = _phenotypingRisk * 100;
     return (physioNorm * 0.75 + phenoNorm * 0.25).clamp(0, 100);
   }
 
-  String _overallLabel(PhysioSnapshot snap) {
-    final combined =
-        (snap.riskScore * 0.75 + _phenotypingRisk * 100 * 0.25).clamp(0, 100);
+  String _overallLabel(ChestStrapReading? reading) {
+    final score = reading?.riskScore ?? 0.0;
+    final combined = (score * 0.75 + _phenotypingRisk * 100 * 0.25).clamp(0, 100);
     if (combined <= 25) return 'Low';
     if (combined <= 50) return 'Moderate';
     if (combined <= 75) return 'Elevated';
@@ -162,7 +156,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     final risk = _overallRisk;
     final riskCol = _overallColor(risk);
-    final label = _overallLabel(_snapshot);
+    final label = _overallLabel(_lastReading);
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -259,6 +253,32 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ),
                     ],
                   ),
+
+                  // ── Connection Status ──
+                  if (!_chestStrap.isConnected)
+                    Container(
+                      margin: const EdgeInsets.only(top: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.bluetooth_disabled_rounded, color: Colors.white.withValues(alpha: 0.7), size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _lastReading != null
+                                  ? 'Chest strap disconnected — showing last known data'
+                                  : 'Chest strap not connected — using model estimates',
+                              style: GoogleFonts.poppins(fontSize: 11, color: Colors.white.withValues(alpha: 0.7)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
 
                   const SizedBox(height: 28),
 

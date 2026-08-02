@@ -23,43 +23,8 @@ class SensorManager {
     isCollecting = true;
     _clearBuffers();
 
-    // Toggle this to true to auto-generate perfect raw waveforms without the chest strap
-    bool useSimulationMode = false;
-
     // This periodic timer fires exactly every 60 seconds
     _oneMinuteTimer = Timer.periodic(const Duration(seconds: 60), (timer) async {
-      
-      // --- CHEAT MODE: SYNTHETIC WAVEFORM GENERATOR ---
-      if (useSimulationMode) {
-        print('Cheat Mode Active: Generating 60 seconds of raw physiological waveforms...');
-        _clearBuffers();
-        
-        // 60 seconds of data at 700 samples per second = 42,000 data points
-        int totalSamples = 60 * samplingRate;
-        
-        for (int i = 0; i < totalSamples; i++) {
-          // 1. Synthetic ECG: Creates a sharp electrical heartbeat spike every 600 samples (~70 BPM)
-          if (i % 600 == 0) {
-            _ecgBuffer.add(1.5); // The sharp R-peak
-          } else if (i % 600 == 10) {
-            _ecgBuffer.add(-0.3); // The S-wave drop
-          } else {
-            // Micro-vibrations so the signal isn't completely flat
-            _ecgBuffer.add(0.02 * (i % 10 == 0 ? 1.0 : -1.0)); 
-          }
-
-          // 2. Synthetic Respiration: A simple wave mimicking 16 breaths per minute
-          _respBuffer.add(0.5 * (i % 2625 < 1312 ? 1.0 : -1.0));
-
-          // 3. Synthetic Temperature: A steady, normal 36.6 degrees Celsius
-          _tempBuffer.add(36.6);
-
-          // 4. Synthetic Accelerometer: Normal stationary numbers (gravity pulling on Z-axis)
-          _accXBuffer.add(0.02);
-          _accYBuffer.add(0.02);
-          _accZBuffer.add(0.98); 
-        }
-      }
 
       // Main safety guard clause: Don't transmit if buffers are empty
       // Note: We removed the respBuffer check since the V3 hardware doesn't supply Respiration
@@ -129,15 +94,22 @@ class SensorManager {
     _clearBuffers();
   }
 
-  // CALLED BY BLUETOOTH SERVICE TO INJECT LIVE DATA
-  void addLiveData(double ecg, double accX, double accY, double accZ, double temp) {
+  void addLiveChestStrapData(double meanHR, double meanRR, double sdnn, double rmssd, double meanBR, double stdBR, double meanTemp, double stdTemp, double meanAccMag, double stdAccMag) {
     if (!isCollecting) return;
-    _ecgBuffer.add(ecg);
-    _accXBuffer.add(accX);
-    _accYBuffer.add(accY);
-    _accZBuffer.add(accZ);
-    _tempBuffer.add(temp);
-    _respBuffer.add(0.0); // Padding because API expects it
+    // Map the 10 features into the server's expected buffer format
+    // The server expects arrays of: ecg (use meanHR), resp (use meanBR), temp (use meanTemp), accX/Y/Z (use meanAccMag for X, stdAccMag for Y, 0 for Z)
+    _ecgBuffer.add(meanHR);
+    _respBuffer.add(meanBR);
+    _tempBuffer.add(meanTemp);
+    _accXBuffer.add(meanAccMag);
+    _accYBuffer.add(stdAccMag);
+    _accZBuffer.add(0.0);
+  }
+
+  // CALLED BY BLUETOOTH SERVICE TO INJECT LIVE DATA
+  @Deprecated('Use addLiveChestStrapData instead')
+  void addLiveData(double ecg, double accX, double accY, double accZ, double temp) {
+    addLiveChestStrapData(ecg, 0, 0, 0, 0, 0, temp, 0, accX, accY);
   }
 
   void _clearBuffers() {

@@ -7,14 +7,14 @@ import 'package:fl_chart/fl_chart.dart';
 import '../theme/app_theme.dart';
 import '../background_service_helper.dart';
 import '../services/rating_settings.dart';
-import '../services/physio_simulator.dart';
+import '../services/chest_strap_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:app_settings/app_settings.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../ema_and_gad7.dart';
 import '../profile_page.dart';
 import '../services/api_service.dart';
-import '../services/bluetooth_service.dart';
 import 'baseline_calibration_page.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -45,14 +45,8 @@ class _DashboardPageState extends State<DashboardPage>
   Timer? _bufferingTimer;
   double? _fusionRiskScore; // final score returned by the teammate's fusion model
 
-  // ── Physiological Simulator ──────────────────────────────────
-  final PhysioSimulator _simulator = PhysioSimulator();
-  PhysioSnapshot _snapshot = const PhysioSnapshot(
-    heartRate: 72,
-    breathingRate: 16,
-    bodyTemp: 36.6,
-    motionMagnitude: 0.3,
-  );
+  // ── Chest Strap Live Data ──────────────────────────────────
+  ChestStrapReading? _currentReading;
 
   // ── Animation Controllers ───────────────────────────────────
   late AnimationController _riskPulseController;
@@ -94,30 +88,19 @@ class _DashboardPageState extends State<DashboardPage>
     ));
     _entryController.forward();
 
-    // We do NOT start the simulator here automatically anymore.
-    // It will only start if the user denies Bluetooth and accepts the fallback.
-    _simulator.onData = (snap) {
+    // Load persisted last reading
+    _currentReading = ChestStrapService().lastReading;
+
+    // Listen for live chest strap data
+    ChestStrapService().onDataReceived = (reading) {
       if (mounted) {
-        setState(() => _snapshot = snap);
-        _uploadPhysioData(snap);
+        setState(() => _currentReading = reading);
+        _uploadChestStrapData(reading);
       }
     };
 
-    // Wire up Bluetooth UI updates
-    BleManager().onDataReceived = (ecg, accX, accY, accZ, temp) {
-      if (mounted && _chestStrapConnected) {
-        setState(() {
-          // Calculate a rough motion magnitude from the accelerometer
-          double motion = sqrt(accX*accX + accY*accY + accZ*accZ);
-          _snapshot = PhysioSnapshot(
-            heartRate: 0, // Hardware team hasn't added HR calculation to CSV yet
-            breathingRate: 0, 
-            bodyTemp: temp,
-            motionMagnitude: motion,
-          );
-        });
-      }
-    };
+    // Listen for connection state changes to update UI
+    ChestStrapService().connectionState.addListener(_onConnectionChanged);
 
     _startStatusCheck();
     
@@ -126,9 +109,17 @@ class _DashboardPageState extends State<DashboardPage>
     });
   }
 
+  void _onConnectionChanged() {
+    if (mounted) {
+      setState(() {
+        _chestStrapConnected = ChestStrapService().isConnected;
+      });
+    }
+  }
+
   @override
   void dispose() {
-    _simulator.stop();
+    ChestStrapService().connectionState.removeListener(_onConnectionChanged);
     _riskPulseController.dispose();
     _entryController.dispose();
     _predictionTimer?.cancel();
@@ -139,14 +130,58 @@ class _DashboardPageState extends State<DashboardPage>
   // ── Chest Strap Bluetooth Flow ───────────────────────────────
 
   Future<void> _checkBluetoothConnection() async {
-    bool isGranted = await Permission.bluetoothConnect.isGranted;
-    if (!isGranted) {
+    // Check if Bluetooth adapter is on
+    final adapterState = await FlutterBluePlus.adapterState.first;
+    if (adapterState != BluetoothAdapterState.on) {
+      _showBluetoothOffDialog();
+      return;
+    }
+
+    // Check permissions
+    bool scanGranted = await Permission.bluetoothScan.isGranted;
+    bool connectGranted = await Permission.bluetoothConnect.isGranted;
+
+    if (!scanGranted || !connectGranted) {
       _showBluetoothPrompt();
     } else {
-      setState(() {
-        _chestStrapConnected = true;
-      });
+      // Permissions granted, start scanning
+      _startChestStrapScan();
     }
+  }
+
+  void _showBluetoothOffDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text('Bluetooth is Off', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        content: Text(
+          'Please turn on Bluetooth to connect your chest strap for real-time anxiety monitoring.',
+          style: GoogleFonts.poppins(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // Continue without strap
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Using saved data / model weights for risk assessment.')),
+              );
+            },
+            child: Text('Skip', style: GoogleFonts.poppins(color: Colors.red)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await AppSettings.openAppSettings(type: AppSettingsType.bluetooth);
+              // Re-check after user returns from settings
+              Future.delayed(const Duration(seconds: 2), _checkBluetoothConnection);
+            },
+            child: Text('Turn On', style: GoogleFonts.poppins(color: AppTheme.kPrimaryDeep)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showBluetoothPrompt() {
@@ -156,7 +191,7 @@ class _DashboardPageState extends State<DashboardPage>
       builder: (context) => AlertDialog(
         title: Text('Connect Chest Strap', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
         content: Text(
-          'Please connect your chest strap using Bluetooth so we can track your heart and breathing.',
+          'Aura needs Bluetooth permission to connect to your ChestStrap_V3 for real-time physiological monitoring.',
           style: GoogleFonts.poppins(),
         ),
         actions: [
@@ -170,17 +205,20 @@ class _DashboardPageState extends State<DashboardPage>
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
-              var status = await Permission.bluetoothConnect.request();
-              if (status.isGranted) {
-                setState(() => _chestStrapConnected = true);
+              await Permission.bluetoothScan.request();
+              await Permission.bluetoothConnect.request();
+              bool scanOk = await Permission.bluetoothScan.isGranted;
+              bool connectOk = await Permission.bluetoothConnect.isGranted;
+              if (scanOk && connectOk) {
+                _startChestStrapScan();
               } else {
                 _showDenyWarning();
               }
             },
-            child: Text('Connect', style: GoogleFonts.poppins(color: AppTheme.kPrimaryDeep)),
+            child: Text('Allow', style: GoogleFonts.poppins(color: AppTheme.kPrimaryDeep)),
           ),
         ],
-      )
+      ),
     );
   }
 
@@ -191,7 +229,7 @@ class _DashboardPageState extends State<DashboardPage>
       builder: (context) => AlertDialog(
         title: Text('Are you sure?', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
         content: Text(
-          'Without the chest strap, we can\'t measure your heart, breathing, and other body signals right now. We will use your old results instead, which might not be very accurate.\n\nIs that okay?',
+          'Without the chest strap, we can\'t measure your vitals in real-time. The app will use your previous data or global model weights instead.\n\nIs that okay?',
           style: GoogleFonts.poppins(),
         ),
         actions: [
@@ -205,16 +243,14 @@ class _DashboardPageState extends State<DashboardPage>
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              // User accepted the fallback. Start the simulator to represent "old data"
-              _simulator.start(interval: const Duration(seconds: 3));
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Using fallback/old data for physiological monitoring.')),
+                const SnackBar(content: Text('Using saved data / model weights for risk assessment.')),
               );
             },
             child: Text('Yes, that\'s fine', style: GoogleFonts.poppins(color: AppTheme.kPrimaryDeep)),
           ),
         ],
-      )
+      ),
     );
   }
 
@@ -225,17 +261,15 @@ class _DashboardPageState extends State<DashboardPage>
       builder: (context) => AlertDialog(
         title: Text('Bluetooth Needed', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
         content: Text(
-          'To get the best results, please let us use Bluetooth to connect to your chest strap.',
+          'To get the best results, please let us use Bluetooth to connect to your ChestStrap_V3.',
           style: GoogleFonts.poppins(),
         ),
         actions: [
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              // Proceed anyway, nothing we can do
-              _simulator.start(interval: const Duration(seconds: 3));
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Using fallback/old data.')),
+                const SnackBar(content: Text('Using saved data / model weights.')),
               );
             },
             child: Text('Skip', style: GoogleFonts.poppins(color: Colors.red)),
@@ -244,18 +278,26 @@ class _DashboardPageState extends State<DashboardPage>
             onPressed: () async {
               Navigator.pop(context);
               await AppSettings.openAppSettings(type: AppSettingsType.bluetooth);
-              
-              // We re-check the permission just in case they granted it or turned it on
-              bool isGranted = await Permission.bluetoothConnect.isGranted;
-              if (isGranted) {
-                setState(() => _chestStrapConnected = true);
-              }
+              Future.delayed(const Duration(seconds: 2), _checkBluetoothConnection);
             },
             child: Text('Turn on Bluetooth', style: GoogleFonts.poppins(color: AppTheme.kPrimaryDeep)),
           ),
         ],
-      )
+      ),
     );
+  }
+
+  void _startChestStrapScan() {
+    ChestStrapService().startScan().then((_) {
+      if (mounted && ChestStrapService().isConnected) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ ChestStrap_V3 connected successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    });
   }
 
   // ── Data & Service Helpers ──────────────────────────────────
@@ -376,12 +418,8 @@ class _DashboardPageState extends State<DashboardPage>
 
   List<double> get _effectiveForecastData {
     if (_forecastData.isNotEmpty) return _forecastData;
-    // Fallback: If server is loading/buffering or offline, generate a smooth simulated forecast
-    final startVal = _snapshot.riskScore;
-    return List.generate(10, (i) {
-      final drift = sin(i / 2.0) * 10.0 + (i * 0.5);
-      return (startVal + drift).clamp(0.0, 100.0);
-    });
+    // No real data available yet
+    return [];
   }
 
   void _startStatusCheck() {
@@ -402,20 +440,26 @@ class _DashboardPageState extends State<DashboardPage>
     });
   }
 
-  Future<void> _uploadPhysioData(PhysioSnapshot snap) async {
+  Future<void> _uploadChestStrapData(ChestStrapReading reading) async {
     if (_cachedId.isEmpty) return;
     final data = {
-      'heart_rate': snap.heartRate.toStringAsFixed(1),
-      'breathing_rate': snap.breathingRate.toStringAsFixed(1),
-      'body_temp': snap.bodyTemp.toStringAsFixed(2),
-      'motion_magnitude': snap.motionMagnitude.toStringAsFixed(2),
-      'risk_score': snap.riskScore.toStringAsFixed(1),
-      'risk_label': snap.riskLabel,
+      'mean_HR': reading.meanHR.toStringAsFixed(1),
+      'mean_RR': reading.meanRR.toStringAsFixed(2),
+      'SDNN': reading.sdnn.toStringAsFixed(2),
+      'RMSSD': reading.rmssd.toStringAsFixed(2),
+      'mean_BR': reading.meanBR.toStringAsFixed(1),
+      'std_BR': reading.stdBR.toStringAsFixed(2),
+      'mean_temp': reading.meanTemp.toStringAsFixed(2),
+      'std_temp': reading.stdTemp.toStringAsFixed(2),
+      'mean_acc_mag': reading.meanAccMag.toStringAsFixed(4),
+      'std_acc_mag': reading.stdAccMag.toStringAsFixed(4),
+      'risk_score': reading.riskScore.toStringAsFixed(1),
+      'risk_label': reading.riskLabel,
       'timestamp': DateTime.now().toIso8601String(),
     };
     await BackgroundServiceHelper.sendToSheet(
       _cachedId,
-      'Physio_Vitals',
+      'ChestStrap_Vitals',
       data.toString(),
     );
   }
@@ -461,7 +505,7 @@ class _DashboardPageState extends State<DashboardPage>
 
   @override
   Widget build(BuildContext context) {
-    final risk = _snapshot.riskScore;
+    final risk = _currentReading?.riskScore ?? 0.0;
     final riskCol = _riskColor(risk);
 
     return Scaffold(
@@ -539,11 +583,11 @@ class _DashboardPageState extends State<DashboardPage>
             Expanded(
               child: _KpiCard(
                 label: 'Heart Rate',
-                value: _snapshot.heartRate.toStringAsFixed(0),
+                value: _currentReading?.meanHR.toStringAsFixed(0) ?? '--',
                 unit: 'bpm',
                 icon: Icons.monitor_heart_rounded,
-                status: _snapshot.hrStatus,
-                statusColor: _statusColor(_snapshot.hrStatus),
+                status: _currentReading?.hrStatus ?? 'N/A',
+                statusColor: _statusColor(_currentReading?.hrStatus ?? 'N/A'),
                 gradient: const [Color(0xFFFF6B6B), Color(0xFFee5a24)],
               ),
             ),
@@ -551,11 +595,11 @@ class _DashboardPageState extends State<DashboardPage>
             Expanded(
               child: _KpiCard(
                 label: 'Breathing',
-                value: _snapshot.breathingRate.toStringAsFixed(0),
+                value: _currentReading?.meanBR.toStringAsFixed(0) ?? '--',
                 unit: 'br/min',
                 icon: Icons.air_rounded,
-                status: _snapshot.brStatus,
-                statusColor: _statusColor(_snapshot.brStatus),
+                status: _currentReading?.brStatus ?? 'N/A',
+                statusColor: _statusColor(_currentReading?.brStatus ?? 'N/A'),
                 gradient: const [Color(0xFF4facfe), Color(0xFF00f2fe)],
               ),
             ),
@@ -567,23 +611,23 @@ class _DashboardPageState extends State<DashboardPage>
             Expanded(
               child: _KpiCard(
                 label: 'Temperature',
-                value: _snapshot.bodyTemp.toStringAsFixed(1),
+                value: _currentReading?.meanTemp.toStringAsFixed(1) ?? '--',
                 unit: '°C',
                 icon: Icons.thermostat_rounded,
-                status: _snapshot.tempStatus,
-                statusColor: _statusColor(_snapshot.tempStatus),
+                status: _currentReading?.tempStatus ?? 'N/A',
+                statusColor: _statusColor(_currentReading?.tempStatus ?? 'N/A'),
                 gradient: const [Color(0xFFF6D365), Color(0xFFFDA085)],
               ),
             ),
             const SizedBox(width: 14),
             Expanded(
               child: _KpiCard(
-                label: 'Motion',
-                value: _snapshot.motionMagnitude.toStringAsFixed(1),
-                unit: 'g',
-                icon: Icons.directions_run_rounded,
-                status: _snapshot.motionStatus,
-                statusColor: _statusColor(_snapshot.motionStatus),
+                label: 'HRV (RMSSD)',
+                value: _currentReading?.rmssd.toStringAsFixed(1) ?? '--',
+                unit: 'ms',
+                icon: Icons.favorite_border_rounded,
+                status: _currentReading?.hrvStatus ?? 'N/A',
+                statusColor: _statusColor(_currentReading?.hrvStatus ?? 'N/A'),
                 gradient: const [Color(0xFFA18CD1), Color(0xFFFBC2EB)],
               ),
             ),
@@ -635,7 +679,7 @@ class _DashboardPageState extends State<DashboardPage>
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Server offline. Showing simulated forecast predictions.',
+              'Server offline. Showing last known data. Connect chest strap for live monitoring.',
               style: GoogleFonts.poppins(
                   fontSize: 11, color: Colors.amber.shade800, fontWeight: FontWeight.w500),
             ),
@@ -908,6 +952,46 @@ class _DashboardPageState extends State<DashboardPage>
 
   Widget _buildForecastChart() {
     final List<double> forecast = _effectiveForecastData;
+    if (forecast.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.kPrimaryDeep.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.trending_up_rounded, color: AppTheme.kPrimaryDeep, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Text('10-Minute Anxiety Forecast', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600, color: AppTheme.kTextDark)),
+              ],
+            ),
+            const SizedBox(height: 40),
+            Icon(Icons.hourglass_empty_rounded, size: 40, color: Colors.grey.shade300),
+            const SizedBox(height: 12),
+            Text('Awaiting sensor data...', style: GoogleFonts.poppins(fontSize: 13, color: AppTheme.kTextLight)),
+            Text('Forecast will appear after first data window', style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey.shade400)),
+            const SizedBox(height: 40),
+          ],
+        ),
+      );
+    }
     final List<FlSpot> spots = List.generate(forecast.length, (index) {
       final yVal = _scaleForecastValue(forecast[index]);
       return FlSpot((index + 1).toDouble(), yVal);
@@ -1166,12 +1250,12 @@ class _DashboardPageState extends State<DashboardPage>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: _isServiceRunning
+        color: _chestStrapConnected
             ? const Color(0xFFE8F5E9)
             : const Color(0xFFFFEBEE),
         borderRadius: BorderRadius.circular(30),
         border: Border.all(
-          color: _isServiceRunning
+          color: _chestStrapConnected
               ? Colors.green.shade200
               : Colors.red.shade200,
         ),
@@ -1183,19 +1267,19 @@ class _DashboardPageState extends State<DashboardPage>
             width: 8,
             height: 8,
             decoration: BoxDecoration(
-              color: _isServiceRunning ? Colors.green : Colors.red,
+              color: _chestStrapConnected ? Colors.green : Colors.red,
               shape: BoxShape.circle,
             ),
           ),
           const SizedBox(width: 8),
           Text(
-            _isServiceRunning
-                ? 'Sensor Stream Active'
-                : 'Reconnecting Sensors...',
+            _chestStrapConnected
+                ? 'ChestStrap_V3 Connected'
+                : 'Chest Strap Disconnected',
             style: GoogleFonts.poppins(
               fontSize: 12,
               fontWeight: FontWeight.w500,
-              color: _isServiceRunning
+              color: _chestStrapConnected
                   ? Colors.green.shade800
                   : Colors.red.shade800,
             ),
@@ -1289,7 +1373,7 @@ class _DashboardPageState extends State<DashboardPage>
                           ),
                         ),
                         Text(
-                          _snapshot.riskLabel,
+                          _currentReading?.riskLabel ?? '--',
                           style: GoogleFonts.poppins(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
@@ -1490,34 +1574,14 @@ class _DashboardPageState extends State<DashboardPage>
           ),
         ),
         const SizedBox(height: 16),
-        _buildSingleChart('Heart Rate (bpm)', _generateMonthlyData(75, 15), const [Color(0xFFFF6B6B), Color(0xFFee5a24)]),
-        const SizedBox(height: 16),
-        _buildSingleChart('Breathing Rate (br/min)', _generateMonthlyData(16, 4), const [Color(0xFF4facfe), Color(0xFF00f2fe)]),
-        const SizedBox(height: 16),
-        _buildSingleChart('Body Temperature (°C)', _generateMonthlyData(36.8, 0.4), const [Color(0xFFF6D365), Color(0xFFFDA085)]),
-        const SizedBox(height: 16),
-        _buildSingleChart('Motion (g)', _generateMonthlyData(0.5, 1.2), const [Color(0xFFA18CD1), Color(0xFFFBC2EB)]),
+        _buildNoHistoryPlaceholder(),
       ],
     );
   }
 
-  List<FlSpot> _generateMonthlyData(double base, double variance) {
-    return List.generate(30, (index) {
-      final x = (index + 1).toDouble();
-      final noise = (Random().nextDouble() - 0.5) * variance;
-      final trend = sin(index / 30 * pi * 2) * (variance * 0.5);
-      // Ensure positive values
-      return FlSpot(x, max(0.1, base + trend + noise));
-    });
-  }
-
-  Widget _buildSingleChart(String title, List<FlSpot> data, List<Color> gradient) {
-    double minY = data.map((e) => e.y).reduce(min) * 0.9;
-    double maxY = data.map((e) => e.y).reduce(max) * 1.1;
-
+  Widget _buildNoHistoryPlaceholder() {
     return Container(
-      height: 180,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -1530,63 +1594,18 @@ class _DashboardPageState extends State<DashboardPage>
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Icon(Icons.show_chart_rounded, size: 48, color: Colors.grey.shade300),
+          const SizedBox(height: 12),
           Text(
-            title,
-            style: GoogleFonts.poppins(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.kTextLight,
-            ),
+            'Historical trends will appear here',
+            style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.kTextLight),
           ),
-          const SizedBox(height: 10),
-          Expanded(
-            child: LineChart(
-              LineChartData(
-                minX: 1,
-                maxX: 30,
-                minY: minY,
-                maxY: maxY,
-                gridData: const FlGridData(show: false),
-                titlesData: const FlTitlesData(show: false),
-                borderData: FlBorderData(show: false),
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: data,
-                    isCurved: true,
-                    gradient: LinearGradient(colors: gradient),
-                    barWidth: 3,
-                    isStrokeCapRound: true,
-                    dotData: const FlDotData(show: false),
-                    belowBarData: BarAreaData(
-                      show: true,
-                      gradient: LinearGradient(
-                        colors: gradient.map((c) => c.withValues(alpha: 0.2)).toList(),
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                      ),
-                    ),
-                  ),
-                ],
-                lineTouchData: LineTouchData(
-                  touchTooltipData: LineTouchTooltipData(
-                    getTooltipItems: (touchedSpots) {
-                      return touchedSpots.map((spot) {
-                        return LineTooltipItem(
-                          spot.y.toStringAsFixed(1),
-                          GoogleFonts.poppins(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                          ),
-                        );
-                      }).toList();
-                    },
-                  ),
-                ),
-              ),
-            ),
+          const SizedBox(height: 4),
+          Text(
+            'Keep using Aura with your chest strap to build your physiological history.',
+            style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey.shade400),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
