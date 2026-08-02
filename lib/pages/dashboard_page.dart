@@ -1469,7 +1469,7 @@ class _DashboardPageState extends State<DashboardPage>
     // Check if there is an anxiety escalation predicted in the next 10 minutes
     final forecast = _effectiveForecastData;
     final maxForecastedRisk = forecast.isNotEmpty
-        ? forecast.map(_scaleForecastValue).reduce(max)
+        ? forecast.map(_scaleForecastValue).reduce((a, b) => a > b ? a : b)
         : 0.0;
     
     final bool isEscalating = maxForecastedRisk > 70.0 && risk <= 70.0;
