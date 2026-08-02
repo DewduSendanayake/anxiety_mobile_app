@@ -542,18 +542,7 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Widget _buildBody(double risk, Color riskCol) {
-    switch (_predictionStatus) {
-      case 'loading':
-        return _buildLoadingScreen();
-      case 'not_calibrated':
-        return _buildCalibrationRequiredScreen();
-      case 'buffering':
-        return _buildBufferingScreen();
-      case 'error':
-      case 'success':
-      default:
-        return _buildDashboardList(risk, riskCol);
-    }
+    return _buildDashboardList(risk, riskCol);
   }
 
   Widget _buildDashboardList(double risk, Color riskCol) {
@@ -568,6 +557,16 @@ class _DashboardPageState extends State<DashboardPage>
         if (_isOptimized) ...[
           const SizedBox(height: 10),
           _buildBatteryWarning(),
+        ],
+
+        if (_predictionStatus == 'not_calibrated') ...[
+          const SizedBox(height: 12),
+          _buildCalibrationRequiredBanner(),
+        ],
+
+        if (_predictionStatus == 'buffering') ...[
+          const SizedBox(height: 12),
+          _buildBufferingBanner(),
         ],
 
         const SizedBox(height: 20),
@@ -689,21 +688,84 @@ class _DashboardPageState extends State<DashboardPage>
     );
   }
 
-  Widget _buildLoadingScreen() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(AppTheme.kPrimaryDeep),
+
+
+  Widget _buildCalibrationRequiredBanner() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFFD54F)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-          const SizedBox(height: 20),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFECB3),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.tune_rounded, color: Color(0xFFFF8F00), size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Baseline Calibration Required',
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFFE65100),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           Text(
-            'Connecting to prediction engine...',
+            'To get accurate predictive anxiety forecasting, Aura needs to record your resting baseline. Please perform a 3-minute resting calibration.',
             style: GoogleFonts.poppins(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: AppTheme.kTextLight,
+              fontSize: 11.5,
+              color: const Color(0xFFEF6C00),
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => BaselineCalibrationPage(userId: _cachedId),
+                ),
+              ).then((_) => _fetchForecast());
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFF8F00),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              elevation: 0,
+            ),
+            icon: const Icon(Icons.play_arrow_rounded, size: 18),
+            label: Text(
+              'Start Calibration',
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -711,242 +773,37 @@ class _DashboardPageState extends State<DashboardPage>
     );
   }
 
-  Widget _buildCalibrationRequiredScreen() {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.amber.shade50,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.tune_rounded,
-                  color: Colors.amber,
-                  size: 48,
-                ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Calibration Required',
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.kTextDark,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Aura needs to establish your calm resting baseline before the anxiety prediction engine can run accurately. Please complete a 3-minute resting calibration.',
-                style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  color: AppTheme.kTextLight,
-                  height: 1.6,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 30),
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => BaselineCalibrationPage(userId: _cachedId),
-                    ),
-                  ).then((_) => _fetchForecast());
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.kPrimaryDeep,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  elevation: 2,
-                ),
-                icon: const Icon(Icons.play_arrow_rounded, size: 22),
-                label: Text(
-                  'Start Baseline Calibration',
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+  Widget _buildBufferingBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blue.shade200),
       ),
-    );
-  }
-
-  Widget _buildBufferingScreen() {
-    final double progress = (60 - _bufferingCountdown) / 60.0;
-
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Establishing Sensor Stream',
-                style: GoogleFonts.poppins(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.kTextDark,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Collecting initial physiological samples',
-                style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  color: AppTheme.kTextLight,
-                ),
-              ),
-              const SizedBox(height: 36),
-
-              // Countdown Ring
-              Stack(
-                alignment: Alignment.center,
-                children: [
-                  SizedBox(
-                    width: 120,
-                    height: 120,
-                    child: CircularProgressIndicator(
-                      value: progress,
-                      strokeWidth: 8,
-                      backgroundColor: Colors.grey.shade100,
-                      valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.kPrimaryDeep),
-                    ),
-                  ),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '$_bufferingCountdown',
-                        style: GoogleFonts.poppins(
-                          fontSize: 32,
-                          fontWeight: FontWeight.w800,
-                          color: AppTheme.kTextDark,
-                          height: 1.0,
-                        ),
-                      ),
-                      Text(
-                        'seconds',
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          color: AppTheme.kTextLight,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 36),
-
-              Text(
-                'Please sit quietly and breathe normally. Predictions will start immediately once the first 60-second window completes.',
-                style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  color: AppTheme.kTextLight,
-                  height: 1.6,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              const Divider(),
-              const SizedBox(height: 16),
-
-              // Pipeline steps check-list
-              Column(
-                children: [
-                  _buildPipelineStepRow(_chestStrapConnected, 'Chest strap BLE connection active'),
-                  const SizedBox(height: 10),
-                  _buildPipelineStepRow(true, 'Baseline normalization parameters loaded'),
-                  const SizedBox(height: 10),
-                  _buildPipelineStepRow(
-                    _bufferingCountdown == 0,
-                    'Collecting first raw data window (700 Hz)',
-                    trailing: _bufferingCountdown > 0 ? 'In progress' : null,
-                  ),
-                  const SizedBox(height: 10),
-                  _buildPipelineStepRow(
-                    false,
-                    'Awaiting server feature extraction & predict',
-                    trailing: _bufferingCountdown == 0 ? 'Connecting...' : 'Pending',
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPipelineStepRow(bool complete, String text, {String? trailing}) {
-    return Row(
-      children: [
-        Icon(
-          complete ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-          color: complete ? Colors.green : Colors.grey.shade400,
-          size: 18,
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            text,
-            style: GoogleFonts.poppins(
-              fontSize: 11.5,
-              color: complete ? AppTheme.kTextDark : AppTheme.kTextLight,
-              fontWeight: complete ? FontWeight.w500 : FontWeight.normal,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue.shade700),
             ),
           ),
-        ),
-        if (trailing != null)
-          Text(
-            trailing,
-            style: GoogleFonts.poppins(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: complete ? Colors.green : AppTheme.kPrimaryDeep,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Establishing prediction stream... Buffering initial samples (${_bufferingCountdown}s remaining).',
+              style: GoogleFonts.poppins(
+                fontSize: 11,
+                color: Colors.blue.shade800,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 
