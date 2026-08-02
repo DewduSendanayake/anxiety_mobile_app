@@ -238,6 +238,8 @@ class ChestStrapService {
 
             if (targetResult != null) {
               await FlutterBluePlus.stopScan();
+              await _scanSubscription?.cancel();
+              _scanSubscription = null;
               await connectToDevice(targetResult.device);
             }
           } catch (e) {
