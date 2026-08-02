@@ -28,7 +28,8 @@ class BaselineCalibrationPage extends StatefulWidget {
 class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
     with TickerProviderStateMixin {
   // ── Constants ──────────────────────────────────────────────────
-  static const int _requiredReadings = 3; // 3 x 60-second windows
+  static const int _calibrationDurationSeconds = 180; // 3 minutes
+  static const int _minimumReadings = 3; // minimum windows required for stats
 
   // ── State ──────────────────────────────────────────────────────
   _Phase _phase = _Phase.instructions;
@@ -123,10 +124,6 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
         _collectedReadings.add(reading);
       });
 
-      if (_collectedReadings.length >= _requiredReadings) {
-        _collectionTimer?.cancel();
-        _finishCollection();
-      }
     };
 
     // UI countdown and safety timeout timer
@@ -140,11 +137,18 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
 
         setState(() => _elapsedSeconds++);
 
-        // Safety timeout: if after 4 minutes (240s) we still don't have 3 readings
-        if (_elapsedSeconds >= 240 && _collectedReadings.length < _requiredReadings) {
+        if (_elapsedSeconds >= _calibrationDurationSeconds &&
+            _collectedReadings.length >= _minimumReadings) {
+          timer.cancel();
+          _finishCollection();
+          return;
+        }
+
+        // Safety timeout: if after 4 minutes (240s) we still don't have enough readings
+        if (_elapsedSeconds >= 240 && _collectedReadings.length < _minimumReadings) {
           timer.cancel();
           setState(() {
-            _errorMessage = 'Not enough data received from chest strap. Only got ${_collectedReadings.length} of $_requiredReadings readings. Please ensure the strap is powered on and within range, then try again.';
+            _errorMessage = 'Not enough data received from chest strap after 4 minutes. Only got ${_collectedReadings.length} readings. Please ensure the strap is powered on and within range, then try again.';
             _phase = _Phase.error;
           });
         }
@@ -525,8 +529,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   // ─────────────────────────────────────────────────────────────
 
   Widget _buildCollectingView() {
-    // Show countdown progress for 3 windows
-    final double elapsedPercent = (_collectedReadings.length) / _requiredReadings;
+    final double elapsedPercent = _elapsedSeconds / _calibrationDurationSeconds;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
@@ -593,7 +596,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        '${_collectedReadings.length}/$_requiredReadings',
+                        '$_elapsedSeconds/$_calibrationDurationSeconds',
                         style: GoogleFonts.poppins(
                           fontSize: 36,
                           fontWeight: FontWeight.w800,
@@ -604,7 +607,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'readings',
+                        'seconds',
                         style: GoogleFonts.poppins(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
@@ -620,7 +623,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           const SizedBox(height: 48),
 
           Text(
-            'Recording data packets: ${_collectedReadings.length} of $_requiredReadings windows completed (approx. 60 seconds each).',
+            'Recording baseline data for 3 minutes. Packets received: ${_collectedReadings.length}.',
             style: GoogleFonts.poppins(
               fontSize: 13,
               color: Colors.white.withValues(alpha: 0.75),
@@ -769,7 +772,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
                 ),
                 const SizedBox(height: 16),
                 _summaryRow('Duration', '3 minutes'),
-                _summaryRow('Data windows', '${_collectedReadings.length} / $_requiredReadings'),
+                _summaryRow('Data windows', '${_collectedReadings.length}'),
                 _summaryRow('Features extracted', '10'),
                 _summaryRow(
                     'Resting HR', '${_restingHR.toStringAsFixed(1)} BPM'),
