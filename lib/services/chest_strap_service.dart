@@ -294,7 +294,7 @@ class ChestStrapService {
           _txSubscription?.cancel();
           _txSubscription = txChar.lastValueStream.listen((value) {
             if (value.isNotEmpty) {
-              final str = utf8.decode(value);
+              final str = utf8.decode(value, allowMalformed: true);
               _receiveBuffer += str;
               _processBuffer();
             }
