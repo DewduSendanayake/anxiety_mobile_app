@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' show Color;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
+import 'dart:math' show Random;
 import '../../ema_and_gad7.dart';
 
 /// DailyReminder
@@ -94,9 +95,45 @@ class DailyReminder {
     await prefs.remove('ema_reminder_ts_morning');
     await prefs.remove('ema_reminder_ts_afternoon');
     await prefs.remove('ema_reminder_ts_evening');
+    await prefs.remove('ema_random_times_date');
     debugPrint(
-      "DailyReminder: throttle timestamps cleared after settings change.",
+      "DailyReminder: throttle timestamps and random times cleared after settings change.",
     );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // RANDOM TIME GENERATION
+  // ─────────────────────────────────────────────────────────────────────────
+
+  static Future<void> _ensureRandomTimesForToday(
+    SharedPreferences prefs,
+    String today,
+  ) async {
+    final String lastGenerated = prefs.getString('ema_random_times_date') ?? '';
+    if (lastGenerated == today) return;
+
+    final random = Random();
+
+    for (var period in ['morning', 'afternoon', 'evening']) {
+      final int baseHour = prefs.getInt('ema_${period}_hour') ??
+          (period == 'morning'
+              ? 9
+              : period == 'afternoon'
+              ? 14
+              : 20);
+      final int baseMinute = prefs.getInt('ema_${period}_minute') ?? 0;
+      final int baseMinutes = baseHour * 60 + baseMinute;
+
+      // Random time offset within the 3-hour window (-60 mins to +120 mins).
+      // This protects morning sleep schedules while allowing full unpredictability.
+      final int offset = random.nextInt(181) - 60; // 0..180 maps to -60..120
+      final int randomMinutes = (baseMinutes + offset) % 1440;
+
+      await prefs.setInt('ema_random_minutes_$period', randomMinutes);
+    }
+
+    await prefs.setString('ema_random_times_date', today);
+    debugPrint("DailyReminder: Generated randomized EMA target times for date=$today");
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -120,20 +157,24 @@ class DailyReminder {
       return;
     }
 
-    // Read configured time (written by RatingSettingsPage).
-    final int targetHour =
-        prefs.getInt('ema_${period}_hour') ??
-        (period == 'morning'
-            ? 9
-            : period == 'afternoon'
-            ? 14
-            : 20);
-    final int targetMinute = prefs.getInt('ema_${period}_minute') ?? 0;
+    // Ensure we have random times generated for today
+    await _ensureRandomTimesForToday(prefs, today);
+
+    // Read the randomized target time (in minutes of day)
+    final int targetMinutes = prefs.getInt('ema_random_minutes_$period') ??
+        ((period == 'morning'
+                ? 9
+                : period == 'afternoon'
+                ? 14
+                : 20) *
+            60);
+
+    final int targetHour = targetMinutes ~/ 60;
+    final int targetMinute = targetMinutes % 60;
 
     final int nowMinutes = now.hour * 60 + now.minute;
-    final int targetMinutes = targetHour * 60 + targetMinute;
 
-    // Active window: target time → target time + 4 hours.
+    // Active window: target time → target time + 4 hours (240 minutes).
     const int windowMinutes = 240;
     final int endMinutes = targetMinutes + windowMinutes;
 

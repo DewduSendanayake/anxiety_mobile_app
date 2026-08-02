@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -34,6 +35,8 @@ class _LoginPageState extends State<LoginPage> {
         Permission.sms,
         Permission.notification,
         Permission.ignoreBatteryOptimizations,
+        Permission.bluetoothScan,
+        Permission.bluetoothConnect,
       ].request();
 
       bool isUsageGranted = await UsageStats.checkUsagePermission() ?? false;
@@ -51,12 +54,37 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _login() async {
-    if (_idController.text.isEmpty) return;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('user_id', _idController.text);
+    final enteredId = _idController.text.trim();
+    if (enteredId.isEmpty) return;
 
-    // Initialize the background service
-    await initializeService();
+    // Validate ID format (letters, numbers, underscores, full stops only)
+    final validCharacters = RegExp(r'^[a-zA-Z0-9_.]+$');
+    if (!validCharacters.hasMatch(enteredId)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Username can only contain letters, numbers, underscores, and full stops.',
+            style: GoogleFonts.poppins(fontSize: 13),
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Generate a unique 4-digit suffix
+    final random = Random();
+    final suffix = random.nextInt(9000) + 1000; // 1000 to 9999
+    final finalId = '${enteredId}_$suffix';
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('user_id', finalId);
+
+    try {
+      await initializeService();
+    } catch (e) {
+      debugPrint('Background service init error: $e');
+    }
 
     if (mounted) {
       Navigator.pushReplacement(
@@ -110,8 +138,8 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 50),
                 if (!_permissionsGranted)
                   _buildGlassButton(
-                    text: "Grant Access",
-                    icon: Icons.fingerprint,
+                    text: "Next",
+                    icon: Icons.arrow_forward_rounded,
                     isLoading: _isLoading,
                     onTap: _requestPermissions,
                   ),
@@ -119,7 +147,7 @@ class _LoginPageState extends State<LoginPage> {
                   _buildInputField(),
                   const SizedBox(height: 20),
                   _buildGlassButton(
-                    text: "Begin Session",
+                    text: "Enter",
                     icon: Icons.arrow_forward_rounded,
                     isPrimary: true,
                     onTap: _login,
@@ -195,7 +223,7 @@ class _LoginPageState extends State<LoginPage> {
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 18, letterSpacing: 2),
           decoration: InputDecoration(
-            hintText: "Enter Participant ID",
+            hintText: "Enter a username",
             hintStyle: TextStyle(color: Colors.grey.shade400),
             border: InputBorder.none,
             contentPadding: const EdgeInsets.all(20),

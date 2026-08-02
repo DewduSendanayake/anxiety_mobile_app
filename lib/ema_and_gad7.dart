@@ -44,6 +44,7 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
   ];
 
   Future<void> _submit() async {
+    if (_saving) return;
     if (_ratings.any((r) => r == null) || _selectedContext == null) return;
     setState(() => _saving = true);
 
@@ -51,19 +52,29 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
     final uid = prefs.getString('user_id') ?? 'Unknown';
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
+    final currentHour = DateTime.now().hour;
+    final String submissionPeriod;
+    if (currentHour >= 5 && currentHour < 12) {
+      submissionPeriod = 'morning';
+    } else if (currentHour >= 12 && currentHour < 17) {
+      submissionPeriod = 'afternoon';
+    } else {
+      submissionPeriod = 'evening';
+    }
+
     final data = {
-      'stress': _ratings[0],
+      'stress': _ratings[0]! - 1,
       'anxiety': _ratings[1],
       'fatigue': _ratings[2],
       'social': _ratings[3],
       'context': _selectedContext,
-      'period': widget.timePeriod,
+      'period': submissionPeriod,
       'date': today,
     };
 
     await BackgroundServiceHelper.sendToSheet(
       uid,
-      'EMA_Rating_${widget.timePeriod}',
+      'EMA_Rating_$submissionPeriod',
       jsonEncode(data),
     );
 
@@ -215,6 +226,7 @@ class _Gad7ScreenState extends State<Gad7Screen> {
   }
 
   Future<void> _submit() async {
+    if (_saving) return;
     if (_answers.any((a) => a == null)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -585,6 +597,7 @@ class _Pss10ScreenState extends State<Pss10Screen> {
   }
 
   Future<void> _submit() async {
+    if (_saving) return;
     if (_answers.any((a) => a == null)) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please answer all 10 questions.'), backgroundColor: Colors.orange));
       return;
