@@ -281,6 +281,13 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
                           ),
                           const SizedBox(height: 6),
 
+                          if (!widget.readOnly) ...[
+                            _buildSelectAllTile(),
+                            const SizedBox(height: 12),
+                            const Divider(),
+                            const SizedBox(height: 10),
+                          ],
+
                           _consentCheck(
                             value: _cbAge,
                             key: 'age',
@@ -723,6 +730,59 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
               style: TextStyle(
                   fontSize: 11, color: Colors.orange.shade700))),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSelectAllTile() {
+    final bool isAllSelected = _allChecked;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          final newValue = !isAllSelected;
+          _cbAge = newValue;
+          _cbPurpose = newValue;
+          _cbData = newValue;
+          _cbPhysio = newValue;
+          _cbStorage = newValue;
+          _cbRights = newValue;
+          _cbVoluntary = newValue;
+          _cbLiability = newValue;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: isAllSelected
+              ? AppTheme.kPrimaryDeep.withValues(alpha: 0.1)
+              : AppTheme.kAccentBlue.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isAllSelected
+                ? AppTheme.kPrimaryDeep
+                : AppTheme.kPrimaryDeep.withValues(alpha: 0.2),
+            width: 1.5,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isAllSelected ? Icons.done_all_rounded : Icons.check_box_outline_blank_rounded,
+              color: AppTheme.kPrimaryDeep,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                isAllSelected ? "Deselect All Declarations" : "Agree & Select All Declarations",
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.kPrimaryDeep,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
