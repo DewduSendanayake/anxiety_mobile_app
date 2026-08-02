@@ -1,19 +1,16 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
 
 import '../theme/app_theme.dart';
 import '../background_service_helper.dart';
-import '../services/rating_settings.dart';
 import '../services/chest_strap_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:app_settings/app_settings.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../ema_and_gad7.dart';
-import '../profile_page.dart';
 import '../services/api_service.dart';
 import 'baseline_calibration_page.dart';
 
