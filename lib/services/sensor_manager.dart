@@ -16,7 +16,7 @@ class SensorManager {
   Timer? _oneMinuteTimer;
   bool isCollecting = false;
 
-  SensorManager({required this.userId, this.samplingRate = 700});
+  SensorManager({required this.userId, this.samplingRate = 1});
 
   // START HDS COLLECTION
   void startCollection() {
