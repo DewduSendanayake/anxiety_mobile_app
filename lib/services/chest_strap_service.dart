@@ -224,6 +224,12 @@ class ChestStrapService {
         timeout: const Duration(seconds: 15),
       );
 
+      Future.delayed(const Duration(seconds: 15), () {
+        if (connectionState.value == ChestStrapState.scanning) {
+          connectionState.value = ChestStrapState.disconnected;
+        }
+      });
+
       _scanSubscription?.cancel();
       _scanSubscription = FlutterBluePlus.onScanResults.listen(
         (results) async {
