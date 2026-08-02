@@ -254,26 +254,56 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     ],
                   ),
 
-                  // ── Connection Status ──
+                  // ── Connection Status Banner ──
                   if (!_chestStrap.isConnected)
                     Container(
                       margin: const EdgeInsets.only(top: 12),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                        color: const Color(0xFFFFECEF),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFFFC0C7)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.bluetooth_disabled_rounded, color: Colors.white.withValues(alpha: 0.7), size: 16),
-                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFFFD0D6),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.bluetooth_disabled_rounded, color: Color(0xFFD32F2F), size: 20),
+                          ),
+                          const SizedBox(width: 12),
                           Expanded(
-                            child: Text(
-                              _lastReading != null
-                                  ? 'Chest strap disconnected — showing last known data'
-                                  : 'Chest strap not connected — using model estimates',
-                              style: GoogleFonts.poppins(fontSize: 11, color: Colors.white.withValues(alpha: 0.7)),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Chest Strap Disconnected',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFFB71C1C),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Calibration & real-time forecasting are paused. Please connect your ChestStrap_V3 in the Vitals tab.',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 10.5,
+                                    color: const Color(0xFFC62828),
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
