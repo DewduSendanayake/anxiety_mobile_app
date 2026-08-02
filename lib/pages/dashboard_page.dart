@@ -35,6 +35,7 @@ class _DashboardPageState extends State<DashboardPage>
   bool _isServiceRunning = false;
   bool _isOptimized = false;
   bool _chestStrapConnected = false;
+  bool _isBluetoothReady = false;
 
   // ── Prediction Pipeline State ──────────────────────────────
   String _predictionStatus = "loading"; // "loading", "buffering", "not_calibrated", "success", "error"
@@ -129,6 +130,8 @@ class _DashboardPageState extends State<DashboardPage>
 
   // ── Chest Strap Bluetooth Flow ───────────────────────────────
 
+  // ── Chest Strap Bluetooth Flow ───────────────────────────────
+
   Future<void> _checkBluetoothConnection() async {
     // Check if Bluetooth adapter is on
     final adapterState = await FlutterBluePlus.adapterState.first;
@@ -144,8 +147,10 @@ class _DashboardPageState extends State<DashboardPage>
     if (!scanGranted || !connectGranted) {
       _showBluetoothPrompt();
     } else {
-      // Permissions granted, start scanning
-      _startChestStrapScan();
+      // Permissions granted, Bluetooth is ON
+      setState(() {
+        _isBluetoothReady = true;
+      });
     }
   }
 
@@ -163,7 +168,9 @@ class _DashboardPageState extends State<DashboardPage>
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              // Continue without strap
+              setState(() {
+                _isBluetoothReady = false;
+              });
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Using saved data / model weights for risk assessment.')),
               );
@@ -174,7 +181,6 @@ class _DashboardPageState extends State<DashboardPage>
             onPressed: () async {
               Navigator.pop(context);
               await AppSettings.openAppSettings(type: AppSettingsType.bluetooth);
-              // Re-check after user returns from settings
               Future.delayed(const Duration(seconds: 2), _checkBluetoothConnection);
             },
             child: Text('Turn On', style: GoogleFonts.poppins(color: AppTheme.kPrimaryDeep)),
@@ -198,6 +204,9 @@ class _DashboardPageState extends State<DashboardPage>
           TextButton(
             onPressed: () {
               Navigator.pop(context);
+              setState(() {
+                _isBluetoothReady = false;
+              });
               _showDenyWarning();
             },
             child: Text('Deny', style: GoogleFonts.poppins(color: Colors.red)),
@@ -210,8 +219,13 @@ class _DashboardPageState extends State<DashboardPage>
               bool scanOk = await Permission.bluetoothScan.isGranted;
               bool connectOk = await Permission.bluetoothConnect.isGranted;
               if (scanOk && connectOk) {
-                _startChestStrapScan();
+                setState(() {
+                  _isBluetoothReady = true;
+                });
               } else {
+                setState(() {
+                  _isBluetoothReady = false;
+                });
                 _showDenyWarning();
               }
             },
@@ -288,16 +302,135 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   void _startChestStrapScan() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Scanning for ChestStrap_V3... Please wait.')),
+    );
     ChestStrapService().startScan().then((_) {
-      if (mounted && ChestStrapService().isConnected) {
+      if (!mounted) return;
+      if (ChestStrapService().isConnected) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ ChestStrap_V3 connected successfully!'),
             backgroundColor: Colors.green,
           ),
         );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not find ChestStrap_V3. Make sure it is powered on and advertising.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
       }
     });
+  }
+
+  Future<void> _disconnectChestStrap() async {
+    await ChestStrapService().disconnect();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Chest strap disconnected.')),
+      );
+    }
+  }
+
+  Widget _buildConnectionControlCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: _chestStrapConnected
+                  ? const Color(0xFFE8F5E9)
+                  : (_isBluetoothReady ? const Color(0xFFE3F2FD) : const Color(0xFFFFEBEE)),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              _chestStrapConnected
+                  ? Icons.bluetooth_connected_rounded
+                  : (_isBluetoothReady ? Icons.bluetooth_audio_rounded : Icons.bluetooth_disabled_rounded),
+              color: _chestStrapConnected
+                  ? Colors.green.shade700
+                  : (_isBluetoothReady ? Colors.blue.shade700 : Colors.red.shade700),
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _chestStrapConnected
+                      ? 'Strap Connected'
+                      : (_isBluetoothReady ? 'Bluetooth Ready' : 'Strap Disconnected'),
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.kTextDark,
+                  ),
+                ),
+                Text(
+                  _chestStrapConnected
+                      ? 'ChestStrap_V3 is streaming vital parameters'
+                      : (_isBluetoothReady ? 'Tap Connect to pair ChestStrap_V3' : 'Please enable Bluetooth & permissions'),
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    color: AppTheme.kTextLight,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (_chestStrapConnected) {
+                _disconnectChestStrap();
+              } else if (_isBluetoothReady) {
+                _startChestStrapScan();
+              } else {
+                _checkBluetoothConnection();
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _chestStrapConnected
+                  ? Colors.grey.shade100
+                  : (_isBluetoothReady ? AppTheme.kPrimaryDeep : Colors.red.shade600),
+              foregroundColor: _chestStrapConnected
+                  ? AppTheme.kTextDark
+                  : Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              elevation: 0,
+            ),
+            child: Text(
+              _chestStrapConnected
+                  ? 'Disconnect'
+                  : (_isBluetoothReady ? 'Connect' : 'Enable'),
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // ── Data & Service Helpers ──────────────────────────────────
@@ -558,6 +691,9 @@ class _DashboardPageState extends State<DashboardPage>
           const SizedBox(height: 10),
           _buildBatteryWarning(),
         ],
+
+        const SizedBox(height: 12),
+        _buildConnectionControlCard(),
 
         if (_predictionStatus == 'not_calibrated') ...[
           const SizedBox(height: 12),
