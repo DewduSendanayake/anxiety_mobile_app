@@ -769,7 +769,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
                 ),
                 const SizedBox(height: 16),
                 _summaryRow('Duration', '3 minutes'),
-                _summaryRow('Data windows', '${_collectedReadings.length} minutes'),
+                _summaryRow('Data windows', '${_collectedReadings.length} / $_requiredReadings'),
                 _summaryRow('Features extracted', '10'),
                 _summaryRow(
                     'Resting HR', '${_restingHR.toStringAsFixed(1)} BPM'),
