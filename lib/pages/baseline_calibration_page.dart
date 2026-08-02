@@ -5,18 +5,15 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/api_service.dart';
+import '../services/chest_strap_service.dart';
 import 'main_navigation_page.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Baseline Calibration Page
 //
-// Collects a few minutes of clean resting physiological data using the same
-// simulation engine as SensorManager, then computes per-channel mean and
-// standard deviation and uploads them to the /set_norm_params endpoint.
-//
-// The six channels match what SensorManager and the server expect:
-//   [0] ECG      [1] Respiration  [2] Temperature
-//   [3] Acc X    [4] Acc Y        [5] Acc Z
+// Collects 3 minutes of resting calibration data (3 x 60-second window readings)
+// directly from the ChestStrap_V3 BLE device, then computes mean and standard
+// deviation across the windows and uploads them to the /set_norm_params endpoint.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class BaselineCalibrationPage extends StatefulWidget {
@@ -31,8 +28,7 @@ class BaselineCalibrationPage extends StatefulWidget {
 class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
     with TickerProviderStateMixin {
   // ── Constants ──────────────────────────────────────────────────
-  static const int _totalSeconds = 180; // 3 minutes of resting data
-  static const int _samplingRate = 700; // samples per second (matches SensorManager)
+  static const int _requiredReadings = 3; // 3 x 60-second windows
 
   // ── State ──────────────────────────────────────────────────────
   _Phase _phase = _Phase.instructions;
@@ -40,10 +36,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   bool _uploading = false;
   String? _errorMessage;
 
-  // Per-channel accumulators (same order as ApiService / server)
-  // Index: 0=ECG, 1=RESP, 2=TEMP, 3=ACC_X, 4=ACC_Y, 5=ACC_Z
-  final List<List<double>> _buffers = List.generate(6, (_) => []);
-
+  final List<ChestStrapReading> _collectedReadings = [];
   Timer? _collectionTimer;
 
   // Calibrated physiological features
@@ -58,9 +51,6 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   late Animation<double> _waveAnimation;
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
-
-  // ── Random (for synthetic data generation) ─────────────────────
-  final _rng = Random();
 
   @override
   void initState() {
@@ -108,9 +98,15 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   // ═══════════════════════════════════════════════════════════════
 
   void _startCalibration() {
-    // Clear any previous data
-    for (final buf in _buffers) {
-      buf.clear();
+    _collectedReadings.clear();
+
+    // Safety check: is chest strap connected?
+    if (!ChestStrapService().isConnected) {
+      setState(() {
+        _errorMessage = 'Chest strap is not connected. Please connect ChestStrap_V3 first.';
+        _phase = _Phase.error;
+      });
+      return;
     }
 
     setState(() {
@@ -119,8 +115,21 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
       _errorMessage = null;
     });
 
-    // Collect data every second by generating synthetic samples
-    // identical in fidelity to SensorManager's simulation mode.
+    // Listen to real chest strap data stream
+    ChestStrapService().onDataReceived = (reading) {
+      if (!mounted) return;
+      
+      setState(() {
+        _collectedReadings.add(reading);
+      });
+
+      if (_collectedReadings.length >= _requiredReadings) {
+        _collectionTimer?.cancel();
+        _finishCollection();
+      }
+    };
+
+    // UI countdown and safety timeout timer
     _collectionTimer = Timer.periodic(
       const Duration(seconds: 1),
       (timer) {
@@ -129,64 +138,25 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           return;
         }
 
-        // Generate 1 second worth of samples (700 per channel)
-        _generateOneSecondOfData();
-
         setState(() => _elapsedSeconds++);
 
-        if (_elapsedSeconds >= _totalSeconds) {
+        // Safety timeout: if after 4 minutes (240s) we still don't have 3 readings
+        if (_elapsedSeconds >= 240 && _collectedReadings.length < _requiredReadings) {
           timer.cancel();
-          _finishCollection();
+          setState(() {
+            _errorMessage = 'Not enough data received from chest strap. Only got ${_collectedReadings.length} of $_requiredReadings readings. Please ensure the strap is powered on and within range, then try again.';
+            _phase = _Phase.error;
+          });
         }
       },
     );
   }
 
-  /// Generates _samplingRate synthetic samples per channel and appends
-  /// them to the accumulators.  The waveform logic mirrors SensorManager.
-  void _generateOneSecondOfData() {
-    final int offset = _elapsedSeconds * _samplingRate;
-
-    for (int i = 0; i < _samplingRate; i++) {
-      final int t = offset + i;
-
-      // ECG: sharp R-peak every ~600 samples (~70 BPM)
-      double ecg;
-      if (t % 600 == 0) {
-        ecg = 1.5;
-      } else if (t % 600 == 10) {
-        ecg = -0.3;
-      } else {
-        // Tiny baseline wander + high-freq micro-noise
-        ecg = 0.02 * (t % 10 == 0 ? 1.0 : -1.0) +
-            (_rng.nextDouble() - 0.5) * 0.005;
-      }
-
-      // Respiration: square-ish wave at ~16 breaths/min
-      // Period = 700 * 60/16 ≈ 2625 samples
-      final double resp = 0.5 * (t % 2625 < 1312 ? 1.0 : -1.0) +
-          (_rng.nextDouble() - 0.5) * 0.02;
-
-      // Temperature: stable resting 36.6 °C + tiny sensor noise
-      final double temp = 36.6 + (_rng.nextDouble() - 0.5) * 0.05;
-
-      // Accelerometer: device lying still; gravity on Z-axis
-      final double accX = 0.02 + (_rng.nextDouble() - 0.5) * 0.01;
-      final double accY = 0.02 + (_rng.nextDouble() - 0.5) * 0.01;
-      final double accZ = 0.98 + (_rng.nextDouble() - 0.5) * 0.02;
-
-      _buffers[0].add(ecg);
-      _buffers[1].add(resp);
-      _buffers[2].add(temp);
-      _buffers[3].add(accX);
-      _buffers[4].add(accY);
-      _buffers[5].add(accZ);
-    }
-  }
-
   void _finishCollection() {
+    // Clear callback to avoid listening in other screens
+    ChestStrapService().onDataReceived = null;
+    
     setState(() => _phase = _Phase.calculating);
-    // Give the UI one frame to update before the heavy computation
     Future.delayed(const Duration(milliseconds: 300), _computeAndUpload);
   }
 
@@ -195,38 +165,29 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   // ═══════════════════════════════════════════════════════════════
 
   Future<void> _computeAndUpload() async {
-    // We have 3 minutes of data. Let's slice it into three 60-second windows.
-    // Each window has 60 * 700 = 42,000 samples.
-    const int windowLength = 60 * _samplingRate;
-    final List<List<double>> featuresPerWindow = [];
-
-    for (int w = 0; w < 3; w++) {
-      final int start = w * windowLength;
-      final int end = (w + 1) * windowLength;
-
-      // Safety bounds check
-      if (_buffers[0].length < end) break;
-
-      final ecg = _buffers[0].sublist(start, end);
-      final resp = _buffers[1].sublist(start, end);
-      final temp = _buffers[2].sublist(start, end);
-      final accX = _buffers[3].sublist(start, end);
-      final accY = _buffers[4].sublist(start, end);
-      final accZ = _buffers[5].sublist(start, end);
-
-      featuresPerWindow.add(_extractFeatures(ecg, resp, temp, accX, accY, accZ));
-    }
-
-    if (featuresPerWindow.isEmpty) {
+    if (_collectedReadings.isEmpty) {
       setState(() {
-        _errorMessage = 'Insufficient data collected for calibration.';
+        _errorMessage = 'No baseline data was collected from the chest strap.';
         _phase = _Phase.error;
       });
       return;
     }
 
-    // We now have N windows (e.g. 3) of 10 features each.
-    // Let's compute mean and std dev across these windows for each of the 10 features.
+    // Convert readings into 10-feature windows
+    final List<List<double>> featuresPerWindow = _collectedReadings.map((r) => [
+      r.meanHR,
+      r.meanRR,
+      r.sdnn,
+      r.rmssd,
+      r.meanBR,
+      r.stdBR,
+      r.meanTemp,
+      r.stdTemp,
+      r.meanAccMag,
+      r.stdAccMag,
+    ]).toList();
+
+    // Compute mean and standard deviation across the windows for each of the 10 features
     final List<double> finalMeans = List.filled(10, 0.0);
     final List<double> finalStds = List.filled(10, 0.0);
 
@@ -236,7 +197,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
       finalMeans[f] = meanVal;
 
       if (vals.length < 2) {
-        finalStds[f] = 1e-6; // standard minimum fallback
+        finalStds[f] = 1e-6; // standard fallback
       } else {
         final double varSum = vals.map((x) => (x - meanVal) * (x - meanVal)).reduce((a, b) => a + b);
         double stdVal = sqrt(varSum / vals.length);
@@ -252,7 +213,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
       _restingTemp = finalMeans[6];
     });
 
-    // ── Step 3: Upload to normalization endpoint ─────────────────
+    // Upload to server normalization endpoint
     bool ok = false;
     try {
       ok = await ApiService.setNormalizationParams(
@@ -265,7 +226,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
       debugPrint('Calibration upload error: $e');
     }
 
-    // ── Step 4: Persist the calibration flag ────────────────────
+    // Persist the calibration complete flag locally
     if (ok) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('calibration_complete', true);
@@ -276,147 +237,9 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
       _uploading = false;
       _phase = ok ? _Phase.done : _Phase.error;
       if (!ok) {
-        _errorMessage =
-            'Could not reach the server. Please check your connection and try again.';
+        _errorMessage = 'Could not reach the server. Please check your internet connection and try again.';
       }
     });
-  }
-
-  List<double> _extractFeatures(
-    List<double> ecg,
-    List<double> resp,
-    List<double> temp,
-    List<double> accX,
-    List<double> accY,
-    List<double> accZ,
-  ) {
-    // --- 1. HRV Features (mean_HR, mean_RR, SDNN, RMSSD) ---
-    double maxEcg = ecg.reduce(max);
-    double threshold = maxEcg * 0.5;
-    if (threshold < 0.2) threshold = 0.2;
-
-    List<int> peaks = [];
-    int minDistance = 280; // 0.4s refractory period at 700Hz (max 150 BPM)
-    int lastPeak = -minDistance;
-
-    for (int i = 1; i < ecg.length - 1; i++) {
-      if (ecg[i] > ecg[i - 1] && ecg[i] > ecg[i + 1] && ecg[i] > threshold) {
-        if (i - lastPeak >= minDistance) {
-          peaks.add(i);
-          lastPeak = i;
-        } else if (ecg[i] > ecg[lastPeak]) {
-          peaks[peaks.length - 1] = i;
-          lastPeak = i;
-        }
-      }
-    }
-
-    List<double> rrMs = [];
-    for (int i = 1; i < peaks.length; i++) {
-      double diffMs = (peaks[i] - peaks[i - 1]) / _samplingRate * 1000.0;
-      if (diffMs >= 300 && diffMs <= 2000) {
-        rrMs.add(diffMs);
-      }
-    }
-
-    double meanHR, meanRR, sdnn, rmssd;
-    if (rrMs.length < 5) {
-      meanRR = 857.14;
-      meanHR = 70.0;
-      sdnn = 20.0;
-      rmssd = 20.0;
-    } else {
-      meanRR = rrMs.reduce((a, b) => a + b) / rrMs.length;
-      meanHR = 60000.0 / meanRR;
-      double varSum = rrMs.map((x) => (x - meanRR) * (x - meanRR)).reduce((a, b) => a + b);
-      sdnn = sqrt(varSum / rrMs.length);
-
-      double diffSqSum = 0.0;
-      for (int i = 1; i < rrMs.length; i++) {
-        double d = rrMs[i] - rrMs[i - 1];
-        diffSqSum += d * d;
-      }
-      rmssd = sqrt(diffSqSum / (rrMs.length - 1));
-    }
-
-    // --- 2. Respiration Features (mean_BR, std_BR) ---
-    double respMean = resp.reduce((a, b) => a + b) / resp.length;
-    List<int> crossings = [];
-    for (int i = 1; i < resp.length; i++) {
-      if (resp[i - 1] <= respMean && resp[i] > respMean) {
-        crossings.add(i);
-      }
-    }
-
-    List<double> brValues = [];
-    for (int i = 1; i < crossings.length; i++) {
-      double periodSec = (crossings[i] - crossings[i - 1]) / _samplingRate;
-      if (periodSec > 0) {
-        double br = 60.0 / periodSec;
-        if (br >= 6 && br <= 40) {
-          brValues.add(br);
-        }
-      }
-    }
-
-    double meanBR, stdBR;
-    if (brValues.length < 2) {
-      meanBR = 16.0;
-      stdBR = 1.0;
-    } else {
-      meanBR = brValues.reduce((a, b) => a + b) / brValues.length;
-      double brVarSum = brValues.map((x) => (x - meanBR) * (x - meanBR)).reduce((a, b) => a + b);
-      stdBR = sqrt(brVarSum / brValues.length);
-    }
-
-    // --- 3. Temperature Features (mean_temp, std_temp) ---
-    List<double> validTemp = temp.where((t) => t >= 25 && t <= 40).toList();
-    double meanTemp, stdTemp;
-    if (validTemp.isEmpty) {
-      meanTemp = 36.6;
-      stdTemp = 0.05;
-    } else {
-      meanTemp = validTemp.reduce((a, b) => a + b) / validTemp.length;
-      double tempVarSum = validTemp.map((x) => (x - meanTemp) * (x - meanTemp)).reduce((a, b) => a + b);
-      stdTemp = sqrt(tempVarSum / validTemp.length);
-    }
-
-    // --- 4. Accelerometer Features (mean_acc_mag, std_acc_mag) ---
-    List<double> accXFilt = _highPassFilter(accX, 0.9955);
-    List<double> accYFilt = _highPassFilter(accY, 0.9955);
-    List<double> accZFilt = _highPassFilter(accZ, 0.9955);
-
-    List<double> accMag = [];
-    for (int i = 0; i < accXFilt.length; i++) {
-      accMag.add(sqrt(accXFilt[i] * accXFilt[i] + accYFilt[i] * accYFilt[i] + accZFilt[i] * accZFilt[i]));
-    }
-
-    double meanAccMag = accMag.reduce((a, b) => a + b) / accMag.length;
-    double accMagVarSum = accMag.map((x) => (x - meanAccMag) * (x - meanAccMag)).reduce((a, b) => a + b);
-    double stdAccMag = sqrt(accMagVarSum / accMag.length);
-
-    return [
-      meanHR,
-      meanRR,
-      sdnn,
-      rmssd,
-      meanBR,
-      stdBR,
-      meanTemp,
-      stdTemp,
-      meanAccMag,
-      stdAccMag,
-    ];
-  }
-
-  List<double> _highPassFilter(List<double> input, double alpha) {
-    List<double> output = List.filled(input.length, 0.0);
-    if (input.isEmpty) return output;
-    output[0] = 0.0;
-    for (int i = 1; i < input.length; i++) {
-      output[i] = alpha * (output[i - 1] + input[i] - input[i - 1]);
-    }
-    return output;
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -436,9 +259,6 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
     );
   }
 
-  /// Skip calibration — we save the flag anyway so the user isn't
-  /// prompted again.  The server will use global defaults until the
-  /// user recalibrates from the dashboard.
   void _skip() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('calibration_complete', true);
@@ -492,6 +312,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   // ─────────────────────────────────────────────────────────────
 
   Widget _buildInstructionsView() {
+    final bool isStrapConnected = ChestStrapService().isConnected;
+
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
@@ -541,8 +363,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           const SizedBox(height: 10),
 
           Text(
-            'Before Aura can accurately detect anxiety patterns, '
-            'it needs to learn what your body looks like at rest.',
+            'Before Aura can accurately analyze anxiety patterns, '
+            'it needs to learn your resting baseline from the chest strap.',
             textAlign: TextAlign.center,
             style: GoogleFonts.poppins(
               fontSize: 14,
@@ -565,9 +387,9 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           _StepCard(
             number: '2',
             icon: Icons.timer_outlined,
-            title: 'Wait 3 minutes',
+            title: 'Record 3 windows',
             description:
-                'The sensor stream will record your resting physiological baseline.',
+                'The chest strap will record 3 consecutive sixty-second resting windows.',
           ),
           const SizedBox(height: 14),
           _StepCard(
@@ -575,7 +397,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
             icon: Icons.cloud_upload_outlined,
             title: 'Data is uploaded securely',
             description:
-                'Your personal mean and standard deviation are stored on the prediction server — never raw readings.',
+                'Your resting baseline parameter stats are stored on the server — never raw readings.',
           ),
 
           const SizedBox(height: 28),
@@ -604,7 +426,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
                   child: Text(
                     'IMPORTANT: Only calibrate when you are feeling calm and relaxed. '
                     'If you are currently stressed or active, please skip and calibrate later, '
-                    'as calibrating now will cause inaccurate stress predictions.',
+                    'as calibrating now will cause inaccurate stress calculations.',
                     style: GoogleFonts.poppins(
                       fontSize: 11.5,
                       color: Colors.white.withValues(alpha: 0.9),
@@ -619,11 +441,41 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
 
           const SizedBox(height: 32),
 
+          // Connection Warning banner if strap disconnected
+          if (!isStrapConnected) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFC62828).withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: const Color(0xFFFF8A80), width: 1.5),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.bluetooth_disabled_rounded, color: Colors.white, size: 22),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Strap is disconnected. Please go back to the Vitals tab and connect your ChestStrap_V3 before attempting calibration.',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
           // Start button
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: _startCalibration,
+              onPressed: isStrapConnected ? _startCalibration : null,
               icon: const Icon(Icons.play_circle_outline_rounded, size: 22),
               label: Text(
                 'Start Calibration',
@@ -635,6 +487,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white,
                 foregroundColor: const Color(0xFF667eea),
+                disabledBackgroundColor: Colors.white.withValues(alpha: 0.3),
+                disabledForegroundColor: Colors.white.withValues(alpha: 0.5),
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(18),
@@ -671,10 +525,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   // ─────────────────────────────────────────────────────────────
 
   Widget _buildCollectingView() {
-    final double progress = _elapsedSeconds / _totalSeconds;
-    final int remaining = _totalSeconds - _elapsedSeconds;
-    final int minutes = remaining ~/ 60;
-    final int seconds = remaining % 60;
+    // Show countdown progress for 3 windows
+    final double elapsedPercent = (_collectedReadings.length) / _requiredReadings;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
@@ -702,12 +554,12 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
 
           const SizedBox(height: 48),
 
-          // Animated waveform visualizer
+          // Animated visualizer
           _WaveformVisualizer(animation: _waveAnimation),
 
           const SizedBox(height: 48),
 
-          // Circular progress countdown
+          // Circular progress window counter
           AnimatedBuilder(
             animation: _pulseController,
             builder: (context, child) {
@@ -729,31 +581,34 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
                     width: 160,
                     height: 160,
                     child: CircularProgressIndicator(
-                      value: progress,
+                      value: elapsedPercent.clamp(0.01, 1.0),
                       strokeWidth: 8,
                       backgroundColor: Colors.white.withValues(alpha: 0.2),
                       valueColor: const AlwaysStoppedAnimation(Colors.white),
                       strokeCap: StrokeCap.round,
                     ),
                   ),
-                  // Time display
+                  // Counter display
                   Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        '$minutes:${seconds.toString().padLeft(2, '0')}',
+                        '${_collectedReadings.length}/$_requiredReadings',
                         style: GoogleFonts.poppins(
-                          fontSize: 40,
+                          fontSize: 36,
                           fontWeight: FontWeight.w800,
                           color: Colors.white,
                           letterSpacing: -1,
+                          height: 1.0,
                         ),
                       ),
+                      const SizedBox(height: 4),
                       Text(
-                        'remaining',
+                        'readings',
                         style: GoogleFonts.poppins(
                           fontSize: 12,
-                          color: Colors.white.withValues(alpha: 0.7),
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white.withValues(alpha: 0.8),
                         ),
                       ),
                     ],
@@ -762,144 +617,62 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
               );
             },
           ),
+          const SizedBox(height: 48),
 
-          const SizedBox(height: 40),
+          Text(
+            'Recording data packets: ${_collectedReadings.length} of $_requiredReadings windows completed (approx. 60 seconds each).',
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              color: Colors.white.withValues(alpha: 0.75),
+              height: 1.6,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          const Divider(color: Colors.white24),
+          const SizedBox(height: 16),
 
-          // Live sample count
-          _buildLiveStats(),
-
-          const SizedBox(height: 32),
-
-          // Progress bar with label
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Data collected',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: Colors.white.withValues(alpha: 0.7),
-                    ),
-                  ),
-                  Text(
-                    '${(progress * 100).toStringAsFixed(0)}%',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: LinearProgressIndicator(
-                  value: progress,
-                  minHeight: 8,
-                  backgroundColor: Colors.white.withValues(alpha: 0.2),
-                  valueColor: const AlwaysStoppedAnimation(Colors.white),
-                ),
-              ),
-            ],
+          Text(
+            'Elapsed Time: $_elapsedSeconds seconds',
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              color: Colors.white.withValues(alpha: 0.6),
+            ),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildLiveStats() {
-    final int samples = _buffers[0].length;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _statChip(Icons.timeline_rounded, '${(samples / 1000).toStringAsFixed(1)}K', 'Samples'),
-          _vertDivider(),
-          _statChip(Icons.graphic_eq_rounded, '6', 'Channels'),
-          _vertDivider(),
-          _statChip(Icons.speed_rounded, '${_samplingRate}Hz', 'Rate'),
-        ],
-      ),
-    );
-  }
-
-  Widget _statChip(IconData icon, String value, String label) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: Colors.white.withValues(alpha: 0.8), size: 20),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: GoogleFonts.poppins(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
-          ),
-        ),
-        Text(
-          label,
-          style: GoogleFonts.poppins(
-            fontSize: 10,
-            color: Colors.white.withValues(alpha: 0.65),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _vertDivider() {
-    return Container(
-      width: 1,
-      height: 44,
-      color: Colors.white.withValues(alpha: 0.2),
     );
   }
 
   // ─────────────────────────────────────────────────────────────
-  // Phase 3 — Calculating / Uploading
+  // Phase 3 — Calculating
   // ─────────────────────────────────────────────────────────────
 
   Widget _buildCalculatingView() {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 28),
+        padding: const EdgeInsets.symmetric(horizontal: 40),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const SizedBox(
-              width: 72,
-              height: 72,
-              child: CircularProgressIndicator(
-                color: Colors.white,
-                strokeWidth: 5,
-                strokeCap: StrokeCap.round,
-              ),
+            const CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation(Colors.white),
             ),
             const SizedBox(height: 32),
             Text(
-              _uploading ? 'Uploading to server…' : 'Computing statistics…',
+              _uploading ? 'Uploading Baseline Parameters' : 'Processing Baseline',
               style: GoogleFonts.poppins(
                 fontSize: 20,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
                 color: Colors.white,
               ),
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 12),
             Text(
               _uploading
-                  ? 'Sending your personalised baseline parameters securely.'
-                  : 'Calculating mean and standard deviation for each sensor channel.',
+                  ? 'Saving your personalised baseline parameters securely to server.'
+                  : 'Calculating statistical bounds for each sensor parameter.',
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(
                 fontSize: 13,
@@ -918,7 +691,6 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   // ─────────────────────────────────────────────────────────────
 
   Widget _buildDoneView() {
-    final int totalSamples = _buffers[0].length;
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
@@ -963,8 +735,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           const SizedBox(height: 10),
 
           Text(
-            'Your resting baseline has been securely uploaded. '
-            'The prediction engine is now personalised to your physiology.',
+            'Your resting baseline parameters have been securely uploaded. '
+            'The prediction model is now personalised to your physiology.',
             textAlign: TextAlign.center,
             style: GoogleFonts.poppins(
               fontSize: 14,
@@ -996,9 +768,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
                   ),
                 ),
                 const SizedBox(height: 16),
-                _summaryRow('Duration', '${_totalSeconds ~/ 60} minutes'),
-                _summaryRow('Total raw samples',
-                    '${(totalSamples / 1000).toStringAsFixed(0)}K'),
+                _summaryRow('Duration', '3 minutes'),
+                _summaryRow('Data windows', '${_collectedReadings.length} minutes'),
                 _summaryRow('Features extracted', '10'),
                 _summaryRow(
                     'Resting HR', '${_restingHR.toStringAsFixed(1)} BPM'),
@@ -1302,27 +1073,21 @@ class _WaveformPainter extends CustomPainter {
       final double ecgPhase = (i / segments + phase) % 1.0;
 
       double y;
-      // Synthesise a simplified ECG shape within each beat period (~0.125 of width)
       final double beatPhase = (ecgPhase * 8) % 1.0;
       if (beatPhase < 0.05) {
-        // P wave
         y = cx - 8 * sin(beatPhase / 0.05 * pi);
       } else if (beatPhase < 0.1) {
-        y = cx; // PR segment
+        y = cx;
       } else if (beatPhase < 0.12) {
-        // Q dip
         y = cx + 6 * sin((beatPhase - 0.1) / 0.02 * pi);
       } else if (beatPhase < 0.15) {
-        // R peak
         y = cx - 28 * sin((beatPhase - 0.12) / 0.03 * pi);
       } else if (beatPhase < 0.18) {
-        // S wave
         y = cx + 10 * sin((beatPhase - 0.15) / 0.03 * pi);
       } else if (beatPhase < 0.35) {
-        // ST segment + T wave
         y = cx - 6 * sin((beatPhase - 0.18) / 0.17 * pi);
       } else {
-        y = cx + 0.5 * sin(t * 2); // baseline wander
+        y = cx + 0.5 * sin(t * 2);
       }
 
       if (i == 0) {
