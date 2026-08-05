@@ -142,8 +142,17 @@ class _DashboardPageState extends State<DashboardPage>
   // ── Chest Strap Bluetooth Flow ───────────────────────────────
 
   Future<void> _checkBluetoothConnection() async {
+    debugPrint('[Dashboard] _checkBluetoothConnection called');
+
+    // Already connected? No need to do anything.
+    if (ChestStrapService().isConnected) {
+      debugPrint('[Dashboard] Already connected to chest strap, skipping.');
+      return;
+    }
+
     // Check if Bluetooth adapter is on
     final adapterState = await FlutterBluePlus.adapterState.first;
+    debugPrint('[Dashboard] Adapter state: $adapterState');
     if (adapterState != BluetoothAdapterState.on) {
       _showBluetoothOffDialog();
       return;
@@ -152,11 +161,15 @@ class _DashboardPageState extends State<DashboardPage>
     // Check permissions
     bool scanGranted = await Permission.bluetoothScan.isGranted;
     bool connectGranted = await Permission.bluetoothConnect.isGranted;
+    // On Android 11 and below, location permission is also needed for BLE scanning
+    bool locationGranted = await Permission.locationWhenInUse.isGranted;
+    debugPrint('[Dashboard] Permissions - scan: $scanGranted, connect: $connectGranted, location: $locationGranted');
 
-    if (!scanGranted || !connectGranted) {
+    if (!scanGranted || !connectGranted || !locationGranted) {
       _showBluetoothPrompt();
     } else {
       // Permissions granted, start scanning
+      debugPrint('[Dashboard] All permissions granted. Starting scan...');
       _startChestStrapScan();
     }
   }
@@ -201,6 +214,9 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   void _showBluetoothPrompt() {
+    if (_isBluetoothDialogShowing) return;
+    _isBluetoothDialogShowing = true;
+    debugPrint('[Dashboard] Showing Bluetooth permission prompt');
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -223,9 +239,12 @@ class _DashboardPageState extends State<DashboardPage>
               Navigator.pop(context);
               await Permission.bluetoothScan.request();
               await Permission.bluetoothConnect.request();
+              await Permission.locationWhenInUse.request();
               bool scanOk = await Permission.bluetoothScan.isGranted;
               bool connectOk = await Permission.bluetoothConnect.isGranted;
-              if (scanOk && connectOk) {
+              bool locationOk = await Permission.locationWhenInUse.isGranted;
+              debugPrint('[Dashboard] After permission request - scan: $scanOk, connect: $connectOk, location: $locationOk');
+              if (scanOk && connectOk && locationOk) {
                 _startChestStrapScan();
               } else {
                 _showDenyWarning();
@@ -235,7 +254,9 @@ class _DashboardPageState extends State<DashboardPage>
           ),
         ],
       ),
-    );
+    ).then((_) {
+      _isBluetoothDialogShowing = false;
+    });
   }
 
   void _showDenyWarning() {
@@ -308,12 +329,22 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   void _startChestStrapScan() {
+    debugPrint('[Dashboard] _startChestStrapScan called');
     ChestStrapService().startScan().then((_) {
+      debugPrint('[Dashboard] startScan() completed. isConnected: ${ChestStrapService().isConnected}');
       if (mounted && ChestStrapService().isConnected) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ ChestStrap_V3 connected successfully!'),
             backgroundColor: Colors.green,
+          ),
+        );
+      } else if (mounted && !ChestStrapService().isConnected) {
+        debugPrint('[Dashboard] Scan timed out without finding ChestStrap_V3');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ ChestStrap_V3 not found. Make sure it is powered on and nearby.'),
+            backgroundColor: Colors.orange,
           ),
         );
       }
