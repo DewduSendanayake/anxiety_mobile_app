@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/api_service.dart';
+import '../services/chest_strap_service.dart';
 import 'main_navigation_page.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -40,11 +41,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   bool _uploading = false;
   String? _errorMessage;
 
-  // Per-channel accumulators (same order as ApiService / server)
-  // Index: 0=ECG, 1=RESP, 2=TEMP, 3=ACC_X, 4=ACC_Y, 5=ACC_Z
-  final List<List<double>> _buffers = List.generate(6, (_) => []);
-
   Timer? _collectionTimer;
+  final List<ChestStrapReading> _collectedReadings = [];
 
   // Calibrated physiological features
   double _restingHR = 70.0;
@@ -58,9 +56,6 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   late Animation<double> _waveAnimation;
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
-
-  // ── Random (for synthetic data generation) ─────────────────────
-  final _rng = Random();
 
   @override
   void initState() {
@@ -108,10 +103,15 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   // ═══════════════════════════════════════════════════════════════
 
   void _startCalibration() {
-    // Clear any previous data
-    for (final buf in _buffers) {
-      buf.clear();
+    if (!ChestStrapService().isConnected) {
+      setState(() {
+        _errorMessage = 'Chest strap is not connected. Calibration requires real physiological signals.';
+        _phase = _Phase.error;
+      });
+      return;
     }
+
+    _collectedReadings.clear();
 
     setState(() {
       _phase = _Phase.collecting;
@@ -119,8 +119,6 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
       _errorMessage = null;
     });
 
-    // Collect data every second by generating synthetic samples
-    // identical in fidelity to SensorManager's simulation mode.
     _collectionTimer = Timer.periodic(
       const Duration(seconds: 1),
       (timer) {
@@ -129,8 +127,19 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           return;
         }
 
-        // Generate 1 second worth of samples (700 per channel)
-        _generateOneSecondOfData();
+        if (!ChestStrapService().isConnected) {
+          timer.cancel();
+          setState(() {
+            _errorMessage = 'Chest strap disconnected during calibration.';
+            _phase = _Phase.error;
+          });
+          return;
+        }
+
+        final reading = ChestStrapService().lastReading;
+        if (reading != null) {
+          _collectedReadings.add(reading);
+        }
 
         setState(() => _elapsedSeconds++);
 
@@ -140,48 +149,6 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
         }
       },
     );
-  }
-
-  /// Generates _samplingRate synthetic samples per channel and appends
-  /// them to the accumulators.  The waveform logic mirrors SensorManager.
-  void _generateOneSecondOfData() {
-    final int offset = _elapsedSeconds * _samplingRate;
-
-    for (int i = 0; i < _samplingRate; i++) {
-      final int t = offset + i;
-
-      // ECG: sharp R-peak every ~600 samples (~70 BPM)
-      double ecg;
-      if (t % 600 == 0) {
-        ecg = 1.5;
-      } else if (t % 600 == 10) {
-        ecg = -0.3;
-      } else {
-        // Tiny baseline wander + high-freq micro-noise
-        ecg = 0.02 * (t % 10 == 0 ? 1.0 : -1.0) +
-            (_rng.nextDouble() - 0.5) * 0.005;
-      }
-
-      // Respiration: square-ish wave at ~16 breaths/min
-      // Period = 700 * 60/16 ≈ 2625 samples
-      final double resp = 0.5 * (t % 2625 < 1312 ? 1.0 : -1.0) +
-          (_rng.nextDouble() - 0.5) * 0.02;
-
-      // Temperature: stable resting 36.6 °C + tiny sensor noise
-      final double temp = 36.6 + (_rng.nextDouble() - 0.5) * 0.05;
-
-      // Accelerometer: device lying still; gravity on Z-axis
-      final double accX = 0.02 + (_rng.nextDouble() - 0.5) * 0.01;
-      final double accY = 0.02 + (_rng.nextDouble() - 0.5) * 0.01;
-      final double accZ = 0.98 + (_rng.nextDouble() - 0.5) * 0.02;
-
-      _buffers[0].add(ecg);
-      _buffers[1].add(resp);
-      _buffers[2].add(temp);
-      _buffers[3].add(accX);
-      _buffers[4].add(accY);
-      _buffers[5].add(accZ);
-    }
   }
 
   void _finishCollection() {
@@ -195,26 +162,46 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   // ═══════════════════════════════════════════════════════════════
 
   Future<void> _computeAndUpload() async {
-    // We have 3 minutes of data. Let's slice it into three 60-second windows.
-    // Each window has 60 * 700 = 42,000 samples.
-    const int windowLength = 60 * _samplingRate;
+    if (_collectedReadings.isEmpty) {
+      setState(() {
+        _errorMessage = 'Insufficient data collected for calibration.';
+        _phase = _Phase.error;
+      });
+      return;
+    }
+
+    // We have up to 180 readings. Let's slice into 3 windows of up to 60 readings.
+    final int windowLength = 60;
     final List<List<double>> featuresPerWindow = [];
 
     for (int w = 0; w < 3; w++) {
       final int start = w * windowLength;
-      final int end = (w + 1) * windowLength;
+      final int end = start + windowLength;
+      
+      if (start >= _collectedReadings.length) break;
+      
+      final windowReadings = _collectedReadings.sublist(
+        start, 
+        end > _collectedReadings.length ? _collectedReadings.length : end
+      );
 
-      // Safety bounds check
-      if (_buffers[0].length < end) break;
-
-      final ecg = _buffers[0].sublist(start, end);
-      final resp = _buffers[1].sublist(start, end);
-      final temp = _buffers[2].sublist(start, end);
-      final accX = _buffers[3].sublist(start, end);
-      final accY = _buffers[4].sublist(start, end);
-      final accZ = _buffers[5].sublist(start, end);
-
-      featuresPerWindow.add(_extractFeatures(ecg, resp, temp, accX, accY, accZ));
+      // Average the 10 features for this window
+      if (windowReadings.isNotEmpty) {
+        double meanHR = windowReadings.map((r) => r.meanHR).reduce((a, b) => a + b) / windowReadings.length;
+        double meanRR = windowReadings.map((r) => r.meanRR).reduce((a, b) => a + b) / windowReadings.length;
+        double sdnn = windowReadings.map((r) => r.sdnn).reduce((a, b) => a + b) / windowReadings.length;
+        double rmssd = windowReadings.map((r) => r.rmssd).reduce((a, b) => a + b) / windowReadings.length;
+        double meanBR = windowReadings.map((r) => r.meanBR).reduce((a, b) => a + b) / windowReadings.length;
+        double stdBR = windowReadings.map((r) => r.stdBR).reduce((a, b) => a + b) / windowReadings.length;
+        double meanTemp = windowReadings.map((r) => r.meanTemp).reduce((a, b) => a + b) / windowReadings.length;
+        double stdTemp = windowReadings.map((r) => r.stdTemp).reduce((a, b) => a + b) / windowReadings.length;
+        double meanAccMag = windowReadings.map((r) => r.meanAccMag).reduce((a, b) => a + b) / windowReadings.length;
+        double stdAccMag = windowReadings.map((r) => r.stdAccMag).reduce((a, b) => a + b) / windowReadings.length;
+        
+        featuresPerWindow.add([
+          meanHR, meanRR, sdnn, rmssd, meanBR, stdBR, meanTemp, stdTemp, meanAccMag, stdAccMag
+        ]);
+      }
     }
 
     if (featuresPerWindow.isEmpty) {
@@ -280,143 +267,6 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
             'Could not reach the server. Please check your connection and try again.';
       }
     });
-  }
-
-  List<double> _extractFeatures(
-    List<double> ecg,
-    List<double> resp,
-    List<double> temp,
-    List<double> accX,
-    List<double> accY,
-    List<double> accZ,
-  ) {
-    // --- 1. HRV Features (mean_HR, mean_RR, SDNN, RMSSD) ---
-    double maxEcg = ecg.reduce(max);
-    double threshold = maxEcg * 0.5;
-    if (threshold < 0.2) threshold = 0.2;
-
-    List<int> peaks = [];
-    int minDistance = 280; // 0.4s refractory period at 700Hz (max 150 BPM)
-    int lastPeak = -minDistance;
-
-    for (int i = 1; i < ecg.length - 1; i++) {
-      if (ecg[i] > ecg[i - 1] && ecg[i] > ecg[i + 1] && ecg[i] > threshold) {
-        if (i - lastPeak >= minDistance) {
-          peaks.add(i);
-          lastPeak = i;
-        } else if (ecg[i] > ecg[lastPeak]) {
-          peaks[peaks.length - 1] = i;
-          lastPeak = i;
-        }
-      }
-    }
-
-    List<double> rrMs = [];
-    for (int i = 1; i < peaks.length; i++) {
-      double diffMs = (peaks[i] - peaks[i - 1]) / _samplingRate * 1000.0;
-      if (diffMs >= 300 && diffMs <= 2000) {
-        rrMs.add(diffMs);
-      }
-    }
-
-    double meanHR, meanRR, sdnn, rmssd;
-    if (rrMs.length < 5) {
-      meanRR = 857.14;
-      meanHR = 70.0;
-      sdnn = 20.0;
-      rmssd = 20.0;
-    } else {
-      meanRR = rrMs.reduce((a, b) => a + b) / rrMs.length;
-      meanHR = 60000.0 / meanRR;
-      double varSum = rrMs.map((x) => (x - meanRR) * (x - meanRR)).reduce((a, b) => a + b);
-      sdnn = sqrt(varSum / rrMs.length);
-
-      double diffSqSum = 0.0;
-      for (int i = 1; i < rrMs.length; i++) {
-        double d = rrMs[i] - rrMs[i - 1];
-        diffSqSum += d * d;
-      }
-      rmssd = sqrt(diffSqSum / (rrMs.length - 1));
-    }
-
-    // --- 2. Respiration Features (mean_BR, std_BR) ---
-    double respMean = resp.reduce((a, b) => a + b) / resp.length;
-    List<int> crossings = [];
-    for (int i = 1; i < resp.length; i++) {
-      if (resp[i - 1] <= respMean && resp[i] > respMean) {
-        crossings.add(i);
-      }
-    }
-
-    List<double> brValues = [];
-    for (int i = 1; i < crossings.length; i++) {
-      double periodSec = (crossings[i] - crossings[i - 1]) / _samplingRate;
-      if (periodSec > 0) {
-        double br = 60.0 / periodSec;
-        if (br >= 6 && br <= 40) {
-          brValues.add(br);
-        }
-      }
-    }
-
-    double meanBR, stdBR;
-    if (brValues.length < 2) {
-      meanBR = 16.0;
-      stdBR = 1.0;
-    } else {
-      meanBR = brValues.reduce((a, b) => a + b) / brValues.length;
-      double brVarSum = brValues.map((x) => (x - meanBR) * (x - meanBR)).reduce((a, b) => a + b);
-      stdBR = sqrt(brVarSum / brValues.length);
-    }
-
-    // --- 3. Temperature Features (mean_temp, std_temp) ---
-    List<double> validTemp = temp.where((t) => t >= 25 && t <= 40).toList();
-    double meanTemp, stdTemp;
-    if (validTemp.isEmpty) {
-      meanTemp = 36.6;
-      stdTemp = 0.05;
-    } else {
-      meanTemp = validTemp.reduce((a, b) => a + b) / validTemp.length;
-      double tempVarSum = validTemp.map((x) => (x - meanTemp) * (x - meanTemp)).reduce((a, b) => a + b);
-      stdTemp = sqrt(tempVarSum / validTemp.length);
-    }
-
-    // --- 4. Accelerometer Features (mean_acc_mag, std_acc_mag) ---
-    List<double> accXFilt = _highPassFilter(accX, 0.9955);
-    List<double> accYFilt = _highPassFilter(accY, 0.9955);
-    List<double> accZFilt = _highPassFilter(accZ, 0.9955);
-
-    List<double> accMag = [];
-    for (int i = 0; i < accXFilt.length; i++) {
-      accMag.add(sqrt(accXFilt[i] * accXFilt[i] + accYFilt[i] * accYFilt[i] + accZFilt[i] * accZFilt[i]));
-    }
-
-    double meanAccMag = accMag.reduce((a, b) => a + b) / accMag.length;
-    double accMagVarSum = accMag.map((x) => (x - meanAccMag) * (x - meanAccMag)).reduce((a, b) => a + b);
-    double stdAccMag = sqrt(accMagVarSum / accMag.length);
-
-    return [
-      meanHR,
-      meanRR,
-      sdnn,
-      rmssd,
-      meanBR,
-      stdBR,
-      meanTemp,
-      stdTemp,
-      meanAccMag,
-      stdAccMag,
-    ];
-  }
-
-  List<double> _highPassFilter(List<double> input, double alpha) {
-    List<double> output = List.filled(input.length, 0.0);
-    if (input.isEmpty) return output;
-    output[0] = 0.0;
-    for (int i = 1; i < input.length; i++) {
-      output[i] = alpha * (output[i - 1] + input[i] - input[i - 1]);
-    }
-    return output;
   }
 
   // ═══════════════════════════════════════════════════════════════
