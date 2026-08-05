@@ -47,6 +47,8 @@ class _DashboardPageState extends State<DashboardPage>
 
   // ── Chest Strap Live Data ──────────────────────────────────
   ChestStrapReading? _currentReading;
+  StreamSubscription<BluetoothAdapterState>? _btStateSubscription;
+  bool _isBluetoothDialogShowing = false;
 
   // ── Animation Controllers ───────────────────────────────────
   late AnimationController _riskPulseController;
@@ -102,6 +104,15 @@ class _DashboardPageState extends State<DashboardPage>
     // Listen for connection state changes to update UI
     ChestStrapService().connectionState.addListener(_onConnectionChanged);
 
+    _btStateSubscription = FlutterBluePlus.adapterState.listen((state) {
+      if (state == BluetoothAdapterState.on && _isBluetoothDialogShowing) {
+        if (mounted) {
+          Navigator.of(context, rootNavigator: true).pop();
+        }
+        _checkBluetoothConnection();
+      }
+    });
+
     _startStatusCheck();
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -124,6 +135,7 @@ class _DashboardPageState extends State<DashboardPage>
     _entryController.dispose();
     _predictionTimer?.cancel();
     _bufferingTimer?.cancel();
+    _btStateSubscription?.cancel();
     super.dispose();
   }
 
@@ -150,6 +162,8 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   void _showBluetoothOffDialog() {
+    if (_isBluetoothDialogShowing) return;
+    _isBluetoothDialogShowing = true;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -181,7 +195,9 @@ class _DashboardPageState extends State<DashboardPage>
           ),
         ],
       ),
-    );
+    ).then((_) {
+      _isBluetoothDialogShowing = false;
+    });
   }
 
   void _showBluetoothPrompt() {
@@ -255,6 +271,8 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   void _showAskAgainPrompt() {
+    if (_isBluetoothDialogShowing) return;
+    _isBluetoothDialogShowing = true;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -284,7 +302,9 @@ class _DashboardPageState extends State<DashboardPage>
           ),
         ],
       ),
-    );
+    ).then((_) {
+      _isBluetoothDialogShowing = false;
+    });
   }
 
   void _startChestStrapScan() {
