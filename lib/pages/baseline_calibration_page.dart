@@ -662,7 +662,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   }
 
   Widget _buildLiveStats() {
-    final int samples = _buffers[0].length;
+    final int samples = _collectedReadings.length * _samplingRate;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
@@ -768,7 +768,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   // ─────────────────────────────────────────────────────────────
 
   Widget _buildDoneView() {
-    final int totalSamples = _buffers[0].length;
+    final int totalSamples = _collectedReadings.length * _samplingRate;
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
