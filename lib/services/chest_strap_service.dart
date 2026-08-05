@@ -213,23 +213,24 @@ class ChestStrapService {
 
   Future<void> startScan() async {
     try {
+      debugPrint('[ChestStrap] Checking Bluetooth adapter state...');
       if (await FlutterBluePlus.adapterState.first == BluetoothAdapterState.off) {
+        debugPrint('[ChestStrap] Bluetooth adapter is OFF');
         connectionState.value = ChestStrapState.disabled;
         return;
       }
 
       connectionState.value = ChestStrapState.scanning;
-      
-      await FlutterBluePlus.startScan(
-        timeout: const Duration(seconds: 15),
-      );
+      debugPrint('[ChestStrap] Scanning for ChestStrap_V3...');
 
+      // Listen for scan results BEFORE starting scan to avoid race condition
       _scanSubscription?.cancel();
       _scanSubscription = FlutterBluePlus.onScanResults.listen(
         (results) async {
           try {
             ScanResult? targetResult;
             for (var result in results) {
+              debugPrint('[ChestStrap] Found device: ${result.device.advName} (${result.device.remoteId})');
               if (result.device.advName.contains('ChestStrap_V3')) {
                 targetResult = result;
                 break;
@@ -237,20 +238,25 @@ class ChestStrapService {
             }
 
             if (targetResult != null) {
+              debugPrint('[ChestStrap] Target device found! Stopping scan...');
               await FlutterBluePlus.stopScan();
               await connectToDevice(targetResult.device);
             }
           } catch (e) {
-            debugPrint('Error processing scan results: $e');
+            debugPrint('[ChestStrap] Error processing scan results: $e');
           }
         },
         onError: (e) {
-          debugPrint('Scan error: $e');
+          debugPrint('[ChestStrap] Scan error: $e');
           connectionState.value = ChestStrapState.disconnected;
         },
       );
+
+      await FlutterBluePlus.startScan(
+        timeout: const Duration(seconds: 15),
+      );
     } catch (e) {
-      debugPrint('Error starting scan: $e');
+      debugPrint('[ChestStrap] Error starting scan: $e');
       connectionState.value = ChestStrapState.disconnected;
     }
   }
@@ -259,17 +265,30 @@ class ChestStrapService {
     try {
       connectionState.value = ChestStrapState.connecting;
       _connectedDevice = device;
+      _receiveBuffer = ''; // Clear stale buffer from previous connection
       
-      await _connectedDevice!.connect();
+      debugPrint('[ChestStrap] Connecting to ${device.advName} (${device.remoteId})...');
+      await _connectedDevice!.connect(
+        timeout: const Duration(seconds: 10),
+      );
       
       _reconnectAttempts = 0;
+      debugPrint('[ChestStrap] Connected! Requesting MTU 256...');
+
+      // Request larger MTU so the ~90-byte CSV arrives in 1-2 packets
+      // instead of 4-5 with the default 23-byte MTU.
+      final mtu = await _connectedDevice!.requestMtu(256);
+      debugPrint('[ChestStrap] MTU negotiated: $mtu');
       
       _connectionSubscription?.cancel();
       _connectionSubscription = _connectedDevice!.connectionState.listen(_onConnectionStateChanged);
 
       connectionState.value = ChestStrapState.connected;
 
+      debugPrint('[ChestStrap] Discovering services...');
       final services = await _connectedDevice!.discoverServices();
+      debugPrint('[ChestStrap] Found ${services.length} services');
+
       BluetoothService? nusService;
       for (var s in services) {
         if (s.uuid.toString().toUpperCase() == _nusServiceUuid.toUpperCase()) {
@@ -279,6 +298,7 @@ class ChestStrapService {
       }
 
       if (nusService != null) {
+        debugPrint('[ChestStrap] NUS service found. Looking for TX characteristic...');
         BluetoothCharacteristic? txChar;
         for (var c in nusService.characteristics) {
           if (c.uuid.toString().toUpperCase() == _nusTxUuid.toUpperCase()) {
@@ -288,6 +308,7 @@ class ChestStrapService {
         }
 
         if (txChar != null) {
+          debugPrint('[ChestStrap] TX characteristic found. Subscribing to notifications...');
           await txChar.setNotifyValue(true);
           _txSubscription?.cancel();
           _txSubscription = txChar.lastValueStream.listen((value) {
@@ -297,38 +318,88 @@ class ChestStrapService {
               _processBuffer();
             }
           });
+          debugPrint('[ChestStrap] ✅ Fully connected and listening for data.');
+        } else {
+          debugPrint('[ChestStrap] ⚠️ TX characteristic NOT found in NUS service!');
+        }
+      } else {
+        debugPrint('[ChestStrap] ⚠️ NUS service NOT found! Available services:');
+        for (var s in services) {
+          debugPrint('[ChestStrap]   - ${s.uuid}');
         }
       }
     } catch (e) {
-      debugPrint('Error connecting to device: $e');
+      debugPrint('[ChestStrap] Error connecting to device: $e');
       connectionState.value = ChestStrapState.disconnected;
     }
   }
   
   void _processBuffer() {
+    // Primary path: newline-delimited parsing (firmware sends \n)
     int newlineIndex = _receiveBuffer.indexOf('\n');
     while (newlineIndex != -1) {
       String line = _receiveBuffer.substring(0, newlineIndex).trim();
       _receiveBuffer = _receiveBuffer.substring(newlineIndex + 1);
       
       if (line.isNotEmpty) {
-        try {
-          final reading = ChestStrapReading.fromCsv(line);
-          lastReading = reading;
-          _saveReading(reading);
-          if (onDataReceived != null) {
-            onDataReceived!(reading);
-          }
-        } catch (e) {
-          debugPrint('Error parsing CSV: $e');
-        }
+        _parseCsvLine(line);
       }
       
       newlineIndex = _receiveBuffer.indexOf('\n');
     }
+
+    // Fallback: if no newline found but buffer has a complete 11-field CSV
+    // (10 commas), extract and parse it. Guards against firmware versions
+    // that don't append \n.
+    if (_receiveBuffer.isNotEmpty && !_receiveBuffer.contains('\n')) {
+      final commaCount = ','.allMatches(_receiveBuffer).length;
+      if (commaCount >= 10) {
+        // Find the end of the first complete 11-field CSV line
+        int count = 0;
+        int endIndex = -1;
+        for (int i = 0; i < _receiveBuffer.length; i++) {
+          if (_receiveBuffer[i] == ',') count++;
+          if (count == 10) {
+            // Find the end of the 11th field (next comma or end of string)
+            int fieldEnd = _receiveBuffer.indexOf(',', i + 1);
+            endIndex = fieldEnd == -1 ? _receiveBuffer.length : fieldEnd;
+            break;
+          }
+        }
+        if (endIndex != -1) {
+          String line = _receiveBuffer.substring(0, endIndex).trim();
+          _receiveBuffer = _receiveBuffer.substring(endIndex).trimLeft();
+          if (line.isNotEmpty) {
+            debugPrint('[ChestStrap] Fallback parser extracted line (no newline in buffer)');
+            _parseCsvLine(line);
+          }
+        }
+      }
+    }
+
+    // Safety: prevent unbounded buffer growth from corrupt data
+    if (_receiveBuffer.length > 1024) {
+      debugPrint('[ChestStrap] ⚠️ Receive buffer overflow (${_receiveBuffer.length} bytes). Clearing.');
+      _receiveBuffer = '';
+    }
+  }
+
+  void _parseCsvLine(String line) {
+    try {
+      final reading = ChestStrapReading.fromCsv(line);
+      lastReading = reading;
+      _saveReading(reading);
+      debugPrint('[ChestStrap] 📊 HR=${reading.meanHR.toStringAsFixed(1)} BR=${reading.meanBR.toStringAsFixed(1)} Temp=${reading.meanTemp.toStringAsFixed(1)} RMSSD=${reading.rmssd.toStringAsFixed(1)}');
+      if (onDataReceived != null) {
+        onDataReceived!(reading);
+      }
+    } catch (e) {
+      debugPrint('[ChestStrap] Error parsing CSV "$line": $e');
+    }
   }
 
   void _onConnectionStateChanged(BluetoothConnectionState state) {
+    debugPrint('[ChestStrap] Connection state changed: $state');
     if (state == BluetoothConnectionState.disconnected) {
       connectionState.value = ChestStrapState.disconnected;
       _txSubscription?.cancel();
@@ -336,11 +407,14 @@ class ChestStrapService {
       
       if (_reconnectAttempts < _maxReconnectAttempts && _connectedDevice != null) {
         _reconnectAttempts++;
+        debugPrint('[ChestStrap] Reconnect attempt $_reconnectAttempts/$_maxReconnectAttempts in 3s...');
         Future.delayed(const Duration(seconds: 3), () {
           if (_connectedDevice != null) {
             connectToDevice(_connectedDevice!);
           }
         });
+      } else if (_reconnectAttempts >= _maxReconnectAttempts) {
+        debugPrint('[ChestStrap] ⚠️ Max reconnect attempts reached. Giving up.');
       }
     }
   }
