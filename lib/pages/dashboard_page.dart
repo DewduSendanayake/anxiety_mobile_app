@@ -419,6 +419,9 @@ class _DashboardPageState extends State<DashboardPage>
         timer.cancel();
         return;
       }
+      // Pause countdown if the strap is not connected!
+      if (!_chestStrapConnected) return;
+
       setState(() {
         if (_bufferingCountdown > 0) {
           _bufferingCountdown--;
@@ -562,6 +565,10 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Widget _buildBody(double risk, Color riskCol) {
+    if (!_chestStrapConnected && (_predictionStatus == 'buffering' || _predictionStatus == 'loading' || _predictionStatus == 'not_calibrated')) {
+      return _buildDisconnectedScreen();
+    }
+
     switch (_predictionStatus) {
       case 'loading':
         return _buildLoadingScreen();
@@ -809,6 +816,70 @@ class _DashboardPageState extends State<DashboardPage>
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                   ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDisconnectedScreen() {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.bluetooth_disabled_rounded, size: 64, color: Colors.grey),
+              const SizedBox(height: 16),
+              Text(
+                'Chest Strap Disconnected',
+                style: GoogleFonts.poppins(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.kTextDark,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Please ensure your physiological sensor is turned on and connected to collect live vitals.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  color: AppTheme.kTextLight,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                onPressed: _startChestStrapScan,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.kPrimaryDeep,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                icon: const Icon(Icons.bluetooth_searching_rounded, size: 20),
+                label: Text(
+                  'Scan & Connect',
+                  style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600),
                 ),
               ),
             ],
