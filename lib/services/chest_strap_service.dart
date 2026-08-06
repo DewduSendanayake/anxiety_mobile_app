@@ -85,7 +85,16 @@ class ChestStrapReading {
     );
   }
 
+  /// Returns true if the chest strap is actually being worn on the body.
+  /// When off-body, the ECG leads floating give 0 HR (or <30 bpm) and temperature
+  /// reads ambient room temperature (<30 °C).
+  bool get isWorn {
+    return meanHR >= 30.0 && meanTemp >= 30.0;
+  }
+
   double get riskScore {
+    if (!isWorn) return 0.0;
+
     double hrScore = 0.0;
     if (meanHR > 110) {
       hrScore = 100.0;
@@ -127,6 +136,7 @@ class ChestStrapReading {
   }
 
   String get riskLabel {
+    if (!isWorn) return 'Not Worn';
     final score = riskScore;
     if (score <= 20) return 'Low';
     if (score <= 45) return 'Moderate';
@@ -135,6 +145,7 @@ class ChestStrapReading {
   }
 
   String get hrStatus {
+    if (!isWorn) return 'Not Worn';
     if (meanHR <= 60) return 'Low';
     if (meanHR <= 90) return 'Normal';
     if (meanHR <= 110) return 'Elevated';
@@ -142,6 +153,7 @@ class ChestStrapReading {
   }
 
   String get brStatus {
+    if (!isWorn) return 'Not Worn';
     if (meanBR <= 12) return 'Low';
     if (meanBR <= 20) return 'Normal';
     if (meanBR <= 26) return 'Elevated';
@@ -149,6 +161,7 @@ class ChestStrapReading {
   }
 
   String get tempStatus {
+    if (!isWorn) return 'Not Worn';
     if (meanTemp < 36.1) return 'Low';
     if (meanTemp <= 37.2) return 'Normal';
     if (meanTemp <= 37.8) return 'Elevated';
@@ -156,6 +169,7 @@ class ChestStrapReading {
   }
 
   String get hrvStatus {
+    if (!isWorn) return 'Not Worn';
     if (rmssd >= 40) return 'Calm';
     if (rmssd >= 25) return 'Normal';
     if (rmssd >= 15) return 'Stressed';
