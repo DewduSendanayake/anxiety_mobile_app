@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'user_manager.dart';
 import 'chest_strap_service.dart';
 
@@ -7,10 +8,14 @@ class BleBridge {
   factory BleBridge() => _instance;
   BleBridge._internal();
 
-  /// Call this to wire up the ChestStrapService data callback
+  StreamSubscription<ChestStrapReading>? _subscription;
+
+  /// Call this to wire up the ChestStrapService data stream
   /// to the active user's SensorManager.
   void wireChestStrap() {
-    ChestStrapService().onDataReceived = (reading) {
+    _subscription?.cancel();
+    
+    _subscription = ChestStrapService().readingsStream.listen((reading) {
       if (!reading.isWorn) {
         // Strap is connected over BLE but user is not wearing it on body
         return;
@@ -31,6 +36,12 @@ class BleBridge {
       } else {
         print('BLE Router Warning: Chest strap data dropped because no active user session exists.');
       }
-    };
+    });
+  }
+
+  /// Cancels the subscription to free resources on logout
+  void unwireChestStrap() {
+    _subscription?.cancel();
+    _subscription = null;
   }
 }
