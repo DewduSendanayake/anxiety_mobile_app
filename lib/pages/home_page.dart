@@ -72,10 +72,19 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
         }
       }
     };
+
+    // Listen for connection state changes so the UI updates when the
+    // chest strap connects or disconnects.
+    _chestStrap.connectionState.addListener(_onConnectionChanged);
+  }
+
+  void _onConnectionChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _chestStrap.connectionState.removeListener(_onConnectionChanged);
     _fadeController.dispose();
     _pulseController.dispose();
     super.dispose();
