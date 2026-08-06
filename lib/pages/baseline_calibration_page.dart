@@ -103,9 +103,18 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   // ═══════════════════════════════════════════════════════════════
 
   void _startCalibration() {
+    final lastReading = ChestStrapService().lastReading;
     if (!ChestStrapService().isConnected) {
       setState(() {
         _errorMessage = 'Chest strap is not connected. Calibration requires real physiological signals.';
+        _phase = _Phase.error;
+      });
+      return;
+    }
+
+    if (lastReading == null || !lastReading.isWorn) {
+      setState(() {
+        _errorMessage = 'Chest strap is connected, but not detected on your chest. Please put on the strap properly before starting calibration.';
         _phase = _Phase.error;
       });
       return;
@@ -137,7 +146,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
         }
 
         final reading = ChestStrapService().lastReading;
-        if (reading != null) {
+        if (reading != null && reading.isWorn) {
           _collectedReadings.add(reading);
         }
 

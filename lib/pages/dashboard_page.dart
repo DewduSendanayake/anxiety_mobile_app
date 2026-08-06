@@ -615,6 +615,7 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Widget _buildDashboardList(double risk, Color riskCol) {
+    final isWorn = _currentReading?.isWorn ?? false;
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 30),
       children: [
@@ -641,7 +642,7 @@ class _DashboardPageState extends State<DashboardPage>
             Expanded(
               child: _KpiCard(
                 label: 'Heart Rate',
-                value: _currentReading?.meanHR.toStringAsFixed(0) ?? '--',
+                value: isWorn ? _currentReading!.meanHR.toStringAsFixed(0) : '--',
                 unit: 'bpm',
                 icon: Icons.monitor_heart_rounded,
                 status: _currentReading?.hrStatus ?? 'N/A',
@@ -653,7 +654,7 @@ class _DashboardPageState extends State<DashboardPage>
             Expanded(
               child: _KpiCard(
                 label: 'Breathing',
-                value: _currentReading?.meanBR.toStringAsFixed(0) ?? '--',
+                value: isWorn ? _currentReading!.meanBR.toStringAsFixed(0) : '--',
                 unit: 'br/min',
                 icon: Icons.air_rounded,
                 status: _currentReading?.brStatus ?? 'N/A',
@@ -669,7 +670,7 @@ class _DashboardPageState extends State<DashboardPage>
             Expanded(
               child: _KpiCard(
                 label: 'Temperature',
-                value: _currentReading?.meanTemp.toStringAsFixed(1) ?? '--',
+                value: isWorn ? _currentReading!.meanTemp.toStringAsFixed(1) : '--',
                 unit: '°C',
                 icon: Icons.thermostat_rounded,
                 status: _currentReading?.tempStatus ?? 'N/A',
@@ -681,7 +682,7 @@ class _DashboardPageState extends State<DashboardPage>
             Expanded(
               child: _KpiCard(
                 label: 'HRV (RMSSD)',
-                value: _currentReading?.rmssd.toStringAsFixed(1) ?? '--',
+                value: isWorn ? _currentReading!.rmssd.toStringAsFixed(1) : '--',
                 unit: 'ms',
                 icon: Icons.favorite_border_rounded,
                 status: _currentReading?.hrvStatus ?? 'N/A',
@@ -1369,18 +1370,36 @@ class _DashboardPageState extends State<DashboardPage>
   // ─────────────────────────────────────────────────────────────
 
   Widget _buildServiceStrip() {
+    final bool isWorn = _currentReading?.isWorn ?? false;
+
+    Color bgColor = const Color(0xFFFFEBEE);
+    Color borderColor = Colors.red.shade200;
+    Color dotColor = Colors.red;
+    Color textColor = Colors.red.shade800;
+    String statusText = 'Chest Strap Disconnected';
+
+    if (_chestStrapConnected) {
+      if (isWorn) {
+        bgColor = const Color(0xFFE8F5E9);
+        borderColor = Colors.green.shade200;
+        dotColor = Colors.green;
+        textColor = Colors.green.shade800;
+        statusText = 'ChestStrap_V3 Connected & Active';
+      } else {
+        bgColor = const Color(0xFFFFF3E0);
+        borderColor = Colors.orange.shade300;
+        dotColor = Colors.orange;
+        textColor = Colors.orange.shade900;
+        statusText = 'ChestStrap_V3 Connected (Not Worn — Put on strap)';
+      }
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: _chestStrapConnected
-            ? const Color(0xFFE8F5E9)
-            : const Color(0xFFFFEBEE),
+        color: bgColor,
         borderRadius: BorderRadius.circular(30),
-        border: Border.all(
-          color: _chestStrapConnected
-              ? Colors.green.shade200
-              : Colors.red.shade200,
-        ),
+        border: Border.all(color: borderColor),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1389,21 +1408,17 @@ class _DashboardPageState extends State<DashboardPage>
             width: 8,
             height: 8,
             decoration: BoxDecoration(
-              color: _chestStrapConnected ? Colors.green : Colors.red,
+              color: dotColor,
               shape: BoxShape.circle,
             ),
           ),
           const SizedBox(width: 8),
           Text(
-            _chestStrapConnected
-                ? 'ChestStrap_V3 Connected'
-                : 'Chest Strap Disconnected',
+            statusText,
             style: GoogleFonts.poppins(
               fontSize: 12,
               fontWeight: FontWeight.w500,
-              color: _chestStrapConnected
-                  ? Colors.green.shade800
-                  : Colors.red.shade800,
+              color: textColor,
             ),
           ),
         ],

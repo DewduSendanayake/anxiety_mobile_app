@@ -72,10 +72,19 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
         }
       }
     };
+
+    // Listen for connection state changes so the UI updates when the
+    // chest strap connects or disconnects.
+    _chestStrap.connectionState.addListener(_onConnectionChanged);
+  }
+
+  void _onConnectionChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _chestStrap.connectionState.removeListener(_onConnectionChanged);
     _fadeController.dispose();
     _pulseController.dispose();
     super.dispose();
@@ -255,7 +264,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   ),
 
                   // ── Connection Status ──
-                  if (!_chestStrap.isConnected)
+                  if (!_chestStrap.isConnected || !(_lastReading?.isWorn ?? false))
                     Container(
                       margin: const EdgeInsets.only(top: 12),
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -266,14 +275,22 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.bluetooth_disabled_rounded, color: Colors.white.withValues(alpha: 0.7), size: 16),
+                          Icon(
+                            !_chestStrap.isConnected
+                                ? Icons.bluetooth_disabled_rounded
+                                : Icons.warning_amber_rounded,
+                            color: Colors.white.withValues(alpha: 0.8),
+                            size: 16,
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              _lastReading != null
-                                  ? 'Chest strap disconnected — showing last known data'
-                                  : 'Chest strap not connected — using model estimates',
-                              style: GoogleFonts.poppins(fontSize: 11, color: Colors.white.withValues(alpha: 0.7)),
+                              !_chestStrap.isConnected
+                                  ? (_lastReading != null
+                                      ? 'Chest strap disconnected — showing last known data'
+                                      : 'Chest strap not connected — using model estimates')
+                                  : 'Chest strap connected — please wear it on your chest to stream vitals',
+                              style: GoogleFonts.poppins(fontSize: 11, color: Colors.white.withValues(alpha: 0.9)),
                             ),
                           ),
                         ],
