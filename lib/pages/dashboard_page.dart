@@ -615,6 +615,7 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Widget _buildDashboardList(double risk, Color riskCol) {
+    final isWorn = _currentReading?.isWorn ?? false;
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 30),
       children: [
@@ -636,7 +637,6 @@ class _DashboardPageState extends State<DashboardPage>
         const SizedBox(height: 22),
 
         // ── KPI Grid (2x2) ──
-        final isWorn = _currentReading?.isWorn ?? false;
         Row(
           children: [
             Expanded(
