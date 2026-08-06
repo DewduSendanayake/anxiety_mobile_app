@@ -53,6 +53,9 @@ class UserManager {
     sensorManager?.stopCollection();
     sensorManager = null;
     
+    // Unwire BLE routing to SensorManager
+    BleBridge().unwireChestStrap();
+
     // Disconnect bluetooth
     ChestStrapService().disconnect();
     
