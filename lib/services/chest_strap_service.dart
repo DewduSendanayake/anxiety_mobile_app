@@ -212,6 +212,8 @@ class ChestStrapService {
   bool get isConnected => connectionState.value == ChestStrapState.connected;
 
   Future<void> startScan() async {
+    final scanCompleter = Completer<void>();
+
     try {
       debugPrint('[ChestStrap] Checking Bluetooth adapter state...');
       if (await FlutterBluePlus.adapterState.first == BluetoothAdapterState.off) {
@@ -221,44 +223,97 @@ class ChestStrapService {
       }
 
       connectionState.value = ChestStrapState.scanning;
+
+      // ── Step 1: Check bonded (paired) devices first ──
+      // Bonded devices often stop advertising, so a BLE scan won't find them.
+      // Connect directly if ChestStrap_V3 is already paired.
+      try {
+        final bondedDevices = await FlutterBluePlus.bondedDevices;
+        debugPrint('[ChestStrap] Found ${bondedDevices.length} bonded device(s)');
+        for (var device in bondedDevices) {
+          final name = device.platformName.isNotEmpty
+              ? device.platformName
+              : device.advName;
+          debugPrint('[ChestStrap] Bonded device: "$name" (${device.remoteId})');
+          if (name.contains('ChestStrap_V3')) {
+            debugPrint('[ChestStrap] ✅ ChestStrap_V3 found in bonded devices! Connecting directly...');
+            await connectToDevice(device);
+            return; // Done — no scan needed
+          }
+        }
+        debugPrint('[ChestStrap] ChestStrap_V3 not in bonded list, falling back to BLE scan...');
+      } catch (e) {
+        debugPrint('[ChestStrap] Could not check bonded devices: $e — falling back to scan');
+      }
+
+      // ── Step 2: Fall back to BLE scan ──
       debugPrint('[ChestStrap] Scanning for ChestStrap_V3...');
+
+      bool deviceFound = false;
 
       // Listen for scan results BEFORE starting scan to avoid race condition
       _scanSubscription?.cancel();
       _scanSubscription = FlutterBluePlus.onScanResults.listen(
         (results) async {
+          if (deviceFound) return; // Already found, ignore further results
           try {
             ScanResult? targetResult;
             for (var result in results) {
-              debugPrint('[ChestStrap] Found device: ${result.device.advName} (${result.device.remoteId})');
-              if (result.device.advName.contains('ChestStrap_V3')) {
+              // Check all possible name fields – advName can be empty on
+              // many Android 12+ devices, so also check platformName and
+              // the advertisement data's localName.
+              final advName = result.device.advName;
+              final platformName = result.device.platformName;
+              final advDataName = result.advertisementData.advName;
+
+              final names = [advName, platformName, advDataName];
+              debugPrint('[ChestStrap] Found device: advName="$advName" '
+                  'platformName="$platformName" advDataName="$advDataName" '
+                  '(${result.device.remoteId})');
+
+              if (names.any((n) => n.contains('ChestStrap_V3'))) {
                 targetResult = result;
                 break;
               }
             }
 
             if (targetResult != null) {
+              deviceFound = true;
               debugPrint('[ChestStrap] Target device found! Stopping scan...');
               await FlutterBluePlus.stopScan();
               await connectToDevice(targetResult.device);
+              if (!scanCompleter.isCompleted) scanCompleter.complete();
             }
           } catch (e) {
             debugPrint('[ChestStrap] Error processing scan results: $e');
+            if (!scanCompleter.isCompleted) scanCompleter.complete();
           }
         },
         onError: (e) {
           debugPrint('[ChestStrap] Scan error: $e');
           connectionState.value = ChestStrapState.disconnected;
+          if (!scanCompleter.isCompleted) scanCompleter.complete();
         },
       );
 
+      // startScan() itself completes when the timeout expires or stopScan() is
+      // called — so we await it to know the scan window has closed.
       await FlutterBluePlus.startScan(
         timeout: const Duration(seconds: 15),
       );
+
+      // If we reach here without having found the device, the scan timed out.
+      if (!deviceFound && !scanCompleter.isCompleted) {
+        scanCompleter.complete();
+      }
     } catch (e) {
       debugPrint('[ChestStrap] Error starting scan: $e');
       connectionState.value = ChestStrapState.disconnected;
+      if (!scanCompleter.isCompleted) scanCompleter.complete();
     }
+
+    // Wait until scanning is truly done (device found or timeout).
+    return scanCompleter.future;
   }
 
   Future<void> connectToDevice(BluetoothDevice device) async {
