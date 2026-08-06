@@ -11,6 +11,10 @@ class BleBridge {
   /// to the active user's SensorManager.
   void wireChestStrap() {
     ChestStrapService().onDataReceived = (reading) {
+      if (!reading.isWorn) {
+        // Strap is connected over BLE but user is not wearing it on body
+        return;
+      }
       if (UserManager().isLoggedIn && UserManager().sensorManager != null) {
         UserManager().sensorManager!.addLiveChestStrapData(
           reading.meanHR,
