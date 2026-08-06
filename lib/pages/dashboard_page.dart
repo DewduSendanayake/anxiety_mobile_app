@@ -47,6 +47,7 @@ class _DashboardPageState extends State<DashboardPage>
 
   // ── Chest Strap Live Data ──────────────────────────────────
   ChestStrapReading? _currentReading;
+  StreamSubscription<ChestStrapReading>? _readingSubscription;
   StreamSubscription<BluetoothAdapterState>? _btStateSubscription;
   bool _isBluetoothDialogShowing = false;
 
@@ -94,12 +95,12 @@ class _DashboardPageState extends State<DashboardPage>
     _currentReading = ChestStrapService().lastReading;
 
     // Listen for live chest strap data
-    ChestStrapService().onDataReceived = (reading) {
+    _readingSubscription = ChestStrapService().readingsStream.listen((reading) {
       if (mounted) {
         setState(() => _currentReading = reading);
         _uploadChestStrapData(reading);
       }
-    };
+    });
 
     // Listen for connection state changes to update UI
     ChestStrapService().connectionState.addListener(_onConnectionChanged);
@@ -136,6 +137,7 @@ class _DashboardPageState extends State<DashboardPage>
     _predictionTimer?.cancel();
     _bufferingTimer?.cancel();
     _btStateSubscription?.cancel();
+    _readingSubscription?.cancel();
     super.dispose();
   }
 
@@ -509,6 +511,7 @@ class _DashboardPageState extends State<DashboardPage>
       'std_acc_mag': reading.stdAccMag.toStringAsFixed(4),
       'risk_score': reading.riskScore.toStringAsFixed(1),
       'risk_label': reading.riskLabel,
+      'is_worn': reading.isWorn ? 1 : 0,
       'timestamp': DateTime.now().toIso8601String(),
     };
     await BackgroundServiceHelper.sendToSheet(
