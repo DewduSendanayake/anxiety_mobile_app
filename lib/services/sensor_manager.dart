@@ -1,17 +1,13 @@
 import 'dart:async';
 import 'api_service.dart';
+import 'chest_strap_service.dart';
 
 class SensorManager {
   final String userId;
   final int samplingRate;
 
-  // These in-memory lists store the high-frequency streaming data points
-  final List<double> _ecgBuffer = [];
-  final List<double> _respBuffer = [];
-  final List<double> _tempBuffer = [];
-  final List<double> _accXBuffer = [];
-  final List<double> _accYBuffer = [];
-  final List<double> _accZBuffer = [];
+  // This in-memory list stores the live features from the chest strap
+  final List<ChestStrapReading> _readingsBuffer = [];
 
   Timer? _oneMinuteTimer;
   bool isCollecting = false;
@@ -21,103 +17,86 @@ class SensorManager {
   // START HDS COLLECTION
   void startCollection() {
     isCollecting = true;
-    _clearBuffers();
+    _readingsBuffer.clear();
 
     // This periodic timer fires exactly every 60 seconds
     _oneMinuteTimer = Timer.periodic(const Duration(seconds: 60), (timer) async {
-
-      // Main safety guard clause: Don't transmit if buffers are empty
-      // Note: We removed the respBuffer check since the V3 hardware doesn't supply Respiration
-      if (_ecgBuffer.isEmpty) {
-        print('Buffer warning: No raw sensor data accumulated in the last minute.');
+      if (_readingsBuffer.isEmpty) {
+        print('Buffer warning: No feature data accumulated in the last minute.');
         return;
       }
 
-      // Snapshot the current buffers so we can clear the main ones instantly
-      // This prevents losing data points that arrive while the network call runs
-      final ecgToSend = List<double>.from(_ecgBuffer);
-      final respToSend = List<double>.from(_respBuffer);
-      final tempToSend = List<double>.from(_tempBuffer);
-      final accXToSend = List<double>.from(_accXBuffer);
-      final accYToSend = List<double>.from(_accYBuffer);
-      final accZToSend = List<double>.from(_accZBuffer);
+      final readingsToSend = List<ChestStrapReading>.from(_readingsBuffer);
+      _readingsBuffer.clear();
 
-      _clearBuffers();
-
-      print('60 seconds up! Shipping ${ecgToSend.length} raw samples to Hugging Face...');
+      print('60 seconds up! Averaging ${readingsToSend.length} feature samples for the server...');
       
-      // Send the raw data blocks over the internet bridge using correct camelCase parameter names
-      bool success = await ApiService.sendRawSensorData(
+      double sumHr = 0, sumRr = 0, sumSdnn = 0, sumRmssd = 0;
+      double sumBr = 0, sumStdBr = 0, sumTemp = 0, sumStdTemp = 0;
+      double sumAccMag = 0, sumStdAccMag = 0;
+      int wornCount = 0;
+
+      for (var r in readingsToSend) {
+        sumHr += r.meanHR;
+        sumRr += r.meanRR;
+        sumSdnn += r.sdnn;
+        sumRmssd += r.rmssd;
+        sumBr += r.meanBR;
+        sumStdBr += r.stdBR;
+        sumTemp += r.meanTemp;
+        sumStdTemp += r.stdTemp;
+        sumAccMag += r.meanAccMag;
+        sumStdAccMag += r.stdAccMag;
+        if (r.isWorn) wornCount++;
+      }
+
+      int count = readingsToSend.length;
+      bool isWorn = wornCount > (count / 2);
+
+      bool success = await ApiService.sendFeatureData(
         userId: userId,
-        samplingRate: samplingRate,
-        ecg: ecgToSend,
-        resp: respToSend,
-        temp: tempToSend,
-        accX: accXToSend,
-        accY: accYToSend,
-        accZ: accZToSend,
+        isWorn: isWorn,
+        meanHr: sumHr / count,
+        meanRr: sumRr / count,
+        sdnn: sumSdnn / count,
+        rmssd: sumRmssd / count,
+        meanBr: sumBr / count,
+        stdBr: sumStdBr / count,
+        meanTemp: sumTemp / count,
+        stdTemp: sumStdTemp / count,
+        meanAccMag: sumAccMag / count,
+        stdAccMag: sumStdAccMag / count,
       );
 
       if (!success) {
-        print('Failed to transmit this minute data block.');
+        print('Failed to transmit this minute feature block.');
       }
     });
-  }
-
-  // BLE STREAM RECEIVER
-  // Your Bluetooth package listener will call these methods every single time 
-  // the chest strap updates a data point over BLE!
-  void onEcgDataReceived(double value) {
-    if (isCollecting) _ecgBuffer.add(value);
-  }
-
-  void onRespDataReceived(double value) {
-    if (isCollecting) _respBuffer.add(value);
-  }
-
-  void onTempDataReceived(double value) {
-    if (isCollecting) _tempBuffer.add(value);
-  }
-
-  void onAccelerometerDataReceived(double x, double y, double z) {
-    if (isCollecting) {
-      _accXBuffer.add(x);
-      _accYBuffer.add(y);
-      _accZBuffer.add(z);
-    }
   }
 
   // CLEAN UP
   void stopCollection() {
     isCollecting = false;
     _oneMinuteTimer?.cancel();
-    _clearBuffers();
+    _readingsBuffer.clear();
   }
 
-  void addLiveChestStrapData(double meanHR, double meanRR, double sdnn, double rmssd, double meanBR, double stdBR, double meanTemp, double stdTemp, double meanAccMag, double stdAccMag) {
+  void addLiveChestStrapData(ChestStrapReading reading) {
     if (!isCollecting) return;
-    // Map the 10 features into the server's expected buffer format
-    // The server expects arrays of: ecg (use meanHR), resp (use meanBR), temp (use meanTemp), accX/Y/Z (use meanAccMag for X, stdAccMag for Y, 0 for Z)
-    _ecgBuffer.add(meanHR);
-    _respBuffer.add(meanBR);
-    _tempBuffer.add(meanTemp);
-    _accXBuffer.add(meanAccMag);
-    _accYBuffer.add(stdAccMag);
-    _accZBuffer.add(0.0);
+    _readingsBuffer.add(reading);
   }
 
-  // CALLED BY BLUETOOTH SERVICE TO INJECT LIVE DATA
-  @Deprecated('Use addLiveChestStrapData instead')
+  // FOR BACKWARDS COMPATIBILITY IF NEEDED (e.g. from BLE Bridge if not updated)
+  @Deprecated('Use addLiveChestStrapData with ChestStrapReading instead')
   void addLiveData(double ecg, double accX, double accY, double accZ, double temp) {
-    addLiveChestStrapData(ecg, 0, 0, 0, 0, 0, temp, 0, accX, accY);
-  }
-
-  void _clearBuffers() {
-    _ecgBuffer.clear();
-    _respBuffer.clear();
-    _tempBuffer.clear();
-    _accXBuffer.clear();
-    _accYBuffer.clear();
-    _accZBuffer.clear();
+    // This is no longer used but kept to avoid breaking compilation
+    if (!isCollecting) return;
+    final r = ChestStrapReading(
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+      meanHR: ecg, meanRR: 0, sdnn: 0, rmssd: 0,
+      meanBR: 0, stdBR: 0, meanTemp: temp, stdTemp: 0,
+      meanAccMag: accX, stdAccMag: accY, isWorn: true
+    );
+    _readingsBuffer.add(r);
   }
 }

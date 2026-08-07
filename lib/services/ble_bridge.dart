@@ -16,23 +16,8 @@ class BleBridge {
     _subscription?.cancel();
     
     _subscription = ChestStrapService().readingsStream.listen((reading) {
-      if (!reading.isWorn) {
-        // Strap is connected over BLE but user is not wearing it on body
-        return;
-      }
       if (UserManager().isLoggedIn && UserManager().sensorManager != null) {
-        UserManager().sensorManager!.addLiveChestStrapData(
-          reading.meanHR,
-          reading.meanRR,
-          reading.sdnn,
-          reading.rmssd,
-          reading.meanBR,
-          reading.stdBR,
-          reading.meanTemp,
-          reading.stdTemp,
-          reading.meanAccMag,
-          reading.stdAccMag,
-        );
+        UserManager().sensorManager!.addLiveChestStrapData(reading);
       } else {
         print('BLE Router Warning: Chest strap data dropped because no active user session exists.');
       }
