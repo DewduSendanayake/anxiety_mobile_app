@@ -42,17 +42,17 @@ class ChestStrapReading {
     }
     final rawIsWorn = parts[11].trim();
     return ChestStrapReading(
-      timestamp: int.parse(parts[0]),
-      meanHR: double.parse(parts[1]),
-      meanRR: double.parse(parts[2]),
-      sdnn: double.parse(parts[3]),
-      rmssd: double.parse(parts[4]),
-      meanBR: double.parse(parts[5]),
-      stdBR: double.parse(parts[6]),
-      meanTemp: double.parse(parts[7]),
-      stdTemp: double.parse(parts[8]),
-      meanAccMag: double.parse(parts[9]),
-      stdAccMag: double.parse(parts[10]),
+      timestamp: int.parse(parts[0].trim()),
+      meanHR: double.parse(parts[1].trim()),
+      meanRR: double.parse(parts[2].trim()),
+      sdnn: double.parse(parts[3].trim()),
+      rmssd: double.parse(parts[4].trim()),
+      meanBR: double.parse(parts[5].trim()),
+      stdBR: double.parse(parts[6].trim()),
+      meanTemp: double.parse(parts[7].trim()),
+      stdTemp: double.parse(parts[8].trim()),
+      meanAccMag: double.parse(parts[9].trim()),
+      stdAccMag: double.parse(parts[10].trim()),
       isWorn: rawIsWorn == '1' || rawIsWorn == '1.0' || rawIsWorn.toLowerCase() == 'true',
     );
   }
@@ -424,19 +424,19 @@ class ChestStrapService {
       newlineIndex = _receiveBuffer.indexOf('\n');
     }
 
-    // Fallback: if no newline found but buffer has a complete 11-field CSV
-    // (10 commas), extract and parse it. Guards against firmware versions
+    // Fallback: if no newline found but buffer has a complete 12-field CSV
+    // (11 commas), extract and parse it. Guards against firmware versions
     // that don't append \n.
     if (_receiveBuffer.isNotEmpty && !_receiveBuffer.contains('\n')) {
       final commaCount = ','.allMatches(_receiveBuffer).length;
-      if (commaCount >= 10) {
-        // Find the end of the first complete 11-field CSV line
+      if (commaCount >= 11) {
+        // Find the end of the first complete 12-field CSV line
         int count = 0;
         int endIndex = -1;
         for (int i = 0; i < _receiveBuffer.length; i++) {
           if (_receiveBuffer[i] == ',') count++;
-          if (count == 10) {
-            // Find the end of the 11th field (next comma or end of string)
+          if (count == 11) {
+            // Find the end of the 12th field (next comma or end of string)
             int fieldEnd = _receiveBuffer.indexOf(',', i + 1);
             endIndex = fieldEnd == -1 ? _receiveBuffer.length : fieldEnd;
             break;
