@@ -93,13 +93,6 @@ class ChestStrapReading {
     );
   }
 
-  /// Returns true if the chest strap is actually being worn on the body.
-  /// When off-body, the ECG leads floating give 0 HR (or <30 bpm) and temperature
-  /// reads ambient room temperature (<30 °C).
-  bool get isWorn {
-    return meanHR >= 30.0 && meanTemp >= 30.0;
-  }
-
   double get riskScore {
     if (!isWorn) return 0.0;
 
