@@ -18,6 +18,7 @@ class ChestStrapReading {
   final double stdTemp;
   final double meanAccMag;
   final double stdAccMag;
+  final bool isWorn;
 
   const ChestStrapReading({
     required this.timestamp,
@@ -31,25 +32,28 @@ class ChestStrapReading {
     required this.stdTemp,
     required this.meanAccMag,
     required this.stdAccMag,
+    required this.isWorn,
   });
 
   factory ChestStrapReading.fromCsv(String csvLine) {
     final parts = csvLine.split(',');
-    if (parts.length != 11) {
-      throw FormatException('Invalid CSV length');
+    if (parts.length != 12) {
+      throw FormatException('Invalid CSV length: expected 12, got ${parts.length}');
     }
+    final rawIsWorn = parts[11].trim();
     return ChestStrapReading(
-      timestamp: int.parse(parts[0]),
-      meanHR: double.parse(parts[1]),
-      meanRR: double.parse(parts[2]),
-      sdnn: double.parse(parts[3]),
-      rmssd: double.parse(parts[4]),
-      meanBR: double.parse(parts[5]),
-      stdBR: double.parse(parts[6]),
-      meanTemp: double.parse(parts[7]),
-      stdTemp: double.parse(parts[8]),
-      meanAccMag: double.parse(parts[9]),
-      stdAccMag: double.parse(parts[10]),
+      timestamp: int.parse(parts[0].trim()),
+      meanHR: double.parse(parts[1].trim()),
+      meanRR: double.parse(parts[2].trim()),
+      sdnn: double.parse(parts[3].trim()),
+      rmssd: double.parse(parts[4].trim()),
+      meanBR: double.parse(parts[5].trim()),
+      stdBR: double.parse(parts[6].trim()),
+      meanTemp: double.parse(parts[7].trim()),
+      stdTemp: double.parse(parts[8].trim()),
+      meanAccMag: double.parse(parts[9].trim()),
+      stdAccMag: double.parse(parts[10].trim()),
+      isWorn: rawIsWorn == '1' || rawIsWorn == '1.0' || rawIsWorn.toLowerCase() == 'true',
     );
   }
 
@@ -66,22 +70,26 @@ class ChestStrapReading {
       'stdTemp': stdTemp,
       'meanAccMag': meanAccMag,
       'stdAccMag': stdAccMag,
+      'isWorn': isWorn,
     };
   }
 
   factory ChestStrapReading.fromJson(Map<String, dynamic> json) {
+    final double meanHR = (json['meanHR'] as num).toDouble();
+    final double meanTemp = (json['meanTemp'] as num).toDouble();
     return ChestStrapReading(
       timestamp: json['timestamp'] as int,
-      meanHR: (json['meanHR'] as num).toDouble(),
+      meanHR: meanHR,
       meanRR: (json['meanRR'] as num).toDouble(),
       sdnn: (json['sdnn'] as num).toDouble(),
       rmssd: (json['rmssd'] as num).toDouble(),
       meanBR: (json['meanBR'] as num).toDouble(),
       stdBR: (json['stdBR'] as num).toDouble(),
-      meanTemp: (json['meanTemp'] as num).toDouble(),
+      meanTemp: meanTemp,
       stdTemp: (json['stdTemp'] as num).toDouble(),
       meanAccMag: (json['meanAccMag'] as num).toDouble(),
       stdAccMag: (json['stdAccMag'] as num).toDouble(),
+      isWorn: json['isWorn'] as bool? ?? (meanHR >= 30.0 && meanTemp >= 30.0),
     );
   }
 
@@ -183,6 +191,12 @@ class ChestStrapService {
   factory ChestStrapService() => _instance;
 
   final ValueNotifier<ChestStrapState> connectionState = ValueNotifier(ChestStrapState.disconnected);
+  
+  // Broadcast stream for real-time readings
+  final StreamController<ChestStrapReading> _readingsController = StreamController<ChestStrapReading>.broadcast();
+  Stream<ChestStrapReading> get readingsStream => _readingsController.stream;
+
+  @Deprecated('Use readingsStream instead to support multiple listeners')
   Function(ChestStrapReading)? onDataReceived;
   ChestStrapReading? lastReading;
 
@@ -417,19 +431,19 @@ class ChestStrapService {
       newlineIndex = _receiveBuffer.indexOf('\n');
     }
 
-    // Fallback: if no newline found but buffer has a complete 11-field CSV
-    // (10 commas), extract and parse it. Guards against firmware versions
+    // Fallback: if no newline found but buffer has a complete 12-field CSV
+    // (11 commas), extract and parse it. Guards against firmware versions
     // that don't append \n.
     if (_receiveBuffer.isNotEmpty && !_receiveBuffer.contains('\n')) {
       final commaCount = ','.allMatches(_receiveBuffer).length;
-      if (commaCount >= 10) {
-        // Find the end of the first complete 11-field CSV line
+      if (commaCount >= 11) {
+        // Find the end of the first complete 12-field CSV line
         int count = 0;
         int endIndex = -1;
         for (int i = 0; i < _receiveBuffer.length; i++) {
           if (_receiveBuffer[i] == ',') count++;
-          if (count == 10) {
-            // Find the end of the 11th field (next comma or end of string)
+          if (count == 11) {
+            // Find the end of the 12th field (next comma or end of string)
             int fieldEnd = _receiveBuffer.indexOf(',', i + 1);
             endIndex = fieldEnd == -1 ? _receiveBuffer.length : fieldEnd;
             break;
@@ -459,6 +473,10 @@ class ChestStrapService {
       lastReading = reading;
       _saveReading(reading);
       debugPrint('[ChestStrap] 📊 HR=${reading.meanHR.toStringAsFixed(1)} BR=${reading.meanBR.toStringAsFixed(1)} Temp=${reading.meanTemp.toStringAsFixed(1)} RMSSD=${reading.rmssd.toStringAsFixed(1)}');
+      
+      // Add to broadcast stream
+      _readingsController.add(reading);
+      
       if (onDataReceived != null) {
         onDataReceived!(reading);
       }

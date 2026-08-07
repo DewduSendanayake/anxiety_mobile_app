@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/chest_strap_service.dart';
@@ -21,6 +22,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
   // ── Chest Strap Service ──────────────────────────────────────
   final ChestStrapService _chestStrap = ChestStrapService();
   ChestStrapReading? _lastReading;
+  StreamSubscription<ChestStrapReading>? _readingSubscription;
 
   // ── Phenotyping risk (static simulation) ────────────────────
   static const double _phenotypingRisk = 0.72; // from GATv2
@@ -60,7 +62,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     // Listen to real chest strap data
     _lastReading = _chestStrap.lastReading; // Load persisted reading
-    _chestStrap.onDataReceived = (reading) {
+    _readingSubscription = _chestStrap.readingsStream.listen((reading) {
       if (mounted) {
         final oldLabel = _overallLabel(_lastReading);
         setState(() => _lastReading = reading);
@@ -71,7 +73,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
           );
         }
       }
-    };
+    });
 
     // Listen for connection state changes so the UI updates when the
     // chest strap connects or disconnects.
@@ -85,6 +87,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
   @override
   void dispose() {
     _chestStrap.connectionState.removeListener(_onConnectionChanged);
+    _readingSubscription?.cancel();
     _fadeController.dispose();
     _pulseController.dispose();
     super.dispose();
