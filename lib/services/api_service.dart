@@ -5,16 +5,20 @@ class ApiService {
   // Replace this with your actual Hugging Face Space URL
   static const String baseUrl = 'https://dewdu-physiological-anxiety-escalation.hf.space';
 
-  // INGEST ENDPOINT: Sends high-frequency raw arrays directly to the server
-  static Future<bool> sendRawSensorData({
+  // INGEST ENDPOINT: Sends averaged features directly to the server
+  static Future<bool> sendFeatureData({
     required String userId,
-    required int samplingRate,
-    required List<double> ecg,
-    required List<double> resp,
-    required List<double> temp,
-    required List<double> accX,
-    required List<double> accY,
-    required List<double> accZ,
+    required bool isWorn,
+    required double meanHr,
+    required double meanRr,
+    required double sdnn,
+    required double rmssd,
+    required double meanBr,
+    required double stdBr,
+    required double meanTemp,
+    required double stdTemp,
+    required double meanAccMag,
+    required double stdAccMag,
   }) async {
     try {
       final response = await http.post(
@@ -22,25 +26,30 @@ class ApiService {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'user_id': userId,
-          'sampling_rate': samplingRate,
-          'ecg': ecg,
-          'resp': resp,
-          'temp': temp,
-          'acc_x': accX,
-          'acc_y': accY,
-          'acc_z': accZ,
+          'timestamp': DateTime.now().toUtc().toIso8601String(),
+          'is_worn': isWorn,
+          'mean_hr': meanHr,
+          'mean_rr': meanRr,
+          'sdnn': sdnn,
+          'rmssd': rmssd,
+          'mean_br': meanBr,
+          'std_br': stdBr,
+          'mean_temp': meanTemp,
+          'std_temp': stdTemp,
+          'mean_acc_mag': meanAccMag,
+          'std_acc_mag': stdAccMag,
         }),
       );
 
       if (response.statusCode == 200) {
-        print('Raw signal window processed by server and saved to InfluxDB!');
+        print('Averaged feature window processed by server and saved to InfluxDB!');
         return true;
       } else {
-        print('Server data quality guard rejected the window: ${response.body}');
+        print('Server data quality guard rejected the window: ${response.statusCode} - ${response.body}');
         return false;
       }
     } catch (e) {
-      print('Network exception during raw ingest: $e');
+      print('Network exception during feature ingest: $e');
       return false;
     }
   }
