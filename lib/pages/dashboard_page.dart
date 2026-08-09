@@ -90,9 +90,12 @@ class _DashboardPageState extends State<DashboardPage>
         );
     _entryController.forward();
 
-    // Load persisted last reading
-    _currentReading = ChestStrapService().lastReading;
-    _chestStrapConnected = ChestStrapService().isConnected;
+    // A persisted reading is historical context, not a live risk score.
+    final chestStrap = ChestStrapService();
+    _chestStrapConnected = chestStrap.isConnected;
+    _currentReading = chestStrap.hasLiveWornReading
+        ? chestStrap.lastReading
+        : null;
 
     // Listen for live chest strap data
     _readingSubscription = ChestStrapService().readingsStream.listen((reading) {
@@ -125,6 +128,9 @@ class _DashboardPageState extends State<DashboardPage>
     if (mounted) {
       setState(() {
         _chestStrapConnected = ChestStrapService().isConnected;
+        if (!_chestStrapConnected) {
+          _currentReading = null;
+        }
       });
     }
   }
@@ -619,8 +625,10 @@ class _DashboardPageState extends State<DashboardPage>
 
   @override
   Widget build(BuildContext context) {
-    final risk = _currentReading?.riskScore ?? 0.0;
-    final riskCol = _riskColor(risk);
+    final hasLiveReading =
+        _chestStrapConnected && (_currentReading?.isWorn ?? false);
+    final risk = hasLiveReading ? _currentReading!.riskScore : 0.0;
+    final riskCol = hasLiveReading ? _riskColor(risk) : Colors.grey;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F3FF),
@@ -658,10 +666,7 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Widget _buildBody(double risk, Color riskCol) {
-    if (!_chestStrapConnected &&
-        (_predictionStatus == 'buffering' ||
-            _predictionStatus == 'loading' ||
-            _predictionStatus == 'not_calibrated')) {
+    if (!_chestStrapConnected) {
       return _buildDisconnectedScreen();
     }
 
@@ -680,7 +685,7 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Widget _buildDashboardList(double risk, Color riskCol) {
-    final isWorn = _currentReading?.isWorn ?? false;
+    final isWorn = _chestStrapConnected && (_currentReading?.isWorn ?? false);
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 30),
       children: [
@@ -700,7 +705,7 @@ class _DashboardPageState extends State<DashboardPage>
         const SizedBox(height: 20),
 
         // ── Risk Score Card ──
-        _buildRiskCard(risk, riskCol),
+        _buildRiskCard(risk, riskCol, isAvailable: isWorn),
 
         const SizedBox(height: 22),
 
@@ -770,7 +775,7 @@ class _DashboardPageState extends State<DashboardPage>
         ),
 
         const SizedBox(height: 24),
-        _buildAdviceCard(risk),
+        if (isWorn) _buildAdviceCard(risk),
         const SizedBox(height: 24),
         _buildChartsSection(),
         const SizedBox(height: 20),
@@ -991,26 +996,58 @@ class _DashboardPageState extends State<DashboardPage>
                 ValueListenableBuilder<bool>(
                   valueListenable: chestStrap.simulatedIsWorn,
                   builder: (context, isWorn, _) {
-                    return SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        'Strap is worn',
-                        style: GoogleFonts.poppins(
-                          fontSize: 12.5,
-                          color: AppTheme.kTextDark,
+                    return Column(
+                      children: [
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            'Strap is worn',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12.5,
+                              color: AppTheme.kTextDark,
+                            ),
+                          ),
+                          subtitle: Text(
+                            isWorn
+                                ? 'Live simulated values, isWorn=true'
+                                : 'Zero values, isWorn=false',
+                            style: GoogleFonts.poppins(
+                              fontSize: 10.5,
+                              color: AppTheme.kTextLight,
+                            ),
+                          ),
+                          value: isWorn,
+                          onChanged: chestStrap.setSimulationWorn,
                         ),
-                      ),
-                      subtitle: Text(
-                        isWorn
-                            ? 'Realistic values, isWorn=true'
-                            : 'Zero values, isWorn=false',
-                        style: GoogleFonts.poppins(
-                          fontSize: 10.5,
-                          color: AppTheme.kTextLight,
-                        ),
-                      ),
-                      value: isWorn,
-                      onChanged: chestStrap.setSimulationWorn,
+                        if (isWorn)
+                          ValueListenableBuilder<bool>(
+                            valueListenable:
+                                chestStrap.simulatedStressIncreasing,
+                            builder: (context, stressIncreasing, _) {
+                              return SwitchListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(
+                                  'Progressively increase stress',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12.5,
+                                    color: AppTheme.kTextDark,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  stressIncreasing
+                                      ? 'Stress rises from calm to high over 5 minutes'
+                                      : 'Keep the simulated physiology calm',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 10.5,
+                                    color: AppTheme.kTextLight,
+                                  ),
+                                ),
+                                value: stressIncreasing,
+                                onChanged: chestStrap.setSimulationStress,
+                              );
+                            },
+                          ),
+                      ],
                     );
                   },
                 ),
@@ -1689,7 +1726,11 @@ class _DashboardPageState extends State<DashboardPage>
     );
   }
 
-  Widget _buildRiskCard(double risk, Color riskCol) {
+  Widget _buildRiskCard(
+    double risk,
+    Color riskCol, {
+    required bool isAvailable,
+  }) {
     return AnimatedBuilder(
       animation: _riskPulseController,
       builder: (context, child) {
@@ -1747,7 +1788,11 @@ class _DashboardPageState extends State<DashboardPage>
                           ),
                         ),
                         Text(
-                          _currentReading?.riskLabel ?? '--',
+                          isAvailable
+                              ? _currentReading!.riskLabel
+                              : (_currentReading?.isWorn == false
+                                  ? 'Not Worn'
+                                  : 'Unavailable'),
                           style: GoogleFonts.poppins(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
@@ -1771,7 +1816,7 @@ class _DashboardPageState extends State<DashboardPage>
                     ),
                     child: Center(
                       child: Text(
-                        risk.toStringAsFixed(0),
+                        isAvailable ? risk.toStringAsFixed(0) : '--',
                         style: GoogleFonts.poppins(
                           fontSize: 22,
                           fontWeight: FontWeight.w800,
@@ -1787,8 +1832,10 @@ class _DashboardPageState extends State<DashboardPage>
               // Risk bar — uses LayoutBuilder for safe animated width
               LayoutBuilder(
                 builder: (context, constraints) {
-                  final barWidth =
-                      constraints.maxWidth * (risk / 100).clamp(0.02, 1.0);
+                  final barWidth = isAvailable
+                      ? constraints.maxWidth *
+                          (risk / 100).clamp(0.02, 1.0)
+                      : 0.0;
                   return ClipRRect(
                     borderRadius: BorderRadius.circular(6),
                     child: Stack(
