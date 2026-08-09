@@ -1,6 +1,7 @@
 name: Physiological validation
 
 on:
+  pull_request:
   push:
     branches:
       - agent/physiological-simulator-flow-fixes
