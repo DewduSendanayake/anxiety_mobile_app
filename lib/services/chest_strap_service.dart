@@ -219,6 +219,10 @@ class ChestStrapService {
   final Random _simulationRandom = Random();
   final ValueNotifier<bool> simulationEnabled = ValueNotifier(false);
   final ValueNotifier<bool> simulatedIsWorn = ValueNotifier(true);
+  final ValueNotifier<bool> simulatedStressIncreasing = ValueNotifier(false);
+  DateTime? _stressSimulationStartedAt;
+
+  static const Duration _stressRampDuration = Duration(minutes: 5);
 
   static const String _nusServiceUuid = '6E400001-B5A3-F393-E0A9-E50E24DCCA9E';
   static const String _nusTxUuid = '6E400003-B5A3-F393-E0A9-E50E24DCCA9E';
@@ -250,6 +254,18 @@ class ChestStrapService {
   }
 
   bool get isConnected => connectionState.value == ChestStrapState.connected;
+  bool get hasLiveWornReading => isConnected && (lastReading?.isWorn ?? false);
+
+  double get simulatedStressProgress {
+    if (!simulatedStressIncreasing.value ||
+        _stressSimulationStartedAt == null) {
+      return 0.0;
+    }
+    final elapsed = DateTime.now().difference(_stressSimulationStartedAt!);
+    return (elapsed.inMilliseconds / _stressRampDuration.inMilliseconds)
+        .clamp(0.0, 1.0)
+        .toDouble();
+  }
 
   /// Starts a phone-side physiological simulator. This never changes or
   /// depends on the chest-strap firmware. Simulated packets use the exact
@@ -260,6 +276,8 @@ class ChestStrapService {
 
     simulationEnabled.value = true;
     simulatedIsWorn.value = isWorn;
+    simulatedStressIncreasing.value = false;
+    _stressSimulationStartedAt = null;
     connectionState.value = ChestStrapState.connected;
 
     _emitSimulatedReading();
@@ -274,6 +292,19 @@ class ChestStrapService {
   void setSimulationWorn(bool isWorn) {
     if (!simulationEnabled.value) return;
     simulatedIsWorn.value = isWorn;
+    if (!isWorn) {
+      simulatedStressIncreasing.value = false;
+      _stressSimulationStartedAt = null;
+    }
+    _emitSimulatedReading();
+  }
+
+  /// Starts or stops a five-minute progressive stress simulation. The stream
+  /// starts calm, then raises heart and breathing rate while lowering HRV.
+  void setSimulationStress(bool stressIncreasing) {
+    if (!simulationEnabled.value || !simulatedIsWorn.value) return;
+    simulatedStressIncreasing.value = stressIncreasing;
+    _stressSimulationStartedAt = stressIncreasing ? DateTime.now() : null;
     _emitSimulatedReading();
   }
 
@@ -281,6 +312,9 @@ class ChestStrapService {
     _simulationTimer?.cancel();
     _simulationTimer = null;
     simulationEnabled.value = false;
+    simulatedStressIncreasing.value = false;
+    _stressSimulationStartedAt = null;
+    lastReading = null;
     connectionState.value = ChestStrapState.disconnected;
   }
 
@@ -292,24 +326,72 @@ class ChestStrapService {
     if (!simulationEnabled.value) return;
 
     final worn = simulatedIsWorn.value;
-    final hr = worn ? 72.0 + _jitter(2.5) : 0.0;
-    final reading = ChestStrapReading(
+    final reading = _buildSimulatedReading(
       timestamp: DateTime.now().millisecondsSinceEpoch,
-      meanHR: hr,
-      meanRR: worn ? 60000.0 / hr : 0.0,
-      sdnn: worn ? 46.0 + _jitter(3.0) : 0.0,
-      rmssd: worn ? 43.0 + _jitter(4.0) : 0.0,
-      meanBR: worn ? 15.5 + _jitter(0.6) : 0.0,
-      stdBR: worn ? 0.55 + _jitter(0.12) : 0.0,
-      meanTemp: worn ? 36.60 + _jitter(0.05) : 0.0,
-      stdTemp: worn ? 0.04 + _jitter(0.01) : 0.0,
-      meanAccMag: worn ? 1.0 + _jitter(0.015) : 0.0,
-      stdAccMag: worn ? 0.018 + _jitter(0.004) : 0.0,
       isWorn: worn,
+      stressLevel: simulatedStressProgress,
+      includeJitter: true,
     );
 
     // Do not persist test data across app launches.
     _publishReading(reading, persist: false);
+  }
+
+  double _lerp(double calm, double stressed, double stressLevel) {
+    return calm + (stressed - calm) * stressLevel;
+  }
+
+  ChestStrapReading _buildSimulatedReading({
+    required int timestamp,
+    required bool isWorn,
+    required double stressLevel,
+    required bool includeJitter,
+  }) {
+    if (!isWorn) {
+      return ChestStrapReading(
+        timestamp: timestamp,
+        meanHR: 0.0,
+        meanRR: 0.0,
+        sdnn: 0.0,
+        rmssd: 0.0,
+        meanBR: 0.0,
+        stdBR: 0.0,
+        meanTemp: 0.0,
+        stdTemp: 0.0,
+        meanAccMag: 0.0,
+        stdAccMag: 0.0,
+        isWorn: false,
+      );
+    }
+
+    final level = stressLevel.clamp(0.0, 1.0).toDouble();
+    final jitterScale = includeJitter ? 1.0 + level * 0.8 : 0.0;
+    final hr = _lerp(72.0, 118.0, level) + _jitter(2.5 * jitterScale);
+
+    return ChestStrapReading(
+      timestamp: timestamp,
+      meanHR: hr,
+      meanRR: 60000.0 / hr,
+      sdnn: _lerp(46.0, 20.0, level) + _jitter(3.0 * jitterScale),
+      rmssd: _lerp(43.0, 10.0, level) + _jitter(4.0 * jitterScale),
+      meanBR: _lerp(15.5, 29.0, level) + _jitter(0.6 * jitterScale),
+      stdBR: _lerp(0.55, 2.1, level) + _jitter(0.12 * jitterScale),
+      meanTemp: _lerp(36.60, 36.90, level) + _jitter(0.05 * jitterScale),
+      stdTemp: _lerp(0.04, 0.11, level) + _jitter(0.01 * jitterScale),
+      meanAccMag: _lerp(1.0, 1.08, level) + _jitter(0.015 * jitterScale),
+      stdAccMag: _lerp(0.018, 0.085, level) + _jitter(0.004 * jitterScale),
+      isWorn: true,
+    );
+  }
+
+  @visibleForTesting
+  ChestStrapReading buildSimulatedReadingForTest(double stressLevel) {
+    return _buildSimulatedReading(
+      timestamp: 1,
+      isWorn: true,
+      stressLevel: stressLevel,
+      includeJitter: false,
+    );
   }
 
   Future<void> startScan() async {
@@ -441,6 +523,7 @@ class ChestStrapService {
       connectionState.value = ChestStrapState.connecting;
       _manualDisconnect = false;
       _connectedDevice = device;
+      lastReading = null;
       _receiveBuffer = ''; // Clear stale buffer from previous connection
 
       debugPrint(
@@ -613,6 +696,7 @@ class ChestStrapService {
     debugPrint('[ChestStrap] Connection state changed: $state');
     if (state == BluetoothConnectionState.disconnected) {
       connectionState.value = ChestStrapState.disconnected;
+      lastReading = null;
       _txSubscription?.cancel();
       _connectionSubscription?.cancel();
 
@@ -642,6 +726,8 @@ class ChestStrapService {
       _simulationTimer?.cancel();
       _simulationTimer = null;
       simulationEnabled.value = false;
+      simulatedStressIncreasing.value = false;
+      _stressSimulationStartedAt = null;
       _scanSubscription?.cancel();
       _connectionSubscription?.cancel();
       _txSubscription?.cancel();
@@ -650,6 +736,7 @@ class ChestStrapService {
         await _connectedDevice!.disconnect();
         _connectedDevice = null;
       }
+      lastReading = null;
       connectionState.value = ChestStrapState.disconnected;
     } catch (e) {
       debugPrint('Error disconnecting: $e');
