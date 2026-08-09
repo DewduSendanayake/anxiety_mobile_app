@@ -117,7 +117,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
 
     if (lastReading == null || !lastReading.isWorn) {
       setState(() {
-        _errorMessage = 'Chest strap is connected, but not detected on your chest. Please put on the strap properly before starting calibration.';
+        _errorMessage =
+            'Chest strap is connected, but not detected on your chest. Please put on the strap properly before starting calibration.';
         _phase = _Phase.error;
       });
       return;
@@ -129,14 +130,14 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
     // Collect the packets that actually arrive instead of re-adding a stale
     // lastReading once per second when BLE has stopped delivering data.
     _collectionSubscription?.cancel();
-    _collectionSubscription = ChestStrapService().readingsStream.listen(
-      (reading) {
-        if (_phase != _Phase.collecting || !reading.isWorn) return;
-        if (_lastCollectedTimestamp == reading.timestamp) return;
-        _lastCollectedTimestamp = reading.timestamp;
-        _collectedReadings.add(reading);
-      },
-    );
+    _collectionSubscription = ChestStrapService().readingsStream.listen((
+      reading,
+    ) {
+      if (_phase != _Phase.collecting || !reading.isWorn) return;
+      if (_lastCollectedTimestamp == reading.timestamp) return;
+      _lastCollectedTimestamp = reading.timestamp;
+      _collectedReadings.add(reading);
+    });
 
     setState(() {
       _phase = _Phase.collecting;
@@ -144,33 +145,30 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
       _errorMessage = null;
     });
 
-    _collectionTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (timer) {
-        if (!mounted) {
-          timer.cancel();
-          return;
-        }
+    _collectionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
 
-        if (!ChestStrapService().isConnected) {
-          timer.cancel();
-          _collectionSubscription?.cancel();
-          _collectionSubscription = null;
-          setState(() {
-            _errorMessage = 'Chest strap disconnected during calibration.';
-            _phase = _Phase.error;
-          });
-          return;
-        }
+      if (!ChestStrapService().isConnected) {
+        timer.cancel();
+        _collectionSubscription?.cancel();
+        _collectionSubscription = null;
+        setState(() {
+          _errorMessage = 'Chest strap disconnected during calibration.';
+          _phase = _Phase.error;
+        });
+        return;
+      }
 
-        setState(() => _elapsedSeconds++);
+      setState(() => _elapsedSeconds++);
 
-        if (_elapsedSeconds >= _totalSeconds) {
-          timer.cancel();
-          _finishCollection();
-        }
-      },
-    );
+      if (_elapsedSeconds >= _totalSeconds) {
+        timer.cancel();
+        _finishCollection();
+      }
+    });
   }
 
   void _finishCollection() {
@@ -203,29 +201,58 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
     for (int w = 0; w < 3; w++) {
       final int start = w * windowLength;
       final int end = start + windowLength;
-      
+
       if (start >= _collectedReadings.length) break;
-      
+
       final windowReadings = _collectedReadings.sublist(
-        start, 
-        end > _collectedReadings.length ? _collectedReadings.length : end
+        start,
+        end > _collectedReadings.length ? _collectedReadings.length : end,
       );
 
       // Average the 10 features for this window
       if (windowReadings.isNotEmpty) {
-        double meanHR = windowReadings.map((r) => r.meanHR).reduce((a, b) => a + b) / windowReadings.length;
-        double meanRR = windowReadings.map((r) => r.meanRR).reduce((a, b) => a + b) / windowReadings.length;
-        double sdnn = windowReadings.map((r) => r.sdnn).reduce((a, b) => a + b) / windowReadings.length;
-        double rmssd = windowReadings.map((r) => r.rmssd).reduce((a, b) => a + b) / windowReadings.length;
-        double meanBR = windowReadings.map((r) => r.meanBR).reduce((a, b) => a + b) / windowReadings.length;
-        double stdBR = windowReadings.map((r) => r.stdBR).reduce((a, b) => a + b) / windowReadings.length;
-        double meanTemp = windowReadings.map((r) => r.meanTemp).reduce((a, b) => a + b) / windowReadings.length;
-        double stdTemp = windowReadings.map((r) => r.stdTemp).reduce((a, b) => a + b) / windowReadings.length;
-        double meanAccMag = windowReadings.map((r) => r.meanAccMag).reduce((a, b) => a + b) / windowReadings.length;
-        double stdAccMag = windowReadings.map((r) => r.stdAccMag).reduce((a, b) => a + b) / windowReadings.length;
-        
+        double meanHR =
+            windowReadings.map((r) => r.meanHR).reduce((a, b) => a + b) /
+            windowReadings.length;
+        double meanRR =
+            windowReadings.map((r) => r.meanRR).reduce((a, b) => a + b) /
+            windowReadings.length;
+        double sdnn =
+            windowReadings.map((r) => r.sdnn).reduce((a, b) => a + b) /
+            windowReadings.length;
+        double rmssd =
+            windowReadings.map((r) => r.rmssd).reduce((a, b) => a + b) /
+            windowReadings.length;
+        double meanBR =
+            windowReadings.map((r) => r.meanBR).reduce((a, b) => a + b) /
+            windowReadings.length;
+        double stdBR =
+            windowReadings.map((r) => r.stdBR).reduce((a, b) => a + b) /
+            windowReadings.length;
+        double meanTemp =
+            windowReadings.map((r) => r.meanTemp).reduce((a, b) => a + b) /
+            windowReadings.length;
+        double stdTemp =
+            windowReadings.map((r) => r.stdTemp).reduce((a, b) => a + b) /
+            windowReadings.length;
+        double meanAccMag =
+            windowReadings.map((r) => r.meanAccMag).reduce((a, b) => a + b) /
+            windowReadings.length;
+        double stdAccMag =
+            windowReadings.map((r) => r.stdAccMag).reduce((a, b) => a + b) /
+            windowReadings.length;
+
         featuresPerWindow.add([
-          meanHR, meanRR, sdnn, rmssd, meanBR, stdBR, meanTemp, stdTemp, meanAccMag, stdAccMag
+          meanHR,
+          meanRR,
+          sdnn,
+          rmssd,
+          meanBR,
+          stdBR,
+          meanTemp,
+          stdTemp,
+          meanAccMag,
+          stdAccMag,
         ]);
       }
     }
@@ -251,7 +278,9 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
       if (vals.length < 2) {
         finalStds[f] = 1e-6; // standard minimum fallback
       } else {
-        final double varSum = vals.map((x) => (x - meanVal) * (x - meanVal)).reduce((a, b) => a + b);
+        final double varSum = vals
+            .map((x) => (x - meanVal) * (x - meanVal))
+            .reduce((a, b) => a + b);
         double stdVal = sqrt(varSum / vals.length);
         if (stdVal < 1e-6) stdVal = 1e-6;
         finalStds[f] = stdVal;
@@ -338,10 +367,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           ),
         ),
         child: SafeArea(
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: _buildBody(),
-          ),
+          child: FadeTransition(opacity: _fadeAnimation, child: _buildBody()),
         ),
       ),
     );
@@ -555,9 +581,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.25),
-            ),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
           ),
           child: Column(
             children: [
@@ -710,7 +734,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: Colors.white.withValues(
-                          alpha: 0.06 * _pulseAnimation.value),
+                        alpha: 0.06 * _pulseAnimation.value,
+                      ),
                     ),
                   ),
                   // Progress ring
@@ -992,11 +1017,17 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
                 _summaryRow('Valid feature packets', '$totalPackets'),
                 _summaryRow('Features extracted', '10'),
                 _summaryRow(
-                    'Resting HR', '${_restingHR.toStringAsFixed(1)} BPM'),
+                  'Resting HR',
+                  '${_restingHR.toStringAsFixed(1)} BPM',
+                ),
                 _summaryRow(
-                    'Resting BR', '${_restingBR.toStringAsFixed(1)} breaths/min'),
+                  'Resting BR',
+                  '${_restingBR.toStringAsFixed(1)} breaths/min',
+                ),
                 _summaryRow(
-                    'Resting Temp', '${_restingTemp.toStringAsFixed(2)} °C'),
+                  'Resting Temp',
+                  '${_restingTemp.toStringAsFixed(2)} °C',
+                ),
                 _summaryRow('Upload status', 'Success ✓'),
               ],
             ),
@@ -1222,8 +1253,11 @@ class _StepCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Icon(icon,
-                        color: Colors.white.withValues(alpha: 0.8), size: 18),
+                    Icon(
+                      icon,
+                      color: Colors.white.withValues(alpha: 0.8),
+                      size: 18,
+                    ),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
