@@ -31,11 +31,23 @@ class UserManager {
 
   // LOGIN METHOD: Call this when the user types their ID and clicks submit
   void login(String userId) {
+    if (_currentUserId == userId && sensorManager?.isCollecting == true) {
+      // Re-wiring is harmless and recovers the stream subscription if a page
+      // or lifecycle transition cancelled it.
+      BleBridge().wireChestStrap();
+      return;
+    }
+
+    sensorManager?.stopCollection();
+    BleBridge().unwireChestStrap();
     _currentUserId = userId;
     print('User session initialized for identity: $userId');
 
     // Automatically create a fresh SensorManager dedicated entirely to this user
-    sensorManager = SensorManager(userId: userId, samplingRate: 1); // Real hardware sends 1 packet per second
+    sensorManager = SensorManager(
+      userId: userId,
+      samplingRate: 1,
+    ); // Real hardware and the simulator send one feature packet per second.
     
     // Instantly start the 60-second background background tracking loop
     sensorManager!.startCollection();
