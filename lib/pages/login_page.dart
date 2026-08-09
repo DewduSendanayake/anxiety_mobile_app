@@ -10,6 +10,7 @@ import 'package:usage_stats/usage_stats.dart';
 import '../theme/app_theme.dart';
 import '../background_service.dart';
 import '../profile_page.dart';
+import '../services/user_manager.dart';
 import 'informed_consent_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -79,6 +80,10 @@ class _LoginPageState extends State<LoginPage> {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('user_id', finalId);
+
+    // A new login happens after main() has already run, so initialise the
+    // physiological upload session here as well as in the cold-start path.
+    UserManager().login(finalId);
 
     try {
       await initializeService();
