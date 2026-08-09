@@ -39,7 +39,7 @@ class ApiService {
           'mean_acc_mag': meanAccMag,
           'std_acc_mag': stdAccMag,
         }),
-      );
+      ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         print('Averaged feature window processed by server and saved to InfluxDB!');
@@ -68,7 +68,7 @@ class ApiService {
           'b_mean': bMean,
           'b_std': bStd,
         }),
-      );
+      ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         print('User calibration parameters successfully loaded into server memory.');
@@ -86,7 +86,9 @@ class ApiService {
   // PREDICT ENDPOINT: Requests the rolling 19-minute anomaly forecasting array
   static Future<Map<String, dynamic>> getEscalationForecast(String userId) async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/predict/$userId'));
+      final response = await http
+          .get(Uri.parse('$baseUrl/predict/$userId'))
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
@@ -116,6 +118,14 @@ class ApiService {
     required List<double> trajectory,
     required double physiologicalRiskScore,
   }) async {
+    if (_fusionBaseUrl.contains('PLACEHOLDER_FUSION_ENDPOINT')) {
+      return {
+        'success': false,
+        'status': 'not_configured',
+        'message': 'Fusion endpoint is not configured yet',
+      };
+    }
+
     try {
       final response = await http
           .post(
