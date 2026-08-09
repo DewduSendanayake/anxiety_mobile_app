@@ -1,0 +1,52 @@
+name: Physiological validation
+
+on:
+  push:
+    branches:
+      - agent/physiological-simulator-flow-fixes
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Check physiological formatting
+        run: >
+          dart format --output=none --set-exit-if-changed
+          lib/main.dart
+          lib/pages/baseline_calibration_page.dart
+          lib/pages/dashboard_page.dart
+          lib/pages/data_rights_page.dart
+          lib/pages/login_page.dart
+          lib/services/api_service.dart
+          lib/services/chest_strap_service.dart
+          lib/services/sensor_manager.dart
+          lib/services/user_manager.dart
+          test/chest_strap_contract_test.dart
+
+      - name: Analyze physiological files
+        run: >
+          flutter analyze
+          lib/main.dart
+          lib/pages/baseline_calibration_page.dart
+          lib/pages/dashboard_page.dart
+          lib/pages/data_rights_page.dart
+          lib/pages/login_page.dart
+          lib/services/api_service.dart
+          lib/services/chest_strap_service.dart
+          lib/services/sensor_manager.dart
+          lib/services/user_manager.dart
+          test/chest_strap_contract_test.dart
+
+      - name: Run chest strap contract tests
+        run: flutter test test/chest_strap_contract_test.dart
