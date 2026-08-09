@@ -20,27 +20,30 @@ void main() {
     expect(reading.isWorn, isTrue);
   });
 
-  test('simulator publishes worn and off-body packets on the BLE stream', () async {
-    final service = ChestStrapService();
+  test(
+    'simulator publishes worn and off-body packets on the BLE stream',
+    () async {
+      final service = ChestStrapService();
 
-    final wornPacket = service.readingsStream.first;
-    await service.startSimulation(isWorn: true);
-    final worn = await wornPacket.timeout(const Duration(seconds: 2));
+      final wornPacket = service.readingsStream.first;
+      await service.startSimulation(isWorn: true);
+      final worn = await wornPacket.timeout(const Duration(seconds: 2));
 
-    expect(service.isConnected, isTrue);
-    expect(worn.isWorn, isTrue);
-    expect(worn.meanHR, inInclusiveRange(60.0, 90.0));
-    expect(worn.meanTemp, inInclusiveRange(36.0, 37.2));
+      expect(service.isConnected, isTrue);
+      expect(worn.isWorn, isTrue);
+      expect(worn.meanHR, inInclusiveRange(60.0, 90.0));
+      expect(worn.meanTemp, inInclusiveRange(36.0, 37.2));
 
-    final offBodyPacket = service.readingsStream.firstWhere((r) => !r.isWorn);
-    service.setSimulationWorn(false);
-    final offBody = await offBodyPacket.timeout(const Duration(seconds: 2));
+      final offBodyPacket = service.readingsStream.firstWhere((r) => !r.isWorn);
+      service.setSimulationWorn(false);
+      final offBody = await offBodyPacket.timeout(const Duration(seconds: 2));
 
-    expect(offBody.meanHR, 0.0);
-    expect(offBody.meanRR, 0.0);
-    expect(offBody.meanTemp, 0.0);
+      expect(offBody.meanHR, 0.0);
+      expect(offBody.meanRR, 0.0);
+      expect(offBody.meanTemp, 0.0);
 
-    await service.stopSimulation();
-    expect(service.isConnected, isFalse);
-  });
+      await service.stopSimulation();
+      expect(service.isConnected, isFalse);
+    },
+  );
 }
