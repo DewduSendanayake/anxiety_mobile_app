@@ -26,7 +26,9 @@ void _handleNotificationTap(String? payload) {
 
   final context = navigatorKey.currentContext;
   if (context == null) {
-    debugPrint('Notification tap ignored: no navigator context yet. payload=$payload');
+    debugPrint(
+      'Notification tap ignored: no navigator context yet. payload=$payload',
+    );
     return;
   }
 
@@ -42,16 +44,16 @@ void _handleNotificationTap(String? payload) {
   }
 
   if (payload == 'gad7_weekly') {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const Gad7Screen()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const Gad7Screen()));
     return;
   }
 
   if (payload == 'pss10_weekly' || payload == 'pss10_monthly') {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const Pss10Screen()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const Pss10Screen()));
     return;
   }
 }
@@ -71,79 +73,87 @@ void main() async {
   };
 
   // Run the entire app inside an error zone for extra safety.
-  runZonedGuarded(() async {
-    WidgetsFlutterBinding.ensureInitialized();
-    try {
-      await NotificationHelper.init();
-      NotificationHelper.onNotificationClick = _handleNotificationTap;
-    } catch (e, st) {
-      debugPrint('Notification init error: $e');
-      debugPrint('$st');
-    }
-
-    // 1. Queue Retry (Offline Architecture)
-    BackgroundServiceHelper.retryOfflineQueue().catchError((e) {
-      debugPrint('Init Queue Retry Error: $e');
-    });
-
-    // 2. Connectivity Listener (Auto-Upload when internet returns)
-    // NOTE: connectivity_plus ^4.0 returns List<ConnectivityResult>,
-    //       NOT a single ConnectivityResult. Using `dynamic` to be safe
-    //       across all versions.
-    try {
-      Connectivity().onConnectivityChanged.listen((event) async {
-        try {
-          final bool connected = event is List
-              ? (event as List).any((r) => r != ConnectivityResult.none)
-              : event != ConnectivityResult.none;
-          if (connected) {
-            await BackgroundServiceHelper.retryOfflineQueue();
-          }
-        } catch (e) {
-          debugPrint('Connectivity callback error: $e');
-        }
-      }, onError: (e) {
-        debugPrint('Connectivity stream error: $e');
-      });
-    } catch (e) {
-      debugPrint('Connectivity Listener Error: $e');
-    }
-
-    // 3. UI System Styling (Edge-to-edge)
-    SystemChrome.setSystemUIOverlayStyle(
-      const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.dark,
-      ),
-    );
-
-    // 4. Initialize Background Service (Only if User ID exists)
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final userId = prefs.getString('user_id');
-      if (userId != null && userId.isNotEmpty) {
-        // Restore the physiological session on every cold launch. Without
-        // this, BLE packets still reach the dashboard but never enter the
-        // 60-second /ingest pipeline.
-        UserManager().login(userId);
-        await bg.initializeService();
-      } else {
-        debugPrint('Background Service: No User ID, skipping initialization.');
+  runZonedGuarded(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
+      try {
+        await NotificationHelper.init();
+        NotificationHelper.onNotificationClick = _handleNotificationTap;
+      } catch (e, st) {
+        debugPrint('Notification init error: $e');
+        debugPrint('$st');
       }
-    } catch (e) {
-      debugPrint('Background Service Init Error: $e');
-    }
 
-    runApp(const ResearchApp());
+      // 1. Queue Retry (Offline Architecture)
+      BackgroundServiceHelper.retryOfflineQueue().catchError((e) {
+        debugPrint('Init Queue Retry Error: $e');
+      });
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _handleNotificationTap(NotificationHelper.consumeLaunchPayload());
-    });
-  }, (error, stack) {
-    // Zone-level fallback — catches anything that slips through.
-    debugPrint('🔴 Uncaught zone error: $error');
-    debugPrint('$stack');
-  });
+      // 2. Connectivity Listener (Auto-Upload when internet returns)
+      // NOTE: connectivity_plus ^4.0 returns List<ConnectivityResult>,
+      //       NOT a single ConnectivityResult. Using `dynamic` to be safe
+      //       across all versions.
+      try {
+        Connectivity().onConnectivityChanged.listen(
+          (event) async {
+            try {
+              final bool connected = event is List
+                  ? (event as List).any((r) => r != ConnectivityResult.none)
+                  : event != ConnectivityResult.none;
+              if (connected) {
+                await BackgroundServiceHelper.retryOfflineQueue();
+              }
+            } catch (e) {
+              debugPrint('Connectivity callback error: $e');
+            }
+          },
+          onError: (e) {
+            debugPrint('Connectivity stream error: $e');
+          },
+        );
+      } catch (e) {
+        debugPrint('Connectivity Listener Error: $e');
+      }
+
+      // 3. UI System Styling (Edge-to-edge)
+      SystemChrome.setSystemUIOverlayStyle(
+        const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark,
+        ),
+      );
+
+      // 4. Initialize Background Service (Only if User ID exists)
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final userId = prefs.getString('user_id');
+        if (userId != null && userId.isNotEmpty) {
+          // Restore the physiological session on every cold launch. Without
+          // this, BLE packets still reach the dashboard but never enter the
+          // 60-second /ingest pipeline.
+          UserManager().login(userId);
+          await bg.initializeService();
+        } else {
+          debugPrint(
+            'Background Service: No User ID, skipping initialization.',
+          );
+        }
+      } catch (e) {
+        debugPrint('Background Service Init Error: $e');
+      }
+
+      runApp(const ResearchApp());
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _handleNotificationTap(NotificationHelper.consumeLaunchPayload());
+      });
+    },
+    (error, stack) {
+      // Zone-level fallback — catches anything that slips through.
+      debugPrint('🔴 Uncaught zone error: $error');
+      debugPrint('$stack');
+    },
+  );
 }
 
 class ResearchApp extends StatelessWidget {
