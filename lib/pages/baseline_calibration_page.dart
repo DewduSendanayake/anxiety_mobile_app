@@ -105,6 +105,10 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   // ═══════════════════════════════════════════════════════════════
 
   void _startCalibration() {
+    // Baseline calibration must always use the calm simulator profile.
+    if (ChestStrapService().simulationEnabled.value) {
+      ChestStrapService().setSimulationStress(false);
+    }
     final lastReading = ChestStrapService().lastReading;
     if (!ChestStrapService().isConnected) {
       setState(() {
