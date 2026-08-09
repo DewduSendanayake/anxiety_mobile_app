@@ -60,8 +60,10 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
-    // Listen to real chest strap data
-    _lastReading = _chestStrap.lastReading; // Load persisted reading
+    // A saved reading must never be presented as a current risk score.
+    _lastReading = _chestStrap.hasLiveWornReading
+        ? _chestStrap.lastReading
+        : null;
     _readingSubscription = _chestStrap.readingsStream.listen((reading) {
       if (mounted) {
         final oldLabel = _overallLabel(_lastReading);
@@ -81,7 +83,13 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _onConnectionChanged() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {
+        if (!_chestStrap.isConnected) {
+          _lastReading = null;
+        }
+      });
+    }
   }
 
   @override
@@ -94,17 +102,27 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   // ── Combined Risk Logic ─────────────────────────────────────
+  bool get _hasLiveReading =>
+      _chestStrap.isConnected && (_lastReading?.isWorn ?? false);
+
   /// Combines physiological risk (0-100) and phenotyping risk (0.0-1.0)
   /// into an overall normalised score (0-100).
   double get _overallRisk {
+    if (!_hasLiveReading) return 0.0;
     final physioNorm = _lastReading?.riskScore ?? 0.0;
     final phenoNorm = _phenotypingRisk * 100;
     return (physioNorm * 0.75 + phenoNorm * 0.25).clamp(0, 100);
   }
 
   String _overallLabel(ChestStrapReading? reading) {
-    final score = reading?.riskScore ?? 0.0;
-    final combined = (score * 0.75 + _phenotypingRisk * 100 * 0.25).clamp(0, 100);
+    if (!_chestStrap.isConnected || reading == null || !reading.isWorn) {
+      return 'Unavailable';
+    }
+    final score = reading.riskScore;
+    final combined = (score * 0.75 + _phenotypingRisk * 100 * 0.25).clamp(
+      0,
+      100,
+    );
     if (combined <= 25) return 'Low';
     if (combined <= 50) return 'Moderate';
     if (combined <= 75) return 'Elevated';
@@ -141,7 +159,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
     const levels = ['Low', 'Moderate', 'Elevated', 'High'];
     final oldIdx = levels.indexOf(oldLabel);
     final newIdx = levels.indexOf(newLabel);
-    return newIdx > oldIdx;
+    return oldIdx >= 0 && newIdx >= 0 && newIdx > oldIdx;
   }
 
   void _addNotification(String msg) {
@@ -166,8 +184,9 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
   // ═══════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
+    final hasLiveReading = _hasLiveReading;
     final risk = _overallRisk;
-    final riskCol = _overallColor(risk);
+    final riskCol = hasLiveReading ? _overallColor(risk) : Colors.grey;
     final label = _overallLabel(_lastReading);
 
     return Scaffold(
@@ -180,10 +199,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF667eea),
-              Color(0xFF764ba2),
-            ],
+            colors: [Color(0xFF667eea), Color(0xFF764ba2)],
           ),
         ),
         child: SafeArea(
@@ -267,14 +283,20 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   ),
 
                   // ── Connection Status ──
-                  if (!_chestStrap.isConnected || !(_lastReading?.isWorn ?? false))
+                  if (!_chestStrap.isConnected ||
+                      !(_lastReading?.isWorn ?? false))
                     Container(
                       margin: const EdgeInsets.only(top: 12),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.2),
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -289,11 +311,12 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           Expanded(
                             child: Text(
                               !_chestStrap.isConnected
-                                  ? (_lastReading != null
-                                      ? 'Chest strap disconnected — showing last known data'
-                                      : 'Chest strap not connected — using model estimates')
+                                  ? 'Chest strap not connected — risk score unavailable'
                                   : 'Chest strap connected — please wear it on your chest to stream vitals',
-                              style: GoogleFonts.poppins(fontSize: 11, color: Colors.white.withValues(alpha: 0.9)),
+                              style: GoogleFonts.poppins(
+                                fontSize: 11,
+                                color: Colors.white.withValues(alpha: 0.9),
+                              ),
                             ),
                           ),
                         ],
@@ -344,7 +367,8 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           boxShadow: [
                             BoxShadow(
                               color: riskCol.withValues(
-                                  alpha: 0.15 * _pulseAnimation.value),
+                                alpha: 0.15 * _pulseAnimation.value,
+                              ),
                               blurRadius: 20,
                               offset: const Offset(0, 8),
                             ),
@@ -367,7 +391,9 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                     ),
                                   ),
                                   child: Icon(
-                                    _overallIcon(risk),
+                                    hasLiveReading
+                                        ? _overallIcon(risk)
+                                        : Icons.sensors_off_rounded,
                                     color: Colors.white,
                                     size: 30,
                                   ),
@@ -382,8 +408,9 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                         'Overall Anxiety Level',
                                         style: GoogleFonts.poppins(
                                           fontSize: 12,
-                                          color: Colors.white
-                                              .withValues(alpha: 0.7),
+                                          color: Colors.white.withValues(
+                                            alpha: 0.7,
+                                          ),
                                         ),
                                       ),
                                       const SizedBox(height: 2),
@@ -406,14 +433,17 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                     shape: BoxShape.circle,
                                     color: Colors.white.withValues(alpha: 0.15),
                                     border: Border.all(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.4),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.4,
+                                      ),
                                       width: 2,
                                     ),
                                   ),
                                   child: Center(
                                     child: Text(
-                                      risk.toStringAsFixed(0),
+                                      hasLiveReading
+                                          ? risk.toStringAsFixed(0)
+                                          : '--',
                                       style: GoogleFonts.poppins(
                                         fontSize: 18,
                                         fontWeight: FontWeight.w800,
@@ -434,21 +464,23 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                   Container(
                                     height: 6,
                                     decoration: BoxDecoration(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.15),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.15,
+                                      ),
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                   ),
                                   AnimatedFractionallySizedBox(
                                     duration: const Duration(milliseconds: 600),
-                                    widthFactor: (risk / 100).clamp(0.02, 1.0),
+                                    widthFactor: hasLiveReading
+                                        ? (risk / 100).clamp(0.02, 1.0)
+                                        : 0.0,
                                     child: Container(
                                       height: 6,
                                       decoration: BoxDecoration(
                                         gradient: LinearGradient(
                                           colors: [
-                                            Colors.white
-                                                .withValues(alpha: 0.9),
+                                            Colors.white.withValues(alpha: 0.9),
                                             riskCol.withValues(alpha: 0.8),
                                           ],
                                         ),
@@ -463,10 +495,16 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                _riskLabel('Low', risk <= 25),
-                                _riskLabel('Moderate', risk > 25 && risk <= 50),
-                                _riskLabel('Elevated', risk > 50 && risk <= 75),
-                                _riskLabel('High', risk > 75),
+                                _riskLabel('Low', hasLiveReading && risk <= 25),
+                                _riskLabel(
+                                  'Moderate',
+                                  hasLiveReading && risk > 25 && risk <= 50,
+                                ),
+                                _riskLabel(
+                                  'Elevated',
+                                  hasLiveReading && risk > 50 && risk <= 75,
+                                ),
+                                _riskLabel('High', hasLiveReading && risk > 75),
                               ],
                             ),
                             const SizedBox(height: 16),
@@ -483,7 +521,9 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                 ),
                               ),
                               child: Text(
-                                _overallMessage(risk),
+                                hasLiveReading
+                                    ? _overallMessage(risk)
+                                    : 'Connect and wear the chest strap, or enable the research simulator, to calculate a current risk score.',
                                 style: GoogleFonts.poppins(
                                   fontSize: 13,
                                   color: Colors.white.withValues(alpha: 0.9),
@@ -506,7 +546,9 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 14),
+                      horizontal: 20,
+                      vertical: 14,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(16),
@@ -617,8 +659,10 @@ class _NotificationsSheet extends StatelessWidget {
                 ),
                 const Spacer(),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.grey.shade100,
                     borderRadius: BorderRadius.circular(20),
@@ -643,8 +687,11 @@ class _NotificationsSheet extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.notifications_none_rounded,
-                            size: 48, color: Colors.grey.shade300),
+                        Icon(
+                          Icons.notifications_none_rounded,
+                          size: 48,
+                          color: Colors.grey.shade300,
+                        ),
                         const SizedBox(height: 12),
                         Text(
                           'No alerts yet',
@@ -676,15 +723,16 @@ class _NotificationsSheet extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: const Color(0xFFFFF3E0),
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: Colors.orange.shade200,
-                          ),
+                          border: Border.all(color: Colors.orange.shade200),
                         ),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.warning_amber_rounded,
-                                color: Colors.orange.shade700, size: 20),
+                            Icon(
+                              Icons.warning_amber_rounded,
+                              color: Colors.orange.shade700,
+                              size: 20,
+                            ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
