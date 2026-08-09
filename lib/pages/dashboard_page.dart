@@ -1791,8 +1791,8 @@ class _DashboardPageState extends State<DashboardPage>
                           isAvailable
                               ? _currentReading!.riskLabel
                               : (_currentReading?.isWorn == false
-                                  ? 'Not Worn'
-                                  : 'Unavailable'),
+                                    ? 'Not Worn'
+                                    : 'Unavailable'),
                           style: GoogleFonts.poppins(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
@@ -1833,8 +1833,7 @@ class _DashboardPageState extends State<DashboardPage>
               LayoutBuilder(
                 builder: (context, constraints) {
                   final barWidth = isAvailable
-                      ? constraints.maxWidth *
-                          (risk / 100).clamp(0.02, 1.0)
+                      ? constraints.maxWidth * (risk / 100).clamp(0.02, 1.0)
                       : 0.0;
                   return ClipRRect(
                     borderRadius: BorderRadius.circular(6),
