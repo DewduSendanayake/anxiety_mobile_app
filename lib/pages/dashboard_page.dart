@@ -93,6 +93,7 @@ class _DashboardPageState extends State<DashboardPage>
 
     // Load persisted last reading
     _currentReading = ChestStrapService().lastReading;
+    _chestStrapConnected = ChestStrapService().isConnected;
 
     // Listen for live chest strap data
     _readingSubscription = ChestStrapService().readingsStream.listen((reading) {
@@ -622,6 +623,9 @@ class _DashboardPageState extends State<DashboardPage>
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 30),
       children: [
+        _buildSimulationPanel(),
+        const SizedBox(height: 14),
+
         // ── Connection Offline Warning Banner ──
         if (_predictionStatus == 'error') _buildOfflineBanner(),
 
@@ -860,6 +864,88 @@ class _DashboardPageState extends State<DashboardPage>
     );
   }
 
+  Widget _buildSimulationPanel() {
+    final chestStrap = ChestStrapService();
+    return ValueListenableBuilder<bool>(
+      valueListenable: chestStrap.simulationEnabled,
+      builder: (context, enabled, _) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: enabled
+                ? const Color(0xFFEDE7F6)
+                : Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: enabled
+                  ? const Color(0xFF764BA2).withValues(alpha: 0.35)
+                  : Colors.grey.shade300,
+            ),
+          ),
+          child: Column(
+            children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  'Research simulator',
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.kTextDark,
+                  ),
+                ),
+                subtitle: Text(
+                  enabled
+                      ? 'Phone-generated packets are using the real physiological pipeline.'
+                      : 'Enable only while testing without the chest strap.',
+                  style: GoogleFonts.poppins(
+                    fontSize: 10.5,
+                    color: AppTheme.kTextLight,
+                  ),
+                ),
+                value: enabled,
+                onChanged: (value) async {
+                  if (value) {
+                    await chestStrap.startSimulation(isWorn: true);
+                  } else {
+                    await chestStrap.stopSimulation();
+                  }
+                },
+              ),
+              if (enabled)
+                ValueListenableBuilder<bool>(
+                  valueListenable: chestStrap.simulatedIsWorn,
+                  builder: (context, isWorn, _) {
+                    return SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        'Strap is worn',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12.5,
+                          color: AppTheme.kTextDark,
+                        ),
+                      ),
+                      subtitle: Text(
+                        isWorn
+                            ? 'Realistic values, isWorn=true'
+                            : 'Zero values, isWorn=false',
+                        style: GoogleFonts.poppins(
+                          fontSize: 10.5,
+                          color: AppTheme.kTextLight,
+                        ),
+                      ),
+                      value: isWorn,
+                      onChanged: chestStrap.setSimulationWorn,
+                    );
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildDisconnectedScreen() {
     return Center(
       child: SingleChildScrollView(
@@ -915,6 +1001,19 @@ class _DashboardPageState extends State<DashboardPage>
                 label: Text(
                   'Scan & Connect',
                   style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () =>
+                    ChestStrapService().startSimulation(isWorn: true),
+                icon: const Icon(Icons.science_outlined, size: 20),
+                label: Text(
+                  'Use Research Simulator',
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
