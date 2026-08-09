@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -38,7 +39,9 @@ class ChestStrapReading {
   factory ChestStrapReading.fromCsv(String csvLine) {
     final parts = csvLine.split(',');
     if (parts.length != 12) {
-      throw FormatException('Invalid CSV length: expected 12, got ${parts.length}');
+      throw FormatException(
+        'Invalid CSV length: expected 12, got ${parts.length}',
+      );
     }
     final rawIsWorn = parts[11].trim();
     return ChestStrapReading(
@@ -53,7 +56,10 @@ class ChestStrapReading {
       stdTemp: double.parse(parts[8].trim()),
       meanAccMag: double.parse(parts[9].trim()),
       stdAccMag: double.parse(parts[10].trim()),
-      isWorn: rawIsWorn == '1' || rawIsWorn == '1.0' || rawIsWorn.toLowerCase() == 'true',
+      isWorn:
+          rawIsWorn == '1' ||
+          rawIsWorn == '1.0' ||
+          rawIsWorn.toLowerCase() == 'true',
     );
   }
 
@@ -132,7 +138,11 @@ class ChestStrapReading {
       if (hrvScore > 100.0) hrvScore = 100.0;
     }
 
-    double total = (hrScore * 0.35) + (brScore * 0.25) + (tempScore * 0.15) + (hrvScore * 0.25);
+    double total =
+        (hrScore * 0.35) +
+        (brScore * 0.25) +
+        (tempScore * 0.15) +
+        (hrvScore * 0.25);
     return total.clamp(0.0, 100.0);
   }
 
@@ -183,10 +193,13 @@ class ChestStrapService {
 
   factory ChestStrapService() => _instance;
 
-  final ValueNotifier<ChestStrapState> connectionState = ValueNotifier(ChestStrapState.disconnected);
-  
+  final ValueNotifier<ChestStrapState> connectionState = ValueNotifier(
+    ChestStrapState.disconnected,
+  );
+
   // Broadcast stream for real-time readings
-  final StreamController<ChestStrapReading> _readingsController = StreamController<ChestStrapReading>.broadcast();
+  final StreamController<ChestStrapReading> _readingsController =
+      StreamController<ChestStrapReading>.broadcast();
   Stream<ChestStrapReading> get readingsStream => _readingsController.stream;
 
   @Deprecated('Use readingsStream instead to support multiple listeners')
@@ -199,8 +212,14 @@ class ChestStrapService {
   StreamSubscription? _txSubscription;
   String _receiveBuffer = '';
   int _reconnectAttempts = 0;
+  bool _manualDisconnect = false;
   static const int _maxReconnectAttempts = 5;
-  
+
+  Timer? _simulationTimer;
+  final Random _simulationRandom = Random();
+  final ValueNotifier<bool> simulationEnabled = ValueNotifier(false);
+  final ValueNotifier<bool> simulatedIsWorn = ValueNotifier(true);
+
   static const String _nusServiceUuid = '6E400001-B5A3-F393-E0A9-E50E24DCCA9E';
   static const String _nusTxUuid = '6E400003-B5A3-F393-E0A9-E50E24DCCA9E';
   static const String _prefKey = 'chest_strap_last_reading';
@@ -232,12 +251,78 @@ class ChestStrapService {
 
   bool get isConnected => connectionState.value == ChestStrapState.connected;
 
+  /// Starts a phone-side physiological simulator. This never changes or
+  /// depends on the chest-strap firmware. Simulated packets use the exact
+  /// 12-field feature contract produced by ChestStrap_V3 and are published
+  /// through the same stream as real BLE packets.
+  Future<void> startSimulation({bool isWorn = true}) async {
+    await disconnect();
+
+    simulationEnabled.value = true;
+    simulatedIsWorn.value = isWorn;
+    connectionState.value = ChestStrapState.connected;
+
+    _emitSimulatedReading();
+    _simulationTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _emitSimulatedReading(),
+    );
+  }
+
+  /// Changes the simulated contact state without restarting the simulator.
+  /// Off-body values intentionally become zero, matching HealthEngine.cpp.
+  void setSimulationWorn(bool isWorn) {
+    if (!simulationEnabled.value) return;
+    simulatedIsWorn.value = isWorn;
+    _emitSimulatedReading();
+  }
+
+  Future<void> stopSimulation() async {
+    _simulationTimer?.cancel();
+    _simulationTimer = null;
+    simulationEnabled.value = false;
+    connectionState.value = ChestStrapState.disconnected;
+  }
+
+  double _jitter(double amplitude) {
+    return (_simulationRandom.nextDouble() * 2.0 - 1.0) * amplitude;
+  }
+
+  void _emitSimulatedReading() {
+    if (!simulationEnabled.value) return;
+
+    final worn = simulatedIsWorn.value;
+    final hr = worn ? 72.0 + _jitter(2.5) : 0.0;
+    final reading = ChestStrapReading(
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+      meanHR: hr,
+      meanRR: worn ? 60000.0 / hr : 0.0,
+      sdnn: worn ? 46.0 + _jitter(3.0) : 0.0,
+      rmssd: worn ? 43.0 + _jitter(4.0) : 0.0,
+      meanBR: worn ? 15.5 + _jitter(0.6) : 0.0,
+      stdBR: worn ? 0.55 + _jitter(0.12) : 0.0,
+      meanTemp: worn ? 36.60 + _jitter(0.05) : 0.0,
+      stdTemp: worn ? 0.04 + _jitter(0.01) : 0.0,
+      meanAccMag: worn ? 1.0 + _jitter(0.015) : 0.0,
+      stdAccMag: worn ? 0.018 + _jitter(0.004) : 0.0,
+      isWorn: worn,
+    );
+
+    // Do not persist test data across app launches.
+    _publishReading(reading, persist: false);
+  }
+
   Future<void> startScan() async {
+    if (simulationEnabled.value) {
+      await stopSimulation();
+    }
+
     final scanCompleter = Completer<void>();
 
     try {
       debugPrint('[ChestStrap] Checking Bluetooth adapter state...');
-      if (await FlutterBluePlus.adapterState.first == BluetoothAdapterState.off) {
+      if (await FlutterBluePlus.adapterState.first ==
+          BluetoothAdapterState.off) {
         debugPrint('[ChestStrap] Bluetooth adapter is OFF');
         connectionState.value = ChestStrapState.disabled;
         return;
@@ -250,21 +335,31 @@ class ChestStrapService {
       // Connect directly if ChestStrap_V3 is already paired.
       try {
         final bondedDevices = await FlutterBluePlus.bondedDevices;
-        debugPrint('[ChestStrap] Found ${bondedDevices.length} bonded device(s)');
+        debugPrint(
+          '[ChestStrap] Found ${bondedDevices.length} bonded device(s)',
+        );
         for (var device in bondedDevices) {
           final name = device.platformName.isNotEmpty
               ? device.platformName
               : device.advName;
-          debugPrint('[ChestStrap] Bonded device: "$name" (${device.remoteId})');
+          debugPrint(
+            '[ChestStrap] Bonded device: "$name" (${device.remoteId})',
+          );
           if (name.contains('ChestStrap_V3')) {
-            debugPrint('[ChestStrap] ✅ ChestStrap_V3 found in bonded devices! Connecting directly...');
+            debugPrint(
+              '[ChestStrap] ✅ ChestStrap_V3 found in bonded devices! Connecting directly...',
+            );
             await connectToDevice(device);
             return; // Done — no scan needed
           }
         }
-        debugPrint('[ChestStrap] ChestStrap_V3 not in bonded list, falling back to BLE scan...');
+        debugPrint(
+          '[ChestStrap] ChestStrap_V3 not in bonded list, falling back to BLE scan...',
+        );
       } catch (e) {
-        debugPrint('[ChestStrap] Could not check bonded devices: $e — falling back to scan');
+        debugPrint(
+          '[ChestStrap] Could not check bonded devices: $e — falling back to scan',
+        );
       }
 
       // ── Step 2: Fall back to BLE scan ──
@@ -288,9 +383,11 @@ class ChestStrapService {
               final advDataName = result.advertisementData.advName;
 
               final names = [advName, platformName, advDataName];
-              debugPrint('[ChestStrap] Found device: advName="$advName" '
-                  'platformName="$platformName" advDataName="$advDataName" '
-                  '(${result.device.remoteId})');
+              debugPrint(
+                '[ChestStrap] Found device: advName="$advName" '
+                'platformName="$platformName" advDataName="$advDataName" '
+                '(${result.device.remoteId})',
+              );
 
               if (names.any((n) => n.contains('ChestStrap_V3'))) {
                 targetResult = result;
@@ -319,12 +416,11 @@ class ChestStrapService {
 
       // startScan() itself completes when the timeout expires or stopScan() is
       // called — so we await it to know the scan window has closed.
-      await FlutterBluePlus.startScan(
-        timeout: const Duration(seconds: 15),
-      );
+      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 15));
 
       // If we reach here without having found the device, the scan timed out.
       if (!deviceFound && !scanCompleter.isCompleted) {
+        connectionState.value = ChestStrapState.disconnected;
         scanCompleter.complete();
       }
     } catch (e) {
@@ -339,27 +435,38 @@ class ChestStrapService {
 
   Future<void> connectToDevice(BluetoothDevice device) async {
     try {
+      if (simulationEnabled.value) {
+        await stopSimulation();
+      }
       connectionState.value = ChestStrapState.connecting;
+      _manualDisconnect = false;
       _connectedDevice = device;
       _receiveBuffer = ''; // Clear stale buffer from previous connection
-      
-      debugPrint('[ChestStrap] Connecting to ${device.advName} (${device.remoteId})...');
-      await _connectedDevice!.connect(
-        timeout: const Duration(seconds: 10),
+
+      debugPrint(
+        '[ChestStrap] Connecting to ${device.advName} (${device.remoteId})...',
       );
-      
+      await _connectedDevice!.connect(timeout: const Duration(seconds: 10));
+
       _reconnectAttempts = 0;
       debugPrint('[ChestStrap] Connected! Requesting MTU 256...');
 
       // Request larger MTU so the ~90-byte CSV arrives in 1-2 packets
       // instead of 4-5 with the default 23-byte MTU.
-      final mtu = await _connectedDevice!.requestMtu(256);
-      debugPrint('[ChestStrap] MTU negotiated: $mtu');
-      
-      _connectionSubscription?.cancel();
-      _connectionSubscription = _connectedDevice!.connectionState.listen(_onConnectionStateChanged);
+      try {
+        final mtu = await _connectedDevice!.requestMtu(256);
+        debugPrint('[ChestStrap] MTU negotiated: $mtu');
+      } catch (e) {
+        // The firmware already sends 20-byte chunks, so MTU negotiation is
+        // only an optimisation and must not make an otherwise valid BLE
+        // connection fail (notably on iOS).
+        debugPrint('[ChestStrap] MTU request skipped/failed safely: $e');
+      }
 
-      connectionState.value = ChestStrapState.connected;
+      _connectionSubscription?.cancel();
+      _connectionSubscription = _connectedDevice!.connectionState.listen(
+        _onConnectionStateChanged,
+      );
 
       debugPrint('[ChestStrap] Discovering services...');
       final services = await _connectedDevice!.discoverServices();
@@ -374,7 +481,9 @@ class ChestStrapService {
       }
 
       if (nusService != null) {
-        debugPrint('[ChestStrap] NUS service found. Looking for TX characteristic...');
+        debugPrint(
+          '[ChestStrap] NUS service found. Looking for TX characteristic...',
+        );
         BluetoothCharacteristic? txChar;
         for (var c in nusService.characteristics) {
           if (c.uuid.toString().toUpperCase() == _nusTxUuid.toUpperCase()) {
@@ -384,7 +493,9 @@ class ChestStrapService {
         }
 
         if (txChar != null) {
-          debugPrint('[ChestStrap] TX characteristic found. Subscribing to notifications...');
+          debugPrint(
+            '[ChestStrap] TX characteristic found. Subscribing to notifications...',
+          );
           await txChar.setNotifyValue(true);
           _txSubscription?.cancel();
           _txSubscription = txChar.lastValueStream.listen((value) {
@@ -394,33 +505,40 @@ class ChestStrapService {
               _processBuffer();
             }
           });
+          connectionState.value = ChestStrapState.connected;
           debugPrint('[ChestStrap] ✅ Fully connected and listening for data.');
         } else {
-          debugPrint('[ChestStrap] ⚠️ TX characteristic NOT found in NUS service!');
+          debugPrint(
+            '[ChestStrap] ⚠️ TX characteristic NOT found in NUS service!',
+          );
+          await disconnect();
         }
       } else {
-        debugPrint('[ChestStrap] ⚠️ NUS service NOT found! Available services:');
+        debugPrint(
+          '[ChestStrap] ⚠️ NUS service NOT found! Available services:',
+        );
         for (var s in services) {
           debugPrint('[ChestStrap]   - ${s.uuid}');
         }
+        await disconnect();
       }
     } catch (e) {
       debugPrint('[ChestStrap] Error connecting to device: $e');
       connectionState.value = ChestStrapState.disconnected;
     }
   }
-  
+
   void _processBuffer() {
     // Primary path: newline-delimited parsing (firmware sends \n)
     int newlineIndex = _receiveBuffer.indexOf('\n');
     while (newlineIndex != -1) {
       String line = _receiveBuffer.substring(0, newlineIndex).trim();
       _receiveBuffer = _receiveBuffer.substring(newlineIndex + 1);
-      
+
       if (line.isNotEmpty) {
         _parseCsvLine(line);
       }
-      
+
       newlineIndex = _receiveBuffer.indexOf('\n');
     }
 
@@ -446,7 +564,9 @@ class ChestStrapService {
           String line = _receiveBuffer.substring(0, endIndex).trim();
           _receiveBuffer = _receiveBuffer.substring(endIndex).trimLeft();
           if (line.isNotEmpty) {
-            debugPrint('[ChestStrap] Fallback parser extracted line (no newline in buffer)');
+            debugPrint(
+              '[ChestStrap] Fallback parser extracted line (no newline in buffer)',
+            );
             _parseCsvLine(line);
           }
         }
@@ -455,7 +575,9 @@ class ChestStrapService {
 
     // Safety: prevent unbounded buffer growth from corrupt data
     if (_receiveBuffer.length > 1024) {
-      debugPrint('[ChestStrap] ⚠️ Receive buffer overflow (${_receiveBuffer.length} bytes). Clearing.');
+      debugPrint(
+        '[ChestStrap] ⚠️ Receive buffer overflow (${_receiveBuffer.length} bytes). Clearing.',
+      );
       _receiveBuffer = '';
     }
   }
@@ -463,19 +585,28 @@ class ChestStrapService {
   void _parseCsvLine(String line) {
     try {
       final reading = ChestStrapReading.fromCsv(line);
-      lastReading = reading;
-      _saveReading(reading);
-      debugPrint('[ChestStrap] 📊 HR=${reading.meanHR.toStringAsFixed(1)} BR=${reading.meanBR.toStringAsFixed(1)} Temp=${reading.meanTemp.toStringAsFixed(1)} RMSSD=${reading.rmssd.toStringAsFixed(1)}');
-      
-      // Add to broadcast stream
-      _readingsController.add(reading);
-      
-      if (onDataReceived != null) {
-        onDataReceived!(reading);
-      }
+      _publishReading(reading);
     } catch (e) {
       debugPrint('[ChestStrap] Error parsing CSV "$line": $e');
     }
+  }
+
+  void _publishReading(ChestStrapReading reading, {bool persist = true}) {
+    lastReading = reading;
+    if (persist) {
+      _saveReading(reading);
+    }
+    debugPrint(
+      '[ChestStrap] 📊 HR=${reading.meanHR.toStringAsFixed(1)} '
+      'BR=${reading.meanBR.toStringAsFixed(1)} '
+      'Temp=${reading.meanTemp.toStringAsFixed(1)} '
+      'RMSSD=${reading.rmssd.toStringAsFixed(1)} '
+      'worn=${reading.isWorn} '
+      'source=${simulationEnabled.value ? "simulation" : "ble"}',
+    );
+
+    _readingsController.add(reading);
+    onDataReceived?.call(reading);
   }
 
   void _onConnectionStateChanged(BluetoothConnectionState state) {
@@ -484,27 +615,37 @@ class ChestStrapService {
       connectionState.value = ChestStrapState.disconnected;
       _txSubscription?.cancel();
       _connectionSubscription?.cancel();
-      
-      if (_reconnectAttempts < _maxReconnectAttempts && _connectedDevice != null) {
+
+      if (!_manualDisconnect &&
+          _reconnectAttempts < _maxReconnectAttempts &&
+          _connectedDevice != null) {
         _reconnectAttempts++;
-        debugPrint('[ChestStrap] Reconnect attempt $_reconnectAttempts/$_maxReconnectAttempts in 3s...');
+        debugPrint(
+          '[ChestStrap] Reconnect attempt $_reconnectAttempts/$_maxReconnectAttempts in 3s...',
+        );
         Future.delayed(const Duration(seconds: 3), () {
           if (_connectedDevice != null) {
             connectToDevice(_connectedDevice!);
           }
         });
       } else if (_reconnectAttempts >= _maxReconnectAttempts) {
-        debugPrint('[ChestStrap] ⚠️ Max reconnect attempts reached. Giving up.');
+        debugPrint(
+          '[ChestStrap] ⚠️ Max reconnect attempts reached. Giving up.',
+        );
       }
     }
   }
 
   Future<void> disconnect() async {
     try {
+      _manualDisconnect = true;
+      _simulationTimer?.cancel();
+      _simulationTimer = null;
+      simulationEnabled.value = false;
       _scanSubscription?.cancel();
       _connectionSubscription?.cancel();
       _txSubscription?.cancel();
-      
+
       if (_connectedDevice != null) {
         await _connectedDevice!.disconnect();
         _connectedDevice = null;

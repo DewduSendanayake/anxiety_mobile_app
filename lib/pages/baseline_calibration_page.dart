@@ -11,13 +11,12 @@ import 'main_navigation_page.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // Baseline Calibration Page
 //
-// Collects a few minutes of clean resting physiological data using the same
-// simulation engine as SensorManager, then computes per-channel mean and
-// standard deviation and uploads them to the /set_norm_params endpoint.
+// Collects three minutes of one-feature-packet-per-second physiological data,
+// then computes baseline statistics for the exact 10-feature server contract.
 //
-// The six channels match what SensorManager and the server expect:
-//   [0] ECG      [1] Respiration  [2] Temperature
-//   [3] Acc X    [4] Acc Y        [5] Acc Z
+// Feature order:
+// [meanHR, meanRR, SDNN, RMSSD, meanBR, stdBR,
+//  meanTemp, stdTemp, meanAccMag, stdAccMag]
 // ─────────────────────────────────────────────────────────────────────────────
 
 class BaselineCalibrationPage extends StatefulWidget {
@@ -33,7 +32,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
     with TickerProviderStateMixin {
   // ── Constants ──────────────────────────────────────────────────
   static const int _totalSeconds = 180; // 3 minutes of resting data
-  static const int _samplingRate = 700; // samples per second (matches SensorManager)
+  static const int _minimumReadings = 120;
 
   // ── State ──────────────────────────────────────────────────────
   _Phase _phase = _Phase.instructions;
@@ -42,6 +41,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   String? _errorMessage;
 
   Timer? _collectionTimer;
+  StreamSubscription<ChestStrapReading>? _collectionSubscription;
+  int? _lastCollectedTimestamp;
   final List<ChestStrapReading> _collectedReadings = [];
 
   // Calibrated physiological features
@@ -92,6 +93,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   @override
   void dispose() {
     _collectionTimer?.cancel();
+    _collectionSubscription?.cancel();
     _pulseController.dispose();
     _waveController.dispose();
     _fadeController.dispose();
@@ -106,7 +108,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
     final lastReading = ChestStrapService().lastReading;
     if (!ChestStrapService().isConnected) {
       setState(() {
-        _errorMessage = 'Chest strap is not connected. Calibration requires real physiological signals.';
+        _errorMessage =
+            'No physiological stream is connected. Connect the chest strap or enable the research simulator.';
         _phase = _Phase.error;
       });
       return;
@@ -114,13 +117,27 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
 
     if (lastReading == null || !lastReading.isWorn) {
       setState(() {
-        _errorMessage = 'Chest strap is connected, but not detected on your chest. Please put on the strap properly before starting calibration.';
+        _errorMessage =
+            'Chest strap is connected, but not detected on your chest. Please put on the strap properly before starting calibration.';
         _phase = _Phase.error;
       });
       return;
     }
 
     _collectedReadings.clear();
+    _lastCollectedTimestamp = null;
+
+    // Collect the packets that actually arrive instead of re-adding a stale
+    // lastReading once per second when BLE has stopped delivering data.
+    _collectionSubscription?.cancel();
+    _collectionSubscription = ChestStrapService().readingsStream.listen((
+      reading,
+    ) {
+      if (_phase != _Phase.collecting || !reading.isWorn) return;
+      if (_lastCollectedTimestamp == reading.timestamp) return;
+      _lastCollectedTimestamp = reading.timestamp;
+      _collectedReadings.add(reading);
+    });
 
     setState(() {
       _phase = _Phase.collecting;
@@ -128,39 +145,35 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
       _errorMessage = null;
     });
 
-    _collectionTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (timer) {
-        if (!mounted) {
-          timer.cancel();
-          return;
-        }
+    _collectionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
 
-        if (!ChestStrapService().isConnected) {
-          timer.cancel();
-          setState(() {
-            _errorMessage = 'Chest strap disconnected during calibration.';
-            _phase = _Phase.error;
-          });
-          return;
-        }
+      if (!ChestStrapService().isConnected) {
+        timer.cancel();
+        _collectionSubscription?.cancel();
+        _collectionSubscription = null;
+        setState(() {
+          _errorMessage = 'Chest strap disconnected during calibration.';
+          _phase = _Phase.error;
+        });
+        return;
+      }
 
-        final reading = ChestStrapService().lastReading;
-        if (reading != null && reading.isWorn) {
-          _collectedReadings.add(reading);
-        }
+      setState(() => _elapsedSeconds++);
 
-        setState(() => _elapsedSeconds++);
-
-        if (_elapsedSeconds >= _totalSeconds) {
-          timer.cancel();
-          _finishCollection();
-        }
-      },
-    );
+      if (_elapsedSeconds >= _totalSeconds) {
+        timer.cancel();
+        _finishCollection();
+      }
+    });
   }
 
   void _finishCollection() {
+    _collectionSubscription?.cancel();
+    _collectionSubscription = null;
     setState(() => _phase = _Phase.calculating);
     // Give the UI one frame to update before the heavy computation
     Future.delayed(const Duration(milliseconds: 300), _computeAndUpload);
@@ -171,9 +184,11 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   // ═══════════════════════════════════════════════════════════════
 
   Future<void> _computeAndUpload() async {
-    if (_collectedReadings.isEmpty) {
+    if (_collectedReadings.length < _minimumReadings) {
       setState(() {
-        _errorMessage = 'Insufficient data collected for calibration.';
+        _errorMessage =
+            'Only ${_collectedReadings.length} valid worn packets were received. '
+            'At least $_minimumReadings are required. Check the connection and try again.';
         _phase = _Phase.error;
       });
       return;
@@ -186,29 +201,58 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
     for (int w = 0; w < 3; w++) {
       final int start = w * windowLength;
       final int end = start + windowLength;
-      
+
       if (start >= _collectedReadings.length) break;
-      
+
       final windowReadings = _collectedReadings.sublist(
-        start, 
-        end > _collectedReadings.length ? _collectedReadings.length : end
+        start,
+        end > _collectedReadings.length ? _collectedReadings.length : end,
       );
 
       // Average the 10 features for this window
       if (windowReadings.isNotEmpty) {
-        double meanHR = windowReadings.map((r) => r.meanHR).reduce((a, b) => a + b) / windowReadings.length;
-        double meanRR = windowReadings.map((r) => r.meanRR).reduce((a, b) => a + b) / windowReadings.length;
-        double sdnn = windowReadings.map((r) => r.sdnn).reduce((a, b) => a + b) / windowReadings.length;
-        double rmssd = windowReadings.map((r) => r.rmssd).reduce((a, b) => a + b) / windowReadings.length;
-        double meanBR = windowReadings.map((r) => r.meanBR).reduce((a, b) => a + b) / windowReadings.length;
-        double stdBR = windowReadings.map((r) => r.stdBR).reduce((a, b) => a + b) / windowReadings.length;
-        double meanTemp = windowReadings.map((r) => r.meanTemp).reduce((a, b) => a + b) / windowReadings.length;
-        double stdTemp = windowReadings.map((r) => r.stdTemp).reduce((a, b) => a + b) / windowReadings.length;
-        double meanAccMag = windowReadings.map((r) => r.meanAccMag).reduce((a, b) => a + b) / windowReadings.length;
-        double stdAccMag = windowReadings.map((r) => r.stdAccMag).reduce((a, b) => a + b) / windowReadings.length;
-        
+        double meanHR =
+            windowReadings.map((r) => r.meanHR).reduce((a, b) => a + b) /
+            windowReadings.length;
+        double meanRR =
+            windowReadings.map((r) => r.meanRR).reduce((a, b) => a + b) /
+            windowReadings.length;
+        double sdnn =
+            windowReadings.map((r) => r.sdnn).reduce((a, b) => a + b) /
+            windowReadings.length;
+        double rmssd =
+            windowReadings.map((r) => r.rmssd).reduce((a, b) => a + b) /
+            windowReadings.length;
+        double meanBR =
+            windowReadings.map((r) => r.meanBR).reduce((a, b) => a + b) /
+            windowReadings.length;
+        double stdBR =
+            windowReadings.map((r) => r.stdBR).reduce((a, b) => a + b) /
+            windowReadings.length;
+        double meanTemp =
+            windowReadings.map((r) => r.meanTemp).reduce((a, b) => a + b) /
+            windowReadings.length;
+        double stdTemp =
+            windowReadings.map((r) => r.stdTemp).reduce((a, b) => a + b) /
+            windowReadings.length;
+        double meanAccMag =
+            windowReadings.map((r) => r.meanAccMag).reduce((a, b) => a + b) /
+            windowReadings.length;
+        double stdAccMag =
+            windowReadings.map((r) => r.stdAccMag).reduce((a, b) => a + b) /
+            windowReadings.length;
+
         featuresPerWindow.add([
-          meanHR, meanRR, sdnn, rmssd, meanBR, stdBR, meanTemp, stdTemp, meanAccMag, stdAccMag
+          meanHR,
+          meanRR,
+          sdnn,
+          rmssd,
+          meanBR,
+          stdBR,
+          meanTemp,
+          stdTemp,
+          meanAccMag,
+          stdAccMag,
         ]);
       }
     }
@@ -234,7 +278,9 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
       if (vals.length < 2) {
         finalStds[f] = 1e-6; // standard minimum fallback
       } else {
-        final double varSum = vals.map((x) => (x - meanVal) * (x - meanVal)).reduce((a, b) => a + b);
+        final double varSum = vals
+            .map((x) => (x - meanVal) * (x - meanVal))
+            .reduce((a, b) => a + b);
         double stdVal = sqrt(varSum / vals.length);
         if (stdVal < 1e-6) stdVal = 1e-6;
         finalStds[f] = stdVal;
@@ -295,9 +341,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
     );
   }
 
-  /// Skip calibration — we save the flag anyway so the user isn't
-  /// prompted again.  The server will use global defaults until the
-  /// user recalibrates from the dashboard.
+  /// Skip the setup screen for now. Forecasting remains unavailable until
+  /// normalization parameters are supplied by a later calibration.
   void _skip() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('calibration_complete', true);
@@ -322,10 +367,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           ),
         ),
         child: SafeArea(
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: _buildBody(),
-          ),
+          child: FadeTransition(opacity: _fadeAnimation, child: _buildBody()),
         ),
       ),
     );
@@ -478,6 +520,10 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
 
           const SizedBox(height: 32),
 
+          _buildSimulationControls(),
+
+          const SizedBox(height: 20),
+
           // Start button
           SizedBox(
             width: double.infinity,
@@ -509,7 +555,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           TextButton(
             onPressed: _skip,
             child: Text(
-              'Skip for now (use global defaults)',
+              'Skip calibration for now',
               style: GoogleFonts.poppins(
                 fontSize: 12,
                 color: Colors.white.withValues(alpha: 0.65),
@@ -522,6 +568,114 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           const SizedBox(height: 16),
         ],
       ),
+    );
+  }
+
+  Widget _buildSimulationControls() {
+    final chestStrap = ChestStrapService();
+    return ValueListenableBuilder<bool>(
+      valueListenable: chestStrap.simulationEnabled,
+      builder: (context, enabled, _) {
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+          ),
+          child: Column(
+            children: [
+              ValueListenableBuilder<ChestStrapState>(
+                valueListenable: chestStrap.connectionState,
+                builder: (context, state, _) {
+                  final connected = state == ChestStrapState.connected;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      connected
+                          ? Icons.bluetooth_connected_rounded
+                          : Icons.bluetooth_searching_rounded,
+                      color: Colors.white,
+                    ),
+                    title: Text(
+                      connected
+                          ? 'Physiological stream connected'
+                          : 'Connect real chest strap',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    trailing: connected
+                        ? null
+                        : TextButton(
+                            onPressed: chestStrap.startScan,
+                            child: const Text(
+                              'Scan',
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ),
+                  );
+                },
+              ),
+              Divider(color: Colors.white.withValues(alpha: 0.2)),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  'Research simulator',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                subtitle: Text(
+                  'Uses realistic 10-feature packets without changing the firmware.',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontSize: 11,
+                  ),
+                ),
+                value: enabled,
+                onChanged: (value) async {
+                  if (value) {
+                    await chestStrap.startSimulation(isWorn: true);
+                  } else {
+                    await chestStrap.stopSimulation();
+                  }
+                },
+              ),
+              if (enabled)
+                ValueListenableBuilder<bool>(
+                  valueListenable: chestStrap.simulatedIsWorn,
+                  builder: (context, isWorn, _) {
+                    return SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        'Simulate strap being worn',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 13,
+                        ),
+                      ),
+                      subtitle: Text(
+                        isWorn
+                            ? 'Sending realistic calm physiological values'
+                            : 'Sending firmware-matching zero values with isWorn=false',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white.withValues(alpha: 0.7),
+                          fontSize: 10.5,
+                        ),
+                      ),
+                      value: isWorn,
+                      onChanged: chestStrap.setSimulationWorn,
+                    );
+                  },
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -580,7 +734,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: Colors.white.withValues(
-                          alpha: 0.06 * _pulseAnimation.value),
+                        alpha: 0.06 * _pulseAnimation.value,
+                      ),
                     ),
                   ),
                   // Progress ring
@@ -671,7 +826,6 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   }
 
   Widget _buildLiveStats() {
-    final int samples = _collectedReadings.length * _samplingRate;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
@@ -682,11 +836,15 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _statChip(Icons.timeline_rounded, '${(samples / 1000).toStringAsFixed(1)}K', 'Samples'),
+          _statChip(
+            Icons.timeline_rounded,
+            '${_collectedReadings.length}',
+            'Packets',
+          ),
           _vertDivider(),
-          _statChip(Icons.graphic_eq_rounded, '6', 'Channels'),
+          _statChip(Icons.graphic_eq_rounded, '10', 'Features'),
           _vertDivider(),
-          _statChip(Icons.speed_rounded, '${_samplingRate}Hz', 'Rate'),
+          _statChip(Icons.speed_rounded, '1Hz', 'Rate'),
         ],
       ),
     );
@@ -777,7 +935,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   // ─────────────────────────────────────────────────────────────
 
   Widget _buildDoneView() {
-    final int totalSamples = _collectedReadings.length * _samplingRate;
+    final int totalPackets = _collectedReadings.length;
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
@@ -856,15 +1014,20 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
                 ),
                 const SizedBox(height: 16),
                 _summaryRow('Duration', '${_totalSeconds ~/ 60} minutes'),
-                _summaryRow('Total raw samples',
-                    '${(totalSamples / 1000).toStringAsFixed(0)}K'),
+                _summaryRow('Valid feature packets', '$totalPackets'),
                 _summaryRow('Features extracted', '10'),
                 _summaryRow(
-                    'Resting HR', '${_restingHR.toStringAsFixed(1)} BPM'),
+                  'Resting HR',
+                  '${_restingHR.toStringAsFixed(1)} BPM',
+                ),
                 _summaryRow(
-                    'Resting BR', '${_restingBR.toStringAsFixed(1)} breaths/min'),
+                  'Resting BR',
+                  '${_restingBR.toStringAsFixed(1)} breaths/min',
+                ),
                 _summaryRow(
-                    'Resting Temp', '${_restingTemp.toStringAsFixed(2)} °C'),
+                  'Resting Temp',
+                  '${_restingTemp.toStringAsFixed(2)} °C',
+                ),
                 _summaryRow('Upload status', 'Success ✓'),
               ],
             ),
@@ -954,7 +1117,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           const SizedBox(height: 28),
 
           Text(
-            'Upload Failed',
+            'Calibration Failed',
             style: GoogleFonts.poppins(
               fontSize: 24,
               fontWeight: FontWeight.w700,
@@ -979,10 +1142,19 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: _computeAndUpload,
+              onPressed: _collectedReadings.length >= _minimumReadings
+                  ? _computeAndUpload
+                  : () {
+                      setState(() {
+                        _phase = _Phase.instructions;
+                        _errorMessage = null;
+                      });
+                    },
               icon: const Icon(Icons.refresh_rounded),
               label: Text(
-                'Retry Upload',
+                _collectedReadings.length >= _minimumReadings
+                    ? 'Retry Upload'
+                    : 'Back to Setup',
                 style: GoogleFonts.poppins(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
@@ -1081,8 +1253,11 @@ class _StepCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Icon(icon,
-                        color: Colors.white.withValues(alpha: 0.8), size: 18),
+                    Icon(
+                      icon,
+                      color: Colors.white.withValues(alpha: 0.8),
+                      size: 18,
+                    ),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
