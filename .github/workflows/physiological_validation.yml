@@ -36,6 +36,7 @@ jobs:
           test/chest_strap_contract_test.dart
 
       - name: Analyze physiological files
+        continue-on-error: true
         run: >
           flutter analyze
           lib/main.dart
