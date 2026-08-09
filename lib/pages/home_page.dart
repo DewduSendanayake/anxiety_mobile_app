@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/chest_strap_service.dart';
+import '../services/api_service.dart';
 
 /// Home Page — the first tab the user sees.
 ///
@@ -24,8 +25,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
   ChestStrapReading? _lastReading;
   StreamSubscription<ChestStrapReading>? _readingSubscription;
 
-  // ── Phenotyping risk (static simulation) ────────────────────
-  static const double _phenotypingRisk = 0.72; // from GATv2
+  Map<String, dynamic>? _weeklySummary;
 
   // ── Notification state ─────────────────────────────────────
   final List<String> _notifications = [];
@@ -60,7 +60,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
-    // A saved reading must never be presented as a current risk score.
+    // Listen to real chest strap data
     _lastReading = _chestStrap.hasLiveWornReading
         ? _chestStrap.lastReading
         : null;
@@ -80,21 +80,37 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
     // Listen for connection state changes so the UI updates when the
     // chest strap connects or disconnects.
     _chestStrap.connectionState.addListener(_onConnectionChanged);
+    _chestStrap.liveReadingAvailable.addListener(_onLiveAvailabilityChanged);
+    _loadWeeklySummary();
   }
 
   void _onConnectionChanged() {
     if (mounted) {
       setState(() {
-        if (!_chestStrap.isConnected) {
-          _lastReading = null;
-        }
+        if (!_chestStrap.isConnected) _lastReading = null;
       });
+    }
+  }
+
+  void _onLiveAvailabilityChanged() {
+    if (mounted && !_chestStrap.hasLiveWornReading) {
+      setState(() => _lastReading = null);
+    }
+  }
+
+  Future<void> _loadWeeklySummary() async {
+    final userId = widget.userId;
+    if (userId == null || userId.isEmpty) return;
+    final summary = await ApiService.getWeeklyFeedbackSummary(userId);
+    if (mounted && summary['status'] == 'success') {
+      setState(() => _weeklySummary = summary);
     }
   }
 
   @override
   void dispose() {
     _chestStrap.connectionState.removeListener(_onConnectionChanged);
+    _chestStrap.liveReadingAvailable.removeListener(_onLiveAvailabilityChanged);
     _readingSubscription?.cancel();
     _fadeController.dispose();
     _pulseController.dispose();
@@ -103,29 +119,23 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   // ── Combined Risk Logic ─────────────────────────────────────
   bool get _hasLiveReading =>
-      _chestStrap.isConnected && (_lastReading?.isWorn ?? false);
+      _chestStrap.hasLiveWornReading && (_lastReading?.isWorn ?? false);
 
-  /// Combines physiological risk (0-100) and phenotyping risk (0.0-1.0)
-  /// into an overall normalised score (0-100).
+  /// Uses physiological risk until the cross-team fusion endpoint is live.
+  /// Showing a hard-coded phenotyping score as an "overall" result would be
+  /// misleading, so no combined score is fabricated here.
   double get _overallRisk {
-    if (!_hasLiveReading) return 0.0;
-    final physioNorm = _lastReading?.riskScore ?? 0.0;
-    final phenoNorm = _phenotypingRisk * 100;
-    return (physioNorm * 0.75 + phenoNorm * 0.25).clamp(0, 100);
+    return _hasLiveReading ? _lastReading!.riskScore : 0.0;
   }
 
   String _overallLabel(ChestStrapReading? reading) {
     if (!_chestStrap.isConnected || reading == null || !reading.isWorn) {
       return 'Unavailable';
     }
-    final score = reading.riskScore;
-    final combined = (score * 0.75 + _phenotypingRisk * 100 * 0.25).clamp(
-      0,
-      100,
-    );
-    if (combined <= 25) return 'Low';
-    if (combined <= 50) return 'Moderate';
-    if (combined <= 75) return 'Elevated';
+    final score = reading?.riskScore ?? 0.0;
+    if (score <= 20) return 'Low';
+    if (score <= 45) return 'Moderate';
+    if (score <= 70) return 'Elevated';
     return 'High';
   }
 
@@ -137,6 +147,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   IconData _overallIcon(double score) {
+    if (!_hasLiveReading) return Icons.sensors_off_rounded;
     if (score <= 25) return Icons.sentiment_very_satisfied_rounded;
     if (score <= 50) return Icons.sentiment_satisfied_rounded;
     if (score <= 75) return Icons.sentiment_neutral_rounded;
@@ -144,6 +155,9 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   String _overallMessage(double score) {
+    if (!_hasLiveReading) {
+      return 'Connect and wear the chest strap to view a live physiological risk index.';
+    }
     if (score <= 25) {
       return 'Your overall anxiety score is currently low. You\'re doing great — keep it up! 🌿';
     } else if (score <= 50) {
@@ -184,9 +198,8 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
   // ═══════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    final hasLiveReading = _hasLiveReading;
     final risk = _overallRisk;
-    final riskCol = hasLiveReading ? _overallColor(risk) : Colors.grey;
+    final riskCol = _hasLiveReading ? _overallColor(risk) : Colors.grey;
     final label = _overallLabel(_lastReading);
 
     return Scaffold(
@@ -311,7 +324,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           Expanded(
                             child: Text(
                               !_chestStrap.isConnected
-                                  ? 'Chest strap not connected — risk score unavailable'
+                                  ? 'Chest strap not connected — risk is unavailable'
                                   : 'Chest strap connected — please wear it on your chest to stream vitals',
                               style: GoogleFonts.poppins(
                                 fontSize: 11,
@@ -391,9 +404,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                     ),
                                   ),
                                   child: Icon(
-                                    hasLiveReading
-                                        ? _overallIcon(risk)
-                                        : Icons.sensors_off_rounded,
+                                    _overallIcon(risk),
                                     color: Colors.white,
                                     size: 30,
                                   ),
@@ -405,7 +416,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        'Overall Anxiety Level',
+                                        'Physiological Anxiety Level',
                                         style: GoogleFonts.poppins(
                                           fontSize: 12,
                                           color: Colors.white.withValues(
@@ -441,7 +452,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                   ),
                                   child: Center(
                                     child: Text(
-                                      hasLiveReading
+                                      _hasLiveReading
                                           ? risk.toStringAsFixed(0)
                                           : '--',
                                       style: GoogleFonts.poppins(
@@ -472,7 +483,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                   ),
                                   AnimatedFractionallySizedBox(
                                     duration: const Duration(milliseconds: 600),
-                                    widthFactor: hasLiveReading
+                                    widthFactor: _hasLiveReading
                                         ? (risk / 100).clamp(0.02, 1.0)
                                         : 0.0,
                                     child: Container(
@@ -495,16 +506,22 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                _riskLabel('Low', hasLiveReading && risk <= 25),
+                                _riskLabel(
+                                  'Low',
+                                  _hasLiveReading && risk <= 20,
+                                ),
                                 _riskLabel(
                                   'Moderate',
-                                  hasLiveReading && risk > 25 && risk <= 50,
+                                  _hasLiveReading && risk > 20 && risk <= 45,
                                 ),
                                 _riskLabel(
                                   'Elevated',
-                                  hasLiveReading && risk > 50 && risk <= 75,
+                                  _hasLiveReading && risk > 45 && risk <= 70,
                                 ),
-                                _riskLabel('High', hasLiveReading && risk > 75),
+                                _riskLabel(
+                                  'High',
+                                  _hasLiveReading && risk > 70,
+                                ),
                               ],
                             ),
                             const SizedBox(height: 16),
@@ -521,9 +538,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                 ),
                               ),
                               child: Text(
-                                hasLiveReading
-                                    ? _overallMessage(risk)
-                                    : 'Connect and wear the chest strap, or enable the research simulator, to calculate a current risk score.',
+                                _overallMessage(risk),
                                 style: GoogleFonts.poppins(
                                   fontSize: 13,
                                   color: Colors.white.withValues(alpha: 0.9),
@@ -539,6 +554,10 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       );
                     },
                   ),
+
+                  const SizedBox(height: 24),
+
+                  _buildWeeklyInsightsCard(),
 
                   const SizedBox(height: 24),
 
@@ -596,6 +615,94 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
         fontSize: 10,
         color: Colors.white.withValues(alpha: active ? 1.0 : 0.5),
         fontWeight: active ? FontWeight.w700 : FontWeight.w400,
+      ),
+    );
+  }
+
+  Widget _buildWeeklyInsightsCard() {
+    final summary = _weeklySummary;
+    final alerts = (summary?['alerts'] as num?)?.toInt() ?? 0;
+    final answered = (summary?['answered_alerts'] as num?)?.toInt() ?? 0;
+    final commonActivity = summary?['common_activity'] as String?;
+    final effectiveAction = summary?['most_effective_action'] as String?;
+    final confirmationRate = (summary?['confirmation_rate'] as num?)
+        ?.toDouble();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.13),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.insights_rounded, color: Colors.white),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Your weekly physiological insights',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: _loadWeeklySummary,
+                icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+                tooltip: 'Refresh weekly insights',
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            summary == null
+                ? 'Complete anxiety check-ins to build your weekly summary.'
+                : alerts == 0
+                ? 'No sustained-high alerts were recorded in the last 7 days.'
+                : '$alerts alert${alerts == 1 ? '' : 's'}, $answered answered'
+                      '${confirmationRate == null ? '' : ' · ${(confirmationRate * 100).round()}% confirmed'}',
+            style: GoogleFonts.poppins(
+              color: Colors.white.withValues(alpha: 0.88),
+              fontSize: 12,
+              height: 1.45,
+            ),
+          ),
+          if (commonActivity != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Most common context: $commonActivity',
+              style: GoogleFonts.poppins(
+                color: Colors.white.withValues(alpha: 0.82),
+                fontSize: 11,
+              ),
+            ),
+          ],
+          if (effectiveAction != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Often followed by improvement: $effectiveAction',
+              style: GoogleFonts.poppins(
+                color: Colors.white.withValues(alpha: 0.82),
+                fontSize: 11,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Text(
+            'Patterns are observational and are not medical conclusions.',
+            style: GoogleFonts.poppins(
+              color: Colors.white.withValues(alpha: 0.62),
+              fontSize: 10,
+            ),
+          ),
+        ],
       ),
     );
   }

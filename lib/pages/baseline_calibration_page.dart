@@ -305,6 +305,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
         userId: widget.userId,
         bMean: finalMeans,
         bStd: finalStds,
+        baselineWindows: featuresPerWindow,
       );
     } catch (e) {
       ok = false;
@@ -592,17 +593,16 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
               ValueListenableBuilder<ChestStrapState>(
                 valueListenable: chestStrap.connectionState,
                 builder: (context, state, _) {
-                  final connected = state == ChestStrapState.connected;
                   return ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(
-                      connected
+                      chestStrap.isConnected
                           ? Icons.bluetooth_connected_rounded
                           : Icons.bluetooth_searching_rounded,
                       color: Colors.white,
                     ),
                     title: Text(
-                      connected
+                      chestStrap.isConnected
                           ? 'Physiological stream connected'
                           : 'Connect real chest strap',
                       style: GoogleFonts.poppins(
@@ -611,7 +611,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    trailing: connected
+                    trailing: chestStrap.isConnected
                         ? null
                         : TextButton(
                             onPressed: chestStrap.startScan,

@@ -46,6 +46,14 @@ Future<void> initializeService() async {
         importance: Importance.high,
       ),
     );
+    await androidPlugin.createNotificationChannel(
+      const AndroidNotificationChannel(
+        'anxiety_alerts',
+        'Anxiety check-ins',
+        description: 'Heads-up check-ins after physiological signals stay high',
+        importance: Importance.max,
+      ),
+    );
     // GAD-7 weekly alert.
     await androidPlugin.createNotificationChannel(
       const AndroidNotificationChannel(

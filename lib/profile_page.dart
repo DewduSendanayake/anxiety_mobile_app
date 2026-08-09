@@ -20,25 +20,26 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   bool _isEditing = false;
-  String _userId = '';
+  String _displayName = '';
   String? _profileImagePath;
   final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
-    _isEditing = !widget.isTab; // Tab mode starts in view; standalone starts in edit
+    _isEditing =
+        !widget.isTab; // Tab mode starts in view; standalone starts in edit
     _loadProfile();
   }
 
   Future<void> _loadProfile() async {
     final prefs = await SharedPreferences.getInstance();
-    final uid = prefs.getString('user_id') ?? '';
+    final displayName = prefs.getString('display_name') ?? '';
     final profileJson = prefs.getString('user_profile_data');
     if (profileJson != null) {
       final data = jsonDecode(profileJson);
       setState(() {
-        _userId = uid;
+        _displayName = displayName;
         _ageController.text = data['age'] ?? '';
         _gender = data['gender'];
         _maritalStatus = data['marital_status'];
@@ -48,8 +49,9 @@ class _ProfilePageState extends State<ProfilePage> {
         _livingSituation = data['living_situation'];
         _anxietyDiagnosis = data['anxiety_diagnosis'];
         _onMedication = data['on_medication'];
-        _sleepQuality = double.tryParse(data['sleep_quality_rating'] ?? '3') ?? 3;
-        
+        _sleepQuality =
+            double.tryParse(data['sleep_quality_rating'] ?? '3') ?? 3;
+
         _morningTime = TimeOfDay(
           hour: prefs.getInt('ema_morning_hour') ?? 9,
           minute: prefs.getInt('ema_morning_minute') ?? 0,
@@ -66,7 +68,7 @@ class _ProfilePageState extends State<ProfilePage> {
       });
     } else {
       setState(() {
-        _userId = uid;
+        _displayName = displayName;
         _profileImagePath = prefs.getString('profile_image_path');
       });
     }
@@ -218,11 +220,15 @@ class _ProfilePageState extends State<ProfilePage> {
         setState(() => _isEditing = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Profile updated successfully!',
-                style: GoogleFonts.poppins(fontSize: 13)),
+            content: Text(
+              'Profile updated successfully!',
+              style: GoogleFonts.poppins(fontSize: 13),
+            ),
             backgroundColor: const Color(0xFF5E60CE),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
         );
       } else {
@@ -293,7 +299,10 @@ class _ProfilePageState extends State<ProfilePage> {
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: Colors.white.withValues(alpha: 0.2),
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 3),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.5),
+                              width: 3,
+                            ),
                             image: _profileImagePath != null
                                 ? DecorationImage(
                                     image: FileImage(File(_profileImagePath!)),
@@ -303,8 +312,10 @@ class _ProfilePageState extends State<ProfilePage> {
                           ),
                           child: _profileImagePath == null
                               ? Icon(
-                                  _gender == 'Male' ? Icons.face_rounded
-                                      : _gender == 'Female' ? Icons.face_3_rounded
+                                  _gender == 'Male'
+                                      ? Icons.face_rounded
+                                      : _gender == 'Female'
+                                      ? Icons.face_3_rounded
                                       : Icons.person_rounded,
                                   color: Colors.white,
                                   size: 48,
@@ -328,7 +339,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    _userId.isNotEmpty ? _userId : 'Unknown User',
+                    _displayName.isNotEmpty ? _displayName : 'Aura user',
                     style: GoogleFonts.poppins(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
@@ -340,13 +351,21 @@ class _ProfilePageState extends State<ProfilePage> {
                   ElevatedButton.icon(
                     onPressed: () => setState(() => _isEditing = true),
                     icon: const Icon(Icons.edit_rounded, size: 18),
-                    label: Text('Edit Profile', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                    label: Text(
+                      'Edit Profile',
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                    ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
                       foregroundColor: const Color(0xFF5E60CE),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                       elevation: 0,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 10,
+                      ),
                     ),
                   ),
                 ],
@@ -361,28 +380,81 @@ class _ProfilePageState extends State<ProfilePage> {
               child: Column(
                 children: [
                   _infoCard('Personal Info', Icons.person_outline_rounded, [
-                    _infoRow(Icons.cake_rounded, 'Age', _ageController.text.isNotEmpty ? '${_ageController.text} years' : 'Not set'),
+                    _infoRow(
+                      Icons.cake_rounded,
+                      'Age',
+                      _ageController.text.isNotEmpty
+                          ? '${_ageController.text} years'
+                          : 'Not set',
+                    ),
                     _infoRow(Icons.wc_rounded, 'Gender', _gender ?? 'Not set'),
-                    _infoRow(Icons.favorite_rounded, 'Marital Status', _maritalStatus ?? 'Not set'),
+                    _infoRow(
+                      Icons.favorite_rounded,
+                      'Marital Status',
+                      _maritalStatus ?? 'Not set',
+                    ),
                   ]),
                   const SizedBox(height: 14),
                   _infoCard('Professional', Icons.work_outline_rounded, [
-                    _infoRow(Icons.business_center_rounded, 'Employment', _employmentStatus ?? 'Not set'),
-                    _infoRow(Icons.account_balance_wallet_rounded, 'Financial Status', _financialStatus ?? 'Not set'),
-                    _infoRow(Icons.school_rounded, 'Education', _educationLevel ?? 'Not set'),
-                    _infoRow(Icons.home_rounded, 'Living Situation', _livingSituation ?? 'Not set'),
+                    _infoRow(
+                      Icons.business_center_rounded,
+                      'Employment',
+                      _employmentStatus ?? 'Not set',
+                    ),
+                    _infoRow(
+                      Icons.account_balance_wallet_rounded,
+                      'Financial Status',
+                      _financialStatus ?? 'Not set',
+                    ),
+                    _infoRow(
+                      Icons.school_rounded,
+                      'Education',
+                      _educationLevel ?? 'Not set',
+                    ),
+                    _infoRow(
+                      Icons.home_rounded,
+                      'Living Situation',
+                      _livingSituation ?? 'Not set',
+                    ),
                   ]),
                   const SizedBox(height: 14),
                   _infoCard('Health', Icons.health_and_safety_outlined, [
-                    _infoRow(Icons.psychology_rounded, 'Anxiety Diagnosis', _anxietyDiagnosis ?? 'Not set'),
-                    _infoRow(Icons.medication_rounded, 'On Medication', _onMedication ?? 'Not set'),
-                    _infoRow(Icons.bedtime_rounded, 'Sleep Quality', sleepLabel),
+                    _infoRow(
+                      Icons.psychology_rounded,
+                      'Anxiety Diagnosis',
+                      _anxietyDiagnosis ?? 'Not set',
+                    ),
+                    _infoRow(
+                      Icons.medication_rounded,
+                      'On Medication',
+                      _onMedication ?? 'Not set',
+                    ),
+                    _infoRow(
+                      Icons.bedtime_rounded,
+                      'Sleep Quality',
+                      sleepLabel,
+                    ),
                   ]),
                   const SizedBox(height: 14),
                   _infoCard('Check-in Schedule', Icons.schedule_rounded, [
-                    _timeTile('Morning', _morningTime, (t) => _saveTime('morning', t), Icons.wb_sunny_rounded),
-                    _timeTile('Afternoon', _afternoonTime, (t) => _saveTime('afternoon', t), Icons.wb_cloudy_rounded),
-                    _timeTile('Evening', _eveningTime, (t) => _saveTime('evening', t), Icons.nightlight_round),
+                    _timeTile(
+                      'Morning',
+                      _morningTime,
+                      (t) => _saveTime('morning', t),
+                      Icons.wb_sunny_rounded,
+                    ),
+                    _timeTile(
+                      'Afternoon',
+                      _afternoonTime,
+                      (t) => _saveTime('afternoon', t),
+                      Icons.wb_cloudy_rounded,
+                    ),
+                    _timeTile(
+                      'Evening',
+                      _eveningTime,
+                      (t) => _saveTime('evening', t),
+                      Icons.nightlight_round,
+                    ),
                   ]),
                   const SizedBox(height: 14),
                   _buildPrivacyCard(),
@@ -425,8 +497,14 @@ class _ProfilePageState extends State<ProfilePage> {
                 child: Icon(icon, color: AppTheme.kPrimaryDeep, size: 20),
               ),
               const SizedBox(width: 12),
-              Text(title, style: GoogleFonts.poppins(
-                fontSize: 15, fontWeight: FontWeight.w600, color: AppTheme.kTextDark)),
+              Text(
+                title,
+                style: GoogleFonts.poppins(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.kTextDark,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 14),
@@ -444,11 +522,22 @@ class _ProfilePageState extends State<ProfilePage> {
           Icon(icon, size: 18, color: AppTheme.kTextLight),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(label, style: GoogleFonts.poppins(
-              fontSize: 13, color: AppTheme.kTextLight)),
+            child: Text(
+              label,
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: AppTheme.kTextLight,
+              ),
+            ),
           ),
-          Text(value, style: GoogleFonts.poppins(
-            fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.kTextDark)),
+          Text(
+            value,
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.kTextDark,
+            ),
+          ),
         ],
       ),
     );
@@ -474,19 +563,32 @@ class _ProfilePageState extends State<ProfilePage> {
                   child: TextButton.icon(
                     onPressed: () => setState(() => _isEditing = false),
                     icon: const Icon(Icons.arrow_back_ios_rounded, size: 16),
-                    label: Text('Back to Profile', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
-                    style: TextButton.styleFrom(foregroundColor: AppTheme.kPrimaryDeep),
+                    label: Text(
+                      'Back to Profile',
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+                    ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.kPrimaryDeep,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),
               ],
               const SizedBox(height: 8),
-              const Icon(Icons.person_pin, size: 52, color: AppTheme.kPrimaryDeep),
+              const Icon(
+                Icons.person_pin,
+                size: 52,
+                color: AppTheme.kPrimaryDeep,
+              ),
               const SizedBox(height: 12),
               const Text(
                 'User Profile',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87),
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
@@ -504,7 +606,8 @@ class _ProfilePageState extends State<ProfilePage> {
                 validator: (v) {
                   if (v == null || v.isEmpty) return 'Required';
                   final n = int.tryParse(v);
-                  if (n == null || n < 16 || n > 60) return 'Enter a valid age (16–60)';
+                  if (n == null || n < 16 || n > 60)
+                    return 'Enter a valid age (16–60)';
                   return null;
                 },
               ),
@@ -515,41 +618,78 @@ class _ProfilePageState extends State<ProfilePage> {
               const SizedBox(height: 16),
 
               _sectionLabel('Marital Status'),
-              _dropdown(_maritalStatuses, _maritalStatus, (v) => setState(() => _maritalStatus = v)),
+              _dropdown(
+                _maritalStatuses,
+                _maritalStatus,
+                (v) => setState(() => _maritalStatus = v),
+              ),
               const SizedBox(height: 16),
 
               _sectionLabel('Employment Status'),
-              _dropdown(_employmentStatuses, _employmentStatus, (v) => setState(() => _employmentStatus = v)),
+              _dropdown(
+                _employmentStatuses,
+                _employmentStatus,
+                (v) => setState(() => _employmentStatus = v),
+              ),
               const SizedBox(height: 16),
 
               _sectionLabel('Financial Status'),
-              _dropdown(_financialStatuses, _financialStatus, (v) => setState(() => _financialStatus = v)),
+              _dropdown(
+                _financialStatuses,
+                _financialStatus,
+                (v) => setState(() => _financialStatus = v),
+              ),
               const SizedBox(height: 16),
 
               _sectionLabel('Highest Education Level'),
-              _dropdown(_educationLevels, _educationLevel, (v) => setState(() => _educationLevel = v)),
+              _dropdown(
+                _educationLevels,
+                _educationLevel,
+                (v) => setState(() => _educationLevel = v),
+              ),
               const SizedBox(height: 16),
 
               _sectionLabel('Living Situation'),
-              _dropdown(_livingSituations, _livingSituation, (v) => setState(() => _livingSituation = v)),
+              _dropdown(
+                _livingSituations,
+                _livingSituation,
+                (v) => setState(() => _livingSituation = v),
+              ),
               const SizedBox(height: 16),
 
-              _sectionLabel('Have you been diagnosed with an anxiety disorder?'),
-              _radioGroup(['Yes', 'No', 'Unsure'], _anxietyDiagnosis, (v) => setState(() => _anxietyDiagnosis = v)),
+              _sectionLabel(
+                'Have you been diagnosed with an anxiety disorder?',
+              ),
+              _radioGroup(
+                ['Yes', 'No', 'Unsure'],
+                _anxietyDiagnosis,
+                (v) => setState(() => _anxietyDiagnosis = v),
+              ),
               const SizedBox(height: 16),
 
-              _sectionLabel('Are you currently on medication for anxiety/mental health?'),
-              _radioGroup(['Yes', 'No', 'Prefer not to say'], _onMedication, (v) => setState(() => _onMedication = v)),
+              _sectionLabel(
+                'Are you currently on medication for anxiety/mental health?',
+              ),
+              _radioGroup(
+                ['Yes', 'No', 'Prefer not to say'],
+                _onMedication,
+                (v) => setState(() => _onMedication = v),
+              ),
               const SizedBox(height: 16),
 
-              _sectionLabel('How would you rate your typical sleep quality? (1 = Very Poor, 5 = Excellent)'),
+              _sectionLabel(
+                'How would you rate your typical sleep quality? (1 = Very Poor, 5 = Excellent)',
+              ),
               const SizedBox(height: 8),
               _buildSlider(),
               const SizedBox(height: 32),
 
               const Divider(),
               const SizedBox(height: 24),
-              const Text('Privacy & Data Rights', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const Text(
+                'Privacy & Data Rights',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
               const SizedBox(height: 12),
               _buildPrivacyCard(),
               const SizedBox(height: 32),
@@ -559,8 +699,14 @@ class _ProfilePageState extends State<ProfilePage> {
                 child: ElevatedButton(
                   onPressed: _isSaving ? null : _saveProfile,
                   child: _isSaving
-                      ? const SizedBox(height: 20, width: 20,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
                       : const Text('Save & Continue'),
                 ),
               ),
@@ -733,12 +879,16 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
         ),
         onTap: () async {
-          final picked = await showTimePicker(context: context, initialTime: time);
+          final picked = await showTimePicker(
+            context: context,
+            initialTime: time,
+          );
           if (picked != null) onChanged(picked);
         },
       ),
     );
   }
+
   Widget _buildPrivacyCard() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -756,7 +906,10 @@ class _ProfilePageState extends State<ProfilePage> {
               SizedBox(width: 8),
               Text(
                 "Consent Status: Active",
-                style: TextStyle(fontWeight: FontWeight.w600, color: Colors.green),
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.green,
+                ),
               ),
             ],
           ),
@@ -779,7 +932,9 @@ class _ProfilePageState extends State<ProfilePage> {
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppTheme.kPrimaryDeep,
                 side: const BorderSide(color: AppTheme.kPrimaryDeep),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
           ),
@@ -792,5 +947,4 @@ class _ProfilePageState extends State<ProfilePage> {
       ),
     );
   }
-
 }
