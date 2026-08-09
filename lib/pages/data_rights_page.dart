@@ -5,6 +5,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import '../theme/app_theme.dart';
 import '../services/background/service_config.dart';
 import '../services/background_service_helper.dart';
+import '../services/user_manager.dart';
 import 'informed_consent_page.dart';
 import 'privacy_policy_page.dart';
 import '../main.dart';
@@ -162,6 +163,11 @@ class _DataRightsPageState extends State<DataRightsPage> {
       service.invoke('stopService');
     } catch (_) {}
 
+    // Stop the in-memory physiological session immediately. Clearing only
+    // SharedPreferences would otherwise leave BLE/simulator packets uploading
+    // under the withdrawn participant ID until the app process restarts.
+    UserManager().logout();
+
     // 3. Mark as withdrawn and clear local data
     await prefs.setBool('consent_withdrawn', true);
     await prefs.setString('withdrawal_timestamp', DateTime.now().toIso8601String());
@@ -170,6 +176,8 @@ class _DataRightsPageState extends State<DataRightsPage> {
     await prefs.remove('user_id');
     await prefs.remove('consent_accepted');
     await prefs.remove('profile_complete');
+    await prefs.remove('calibration_complete');
+    await prefs.remove('chest_strap_last_reading');
     await prefs.remove('user_profile_data');
     await prefs.remove('offline_queue');
     await prefs.remove('last_battery_level');
