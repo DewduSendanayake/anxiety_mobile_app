@@ -15,6 +15,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../ema_and_gad7.dart';
 import '../profile_page.dart';
 import '../services/api_service.dart';
+import '../services/anxiety_feedback_service.dart';
 import 'baseline_calibration_page.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,8 +45,11 @@ class _DashboardPageState extends State<DashboardPage>
   Timer? _predictionTimer;
   int _bufferingCountdown = 60;
   Timer? _bufferingTimer;
-  double?
-  _fusionRiskScore; // final score returned by the teammate's fusion model
+  List<Map<String, dynamic>> _historyData = [];
+  String _historyStatus = 'loading';
+  String _historyMetric = 'risk_index';
+  // Final score returned by the teammate's fusion model when configured.
+  double? _fusionRiskScore;
 
   // ── Chest Strap Live Data ──────────────────────────────────
   ChestStrapReading? _currentReading;
@@ -107,6 +111,9 @@ class _DashboardPageState extends State<DashboardPage>
 
     // Listen for connection state changes to update UI
     ChestStrapService().connectionState.addListener(_onConnectionChanged);
+    ChestStrapService().liveReadingAvailable.addListener(
+      _onLiveReadingAvailabilityChanged,
+    );
 
     _btStateSubscription = FlutterBluePlus.adapterState.listen((state) {
       if (state == BluetoothAdapterState.on && _isBluetoothDialogShowing) {
@@ -135,9 +142,21 @@ class _DashboardPageState extends State<DashboardPage>
     }
   }
 
+  void _onLiveReadingAvailabilityChanged() {
+    if (!mounted) return;
+    setState(() {
+      if (!ChestStrapService().hasLiveWornReading) {
+        _currentReading = null;
+      }
+    });
+  }
+
   @override
   void dispose() {
     ChestStrapService().connectionState.removeListener(_onConnectionChanged);
+    ChestStrapService().liveReadingAvailable.removeListener(
+      _onLiveReadingAvailabilityChanged,
+    );
     _riskPulseController.dispose();
     _entryController.dispose();
     _predictionTimer?.cancel();
@@ -424,6 +443,7 @@ class _DashboardPageState extends State<DashboardPage>
       if (mounted) setState(() => _cachedId = id);
     }
     _startPredictionPolling();
+    _fetchHistory();
   }
 
   // ── Forecast API Methods ────────────────────────────────────
@@ -447,9 +467,14 @@ class _DashboardPageState extends State<DashboardPage>
     final message = result['message'] as String? ?? "";
 
     if (status == 'success') {
+      final List? riskForecast = result['risk_forecast'] as List?;
       final List? rawForecast = result['forecast'] as List?;
       final List<double> parsedForecast =
-          rawForecast?.map((e) => (e as num).toDouble()).toList() ?? [];
+          riskForecast?.map((e) => (e as num).toDouble()).toList() ??
+          rawForecast
+              ?.map((e) => _legacyScaleForecastValue((e as num).toDouble()))
+              .toList() ??
+          [];
 
       setState(() {
         _predictionStatus = "success";
@@ -479,6 +504,9 @@ class _DashboardPageState extends State<DashboardPage>
               // (key name TBC with teammate — defaulting to 'final_risk_score')
               _fusionRiskScore = (fusionResult['final_risk_score'] as num?)
                   ?.toDouble();
+              if (_fusionRiskScore != null) {
+                AnxietyFeedbackService().updateFusionRisk(_fusionRiskScore!);
+              }
             });
           }
         });
@@ -528,17 +556,39 @@ class _DashboardPageState extends State<DashboardPage>
     });
   }
 
-  double _scaleForecastValue(double val) {
-    // API outputs raw reconstruction errors from the LSTM-AE (typically 0.0 to 5.0)
-    // We scale them by 20x for user presentation as a percentage (0% to 100%)
-    if (val > 10.0) return val.clamp(0.0, 100.0);
-    return (val * 20.0).clamp(0.0, 100.0);
+  double _legacyScaleForecastValue(double value) {
+    // Compatibility only for an older API deployment that does not yet
+    // return `risk_forecast`. New deployments return a calibrated 0-100 index.
+    return (value * 20.0).clamp(0.0, 100.0);
+  }
+
+  double _scaleForecastValue(double value) {
+    return value.clamp(0.0, 100.0);
   }
 
   List<double> get _effectiveForecastData {
     if (_forecastData.isNotEmpty) return _forecastData;
     // No real data available yet
     return [];
+  }
+
+  Future<void> _fetchHistory() async {
+    if (_cachedId.isEmpty) return;
+    if (mounted) setState(() => _historyStatus = 'loading');
+    final result = await ApiService.getPhysiologicalHistory(_cachedId);
+    if (!mounted) return;
+    if (result['status'] == 'success') {
+      final rows = (result['history'] as List? ?? [])
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+      setState(() {
+        _historyData = rows;
+        _historyStatus = rows.isEmpty ? 'empty' : 'success';
+      });
+    } else {
+      setState(() => _historyStatus = 'error');
+    }
   }
 
   void _startStatusCheck() {
@@ -760,14 +810,16 @@ class _DashboardPageState extends State<DashboardPage>
             const SizedBox(width: 14),
             Expanded(
               child: _KpiCard(
-                label: 'HRV (RMSSD)',
+                label: 'Motion',
                 value: isWorn
-                    ? _currentReading!.rmssd.toStringAsFixed(1)
+                    ? _currentReading!.stdAccMag.toStringAsFixed(3)
                     : '--',
-                unit: 'ms',
-                icon: Icons.favorite_border_rounded,
-                status: _currentReading?.hrvStatus ?? 'N/A',
-                statusColor: _statusColor(_currentReading?.hrvStatus ?? 'N/A'),
+                unit: 'g',
+                icon: Icons.directions_walk_rounded,
+                status: _currentReading?.motionStatus ?? 'N/A',
+                statusColor: _statusColor(
+                  _currentReading?.motionStatus ?? 'N/A',
+                ),
                 gradient: const [Color(0xFFA18CD1), Color(0xFFFBC2EB)],
               ),
             ),
@@ -1035,7 +1087,7 @@ class _DashboardPageState extends State<DashboardPage>
                                 ),
                                 subtitle: Text(
                                   stressIncreasing
-                                      ? 'Stress rises from calm to high over 5 minutes'
+                                      ? 'Stress rises from calm to extreme test values over 5 minutes'
                                       : 'Keep the simulated physiology calm',
                                   style: GoogleFonts.poppins(
                                     fontSize: 10.5,
@@ -1059,10 +1111,10 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   Widget _buildDisconnectedScreen() {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Container(
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
             color: Colors.white,
@@ -1141,7 +1193,18 @@ class _DashboardPageState extends State<DashboardPage>
             ],
           ),
         ),
-      ),
+        const SizedBox(height: 28),
+        Text(
+          '30-Day Physiological Trends',
+          style: GoogleFonts.poppins(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: AppTheme.kTextDark,
+          ),
+        ),
+        const SizedBox(height: 16),
+        _buildHistoryCard(),
+      ],
     );
   }
 
@@ -2011,8 +2074,247 @@ class _DashboardPageState extends State<DashboardPage>
           ),
         ),
         const SizedBox(height: 16),
-        _buildNoHistoryPlaceholder(),
+        _buildHistoryCard(),
       ],
+    );
+  }
+
+  String get _historyMetricLabel {
+    switch (_historyMetric) {
+      case 'mean_hr':
+        return 'Heart rate';
+      case 'mean_br':
+        return 'Breathing';
+      case 'mean_temp':
+        return 'Temperature';
+      case 'mean_motion':
+        return 'Motion';
+      default:
+        return 'Risk index';
+    }
+  }
+
+  String get _historyMetricUnit {
+    switch (_historyMetric) {
+      case 'mean_hr':
+        return 'bpm';
+      case 'mean_br':
+        return 'br/min';
+      case 'mean_temp':
+        return '°C';
+      case 'mean_motion':
+        return 'g';
+      default:
+        return '';
+    }
+  }
+
+  Widget _buildHistoryCard() {
+    if (_historyStatus == 'loading') {
+      return const SizedBox(
+        height: 190,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_historyStatus == 'empty') return _buildNoHistoryPlaceholder();
+    if (_historyStatus == 'error') {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          children: [
+            const Expanded(
+              child: Text('Could not load physiological history.'),
+            ),
+            IconButton(
+              onPressed: _fetchHistory,
+              icon: const Icon(Icons.refresh_rounded),
+              tooltip: 'Retry',
+            ),
+          ],
+        ),
+      );
+    }
+
+    final spots = List<FlSpot>.generate(_historyData.length, (index) {
+      final value =
+          (_historyData[index][_historyMetric] as num?)?.toDouble() ?? 0.0;
+      return FlSpot(index.toDouble(), value);
+    });
+    final values = spots.map((spot) => spot.y).toList();
+    final fixedRiskAxis = _historyMetric == 'risk_index';
+    final minValue = values.reduce(min);
+    final maxValue = values.reduce(max);
+    final padding = max((maxValue - minValue) * 0.18, 0.5);
+    final minY = fixedRiskAxis ? 0.0 : max(0.0, minValue - padding);
+    final maxY = fixedRiskAxis
+        ? 100.0
+        : (maxValue + padding <= minY ? minY + 1.0 : maxValue + padding);
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Daily average · $_historyMetricLabel',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.kTextDark,
+                  ),
+                ),
+              ),
+              DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _historyMetric,
+                  isDense: true,
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    color: AppTheme.kPrimaryDeep,
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'risk_index', child: Text('Risk')),
+                    DropdownMenuItem(
+                      value: 'mean_hr',
+                      child: Text('Heart rate'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'mean_br',
+                      child: Text('Breathing'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'mean_temp',
+                      child: Text('Temperature'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'mean_motion',
+                      child: Text('Motion'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setState(() => _historyMetric = value);
+                  },
+                ),
+              ),
+              IconButton(
+                onPressed: _fetchHistory,
+                icon: const Icon(Icons.refresh_rounded, size: 19),
+                tooltip: 'Refresh',
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 190,
+            child: LineChart(
+              LineChartData(
+                minX: 0,
+                maxX: max(1, _historyData.length - 1).toDouble(),
+                minY: minY,
+                maxY: maxY,
+                borderData: FlBorderData(show: false),
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  getDrawingHorizontalLine: (_) => FlLine(
+                    color: Colors.grey.withValues(alpha: 0.10),
+                    strokeWidth: 1,
+                  ),
+                ),
+                titlesData: FlTitlesData(
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 42,
+                      getTitlesWidget: (value, meta) => Text(
+                        value.toStringAsFixed(
+                          _historyMetric == 'mean_motion' ? 2 : 0,
+                        ),
+                        style: GoogleFonts.poppins(
+                          fontSize: 8.5,
+                          color: AppTheme.kTextLight,
+                        ),
+                      ),
+                    ),
+                  ),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 24,
+                      getTitlesWidget: (value, meta) {
+                        final index = value.round();
+                        if (index < 0 || index >= _historyData.length) {
+                          return const SizedBox.shrink();
+                        }
+                        final every = max(1, (_historyData.length / 5).ceil());
+                        if (index % every != 0 &&
+                            index != _historyData.length - 1) {
+                          return const SizedBox.shrink();
+                        }
+                        final date =
+                            _historyData[index]['date'] as String? ?? '';
+                        return Text(
+                          date.length >= 10 ? date.substring(5) : date,
+                          style: GoogleFonts.poppins(
+                            fontSize: 8,
+                            color: AppTheme.kTextLight,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: spots,
+                    isCurved: true,
+                    color: AppTheme.kPrimaryDeep,
+                    barWidth: 3,
+                    dotData: const FlDotData(show: true),
+                    belowBarData: BarAreaData(
+                      show: true,
+                      color: AppTheme.kPrimaryDeep.withValues(alpha: 0.10),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${_historyData.length} day${_historyData.length == 1 ? '' : 's'} of data'
+            '${_historyMetricUnit.isEmpty ? '' : ' · $_historyMetricUnit'}',
+            style: GoogleFonts.poppins(
+              fontSize: 10,
+              color: AppTheme.kTextLight,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

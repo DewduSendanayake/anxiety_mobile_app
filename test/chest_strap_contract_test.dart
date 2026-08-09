@@ -1,4 +1,6 @@
 import 'package:anxiety_mobile_app/services/chest_strap_service.dart';
+import 'package:anxiety_mobile_app/services/anxiety_feedback_service.dart';
+import 'package:anxiety_mobile_app/services/participant_identity_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -32,8 +34,65 @@ void main() {
       expect(stressed.rmssd, lessThan(calm.rmssd));
       expect(stressed.sdnn, lessThan(calm.sdnn));
       expect(stressed.riskScore, greaterThan(calm.riskScore));
+      expect(stressed.meanHR, greaterThanOrEqualTo(140.0));
+      expect(stressed.meanBR, greaterThanOrEqualTo(35.0));
+      expect(stressed.riskScore, greaterThan(90.0));
+      expect(stressed.motionStatus, 'High');
     },
   );
+
+  test('participant IDs contain no entered display name', () async {
+    SharedPreferences.setMockInitialValues({});
+
+    final participantId = await ParticipantIdentityService.createForDisplayName(
+      'Real Person Name',
+    );
+    final preferences = await SharedPreferences.getInstance();
+
+    expect(ParticipantIdentityService.isParticipantId(participantId), isTrue);
+    expect(participantId, isNot(contains('Real')));
+    expect(preferences.getString('display_name'), 'Real Person Name');
+    expect(preferences.getString('user_id'), participantId);
+  });
+
+  test('high-risk alert requires three continuous minutes', () {
+    final gate = SustainedHighRiskGate();
+    final start = DateTime.utc(2026, 1, 1, 12);
+
+    expect(gate.shouldAlert(75, start), isFalse);
+    expect(
+      gate.shouldAlert(75, start.add(const Duration(minutes: 2, seconds: 59))),
+      isFalse,
+    );
+
+    // A single dip breaks continuity and starts a fresh three-minute window.
+    expect(
+      gate.shouldAlert(69, start.add(const Duration(minutes: 3))),
+      isFalse,
+    );
+    final restartedAt = start.add(const Duration(minutes: 3, seconds: 1));
+    expect(gate.shouldAlert(75, restartedAt), isFalse);
+    expect(
+      gate.shouldAlert(75, restartedAt.add(const Duration(minutes: 3))),
+      isTrue,
+    );
+
+    // Do not repeat during the same episode. Recovery below 60 rearms it.
+    expect(
+      gate.shouldAlert(80, restartedAt.add(const Duration(minutes: 4))),
+      isFalse,
+    );
+    expect(
+      gate.shouldAlert(55, restartedAt.add(const Duration(minutes: 5))),
+      isFalse,
+    );
+    final secondEpisode = restartedAt.add(const Duration(minutes: 6));
+    expect(gate.shouldAlert(75, secondEpisode), isFalse);
+    expect(
+      gate.shouldAlert(75, secondEpisode.add(const Duration(minutes: 3))),
+      isTrue,
+    );
+  });
 
   test(
     'simulator publishes worn and off-body packets on the BLE stream',

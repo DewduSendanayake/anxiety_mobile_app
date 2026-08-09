@@ -3,25 +3,29 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'theme/app_theme.dart';
 import 'pages/informed_consent_page.dart';
 import 'pages/login_page.dart';
 import 'pages/welcome_splash_page.dart';
 import 'pages/baseline_calibration_page.dart';
+import 'pages/anxiety_check_in_page.dart';
 
 import 'pages/main_navigation_page.dart';
 import 'profile_page.dart';
 import 'background_service_helper.dart';
 import 'services/notification_helper.dart';
 import 'services/user_manager.dart';
+import 'services/participant_identity_service.dart';
+import 'services/anxiety_feedback_service.dart';
 import 'services/background/background_service.dart' as bg;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'ema_and_gad7.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-void _handleNotificationTap(String? payload) {
+void _routeNotificationPayload(String? payload) {
   if (payload == null || payload.isEmpty) return;
 
   final context = navigatorKey.currentContext;
@@ -43,6 +47,14 @@ void _handleNotificationTap(String? payload) {
     return;
   }
 
+  if (payload.startsWith('anxiety_checkin:')) {
+    final eventId = payload.substring('anxiety_checkin:'.length);
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => AnxietyCheckInPage(eventId: eventId)),
+    );
+    return;
+  }
+
   if (payload == 'gad7_weekly') {
     Navigator.of(
       context,
@@ -56,6 +68,27 @@ void _handleNotificationTap(String? payload) {
     ).push(MaterialPageRoute(builder: (_) => const Pss10Screen()));
     return;
   }
+}
+
+void _handleNotificationResponse(NotificationResponse response) {
+  unawaited(
+    AnxietyFeedbackService.handleNotificationAction(
+      actionId: response.actionId,
+      payload: response.payload,
+    ),
+  );
+  if (response.actionId == null || response.actionId!.isEmpty) {
+    _routeNotificationPayload(response.payload);
+  }
+}
+
+@pragma('vm:entry-point')
+void notificationTapBackground(NotificationResponse response) async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AnxietyFeedbackService.handleNotificationAction(
+    actionId: response.actionId,
+    payload: response.payload,
+  );
 }
 
 void main() async {
@@ -77,8 +110,10 @@ void main() async {
     () async {
       WidgetsFlutterBinding.ensureInitialized();
       try {
-        await NotificationHelper.init();
-        NotificationHelper.onNotificationClick = _handleNotificationTap;
+        await NotificationHelper.init(
+          backgroundCallback: notificationTapBackground,
+        );
+        NotificationHelper.onNotificationResponse = _handleNotificationResponse;
       } catch (e, st) {
         debugPrint('Notification init error: $e');
         debugPrint('$st');
@@ -125,6 +160,7 @@ void main() async {
 
       // 4. Initialize Background Service (Only if User ID exists)
       try {
+        await ParticipantIdentityService.migrateLegacyIdentity();
         final prefs = await SharedPreferences.getInstance();
         final userId = prefs.getString('user_id');
         if (userId != null && userId.isNotEmpty) {
@@ -145,7 +181,7 @@ void main() async {
       runApp(const ResearchApp());
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _handleNotificationTap(NotificationHelper.consumeLaunchPayload());
+        _routeNotificationPayload(NotificationHelper.consumeLaunchPayload());
       });
     },
     (error, stack) {

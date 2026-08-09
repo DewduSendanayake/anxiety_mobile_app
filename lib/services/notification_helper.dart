@@ -5,11 +5,15 @@ class NotificationHelper {
   static final FlutterLocalNotificationsPlugin plugin =
       FlutterLocalNotificationsPlugin();
   static String? _launchPayload;
+  static const String anxietyYesAction = 'anxiety_yes';
+  static const String anxietyNoAction = 'anxiety_no';
 
-  // Called when the user taps the notification
-  static void Function(String?)? onNotificationClick;
+  // Called when the user taps a notification body or action button.
+  static void Function(NotificationResponse)? onNotificationResponse;
 
-  static Future<void> init() async {
+  static Future<void> init({
+    DidReceiveBackgroundNotificationResponseCallback? backgroundCallback,
+  }) async {
     try {
       const AndroidInitializationSettings androidInit =
           AndroidInitializationSettings('@mipmap/launcher_icon');
@@ -21,9 +25,9 @@ class NotificationHelper {
       await plugin.initialize(
         initSettings,
         onDidReceiveNotificationResponse: (response) {
-          // Route to the app via callback
-          if (onNotificationClick != null) onNotificationClick!(response.payload);
+          onNotificationResponse?.call(response);
         },
+        onDidReceiveBackgroundNotificationResponse: backgroundCallback,
       );
 
       // Capture payload when app is opened by tapping a notification
@@ -65,6 +69,68 @@ class NotificationHelper {
       'Tap to rate 0–5',
       details,
       payload: 'stress_rating',
+    );
+  }
+
+  static Future<void> showAnxietyAlert({required String eventId}) async {
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'anxiety_alerts',
+        'Anxiety check-ins',
+        channelDescription:
+            'Heads-up check-ins after physiological signals stay high',
+        importance: Importance.max,
+        priority: Priority.max,
+        category: AndroidNotificationCategory.reminder,
+        actions: [
+          AndroidNotificationAction(
+            anxietyYesAction,
+            'Yes',
+            showsUserInterface: false,
+            cancelNotification: true,
+          ),
+          AndroidNotificationAction(
+            anxietyNoAction,
+            'No',
+            showsUserInterface: false,
+            cancelNotification: true,
+          ),
+        ],
+      ),
+    );
+
+    await plugin.show(
+      eventId.hashCode & 0x7fffffff,
+      'Quick anxiety check-in',
+      'Your signals have stayed high for 3 minutes. Do you feel anxious?',
+      details,
+      payload: 'anxiety_checkin:$eventId',
+    );
+  }
+
+  static Future<void> showAnxietyFollowup({
+    required String eventId,
+    required bool signalsImproved,
+  }) async {
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'anxiety_alerts',
+        'Anxiety check-ins',
+        channelDescription:
+            'Heads-up check-ins after physiological signals stay high',
+        importance: Importance.high,
+        priority: Priority.high,
+        category: AndroidNotificationCategory.reminder,
+      ),
+    );
+    await plugin.show(
+      (eventId.hashCode + 1) & 0x7fffffff,
+      'How are you feeling now?',
+      signalsImproved
+          ? 'Your signals decreased. Tap to tell us what helped.'
+          : 'Tap for a quick follow-up and tell us what you tried.',
+      details,
+      payload: 'anxiety_checkin:$eventId',
     );
   }
 }

@@ -1,16 +1,15 @@
 import 'dart:io';
-import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:usage_stats/usage_stats.dart';
 
 import '../theme/app_theme.dart';
 import '../background_service.dart';
 import '../profile_page.dart';
 import '../services/user_manager.dart';
+import '../services/participant_identity_service.dart';
 import 'informed_consent_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -55,16 +54,14 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _login() async {
-    final enteredId = _idController.text.trim();
-    if (enteredId.isEmpty) return;
+    final displayName = _idController.text.trim();
+    if (displayName.isEmpty) return;
 
-    // Validate ID format (letters, numbers, underscores, full stops only)
-    final validCharacters = RegExp(r'^[a-zA-Z0-9_.]+$');
-    if (!validCharacters.hasMatch(enteredId)) {
+    if (displayName.length > 80) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Username can only contain letters, numbers, underscores, and full stops.',
+            'Please keep the display name under 80 characters.',
             style: GoogleFonts.poppins(fontSize: 13),
           ),
           backgroundColor: Colors.orange,
@@ -73,17 +70,15 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
-    // Generate a unique 4-digit suffix
-    final random = Random();
-    final suffix = random.nextInt(9000) + 1000; // 1000 to 9999
-    final finalId = '${enteredId}_$suffix';
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('user_id', finalId);
+    // The entered name stays on this device. Research systems receive only a
+    // cryptographically random participant code such as P_7F3A9C2E4B10D6C1.
+    final participantId = await ParticipantIdentityService.createForDisplayName(
+      displayName,
+    );
 
     // A new login happens after main() has already run, so initialise the
     // physiological upload session here as well as in the cold-start path.
-    UserManager().login(finalId);
+    UserManager().login(participantId);
 
     try {
       await initializeService();
@@ -228,7 +223,7 @@ class _LoginPageState extends State<LoginPage> {
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 18, letterSpacing: 2),
           decoration: InputDecoration(
-            hintText: "Enter a username",
+            hintText: "What should Aura call you?",
             hintStyle: TextStyle(color: Colors.grey.shade400),
             border: InputBorder.none,
             contentPadding: const EdgeInsets.all(20),

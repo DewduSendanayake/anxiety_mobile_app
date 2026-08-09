@@ -66,13 +66,18 @@ class ApiService {
     required String userId,
     required List<double> bMean,
     required List<double> bStd,
+    required List<List<double>> baselineWindows,
   }) async {
     try {
       final response = await http
           .post(
             Uri.parse('$baseUrl/set_norm_params/$userId'),
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'b_mean': bMean, 'b_std': bStd}),
+            body: jsonEncode({
+              'b_mean': bMean,
+              'b_std': bStd,
+              'baseline_windows': baselineWindows,
+            }),
           )
           .timeout(const Duration(seconds: 15));
 
@@ -109,6 +114,58 @@ class ApiService {
     } catch (e) {
       print('Network exception during prediction: $e');
       return {'status': 'error', 'message': 'Network offline'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getPhysiologicalHistory(
+    String userId, {
+    int days = 30,
+  }) async {
+    try {
+      final response = await http
+          .get(Uri.parse('$baseUrl/history/$userId?days=$days'))
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      return {
+        'status': 'error',
+        'message': 'History request failed: ${response.statusCode}',
+      };
+    } catch (e) {
+      return {'status': 'error', 'message': 'History unavailable: $e'};
+    }
+  }
+
+  static Future<bool> sendAnxietyFeedback(Map<String, dynamic> feedback) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/feedback/anxiety'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(feedback),
+          )
+          .timeout(const Duration(seconds: 15));
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Anxiety feedback upload failed: $e');
+      return false;
+    }
+  }
+
+  static Future<Map<String, dynamic>> getWeeklyFeedbackSummary(
+    String userId,
+  ) async {
+    try {
+      final response = await http
+          .get(Uri.parse('$baseUrl/feedback/weekly/$userId'))
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+      return {'status': 'error'};
+    } catch (_) {
+      return {'status': 'error'};
     }
   }
 

@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../services/background/service_config.dart';
 import '../services/background_service_helper.dart';
 import '../services/user_manager.dart';
+import '../services/participant_identity_service.dart';
 import 'informed_consent_page.dart';
 import 'privacy_policy_page.dart';
 import '../main.dart';
@@ -184,7 +185,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
     );
 
     // Clear all study data but keep withdrawal record
-    await prefs.remove('user_id');
+    await ParticipantIdentityService.clearLocalIdentity();
     await prefs.remove('consent_accepted');
     await prefs.remove('profile_complete');
     await prefs.remove('calibration_complete');
