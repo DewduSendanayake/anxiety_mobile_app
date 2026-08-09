@@ -44,7 +44,9 @@ class SensorManager {
     _readingsBuffer.clear();
 
     try {
-      print('60 seconds up! Averaging ${readingsToSend.length} feature samples for the server...');
+      print(
+        '60 seconds up! Averaging ${readingsToSend.length} feature samples for the server...',
+      );
 
       final wornReadings = readingsToSend.where((r) => r.isWorn).toList();
       final isWorn = wornReadings.length > (readingsToSend.length / 2);
@@ -122,14 +124,28 @@ class SensorManager {
 
   // FOR BACKWARDS COMPATIBILITY IF NEEDED (e.g. from BLE Bridge if not updated)
   @Deprecated('Use addLiveChestStrapData with ChestStrapReading instead')
-  void addLiveData(double ecg, double accX, double accY, double accZ, double temp) {
+  void addLiveData(
+    double ecg,
+    double accX,
+    double accY,
+    double accZ,
+    double temp,
+  ) {
     // This is no longer used but kept to avoid breaking compilation
     if (!isCollecting) return;
     final r = ChestStrapReading(
       timestamp: DateTime.now().millisecondsSinceEpoch,
-      meanHR: ecg, meanRR: 0, sdnn: 0, rmssd: 0,
-      meanBR: 0, stdBR: 0, meanTemp: temp, stdTemp: 0,
-      meanAccMag: accX, stdAccMag: accY, isWorn: true
+      meanHR: ecg,
+      meanRR: 0,
+      sdnn: 0,
+      rmssd: 0,
+      meanBR: 0,
+      stdBR: 0,
+      meanTemp: temp,
+      stdTemp: 0,
+      meanAccMag: accX,
+      stdAccMag: accY,
+      isWorn: true,
     );
     _readingsBuffer.add(r);
   }
