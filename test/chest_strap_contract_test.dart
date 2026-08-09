@@ -21,6 +21,21 @@ void main() {
   });
 
   test(
+    'progressive stress profile increases risk in the expected direction',
+    () {
+      final service = ChestStrapService();
+      final calm = service.buildSimulatedReadingForTest(0.0);
+      final stressed = service.buildSimulatedReadingForTest(1.0);
+
+      expect(stressed.meanHR, greaterThan(calm.meanHR));
+      expect(stressed.meanBR, greaterThan(calm.meanBR));
+      expect(stressed.rmssd, lessThan(calm.rmssd));
+      expect(stressed.sdnn, lessThan(calm.sdnn));
+      expect(stressed.riskScore, greaterThan(calm.riskScore));
+    },
+  );
+
+  test(
     'simulator publishes worn and off-body packets on the BLE stream',
     () async {
       final service = ChestStrapService();
@@ -34,6 +49,9 @@ void main() {
       expect(worn.meanHR, inInclusiveRange(60.0, 90.0));
       expect(worn.meanTemp, inInclusiveRange(36.0, 37.2));
 
+      service.setSimulationStress(true);
+      expect(service.simulatedStressIncreasing.value, isTrue);
+
       final offBodyPacket = service.readingsStream.firstWhere((r) => !r.isWorn);
       service.setSimulationWorn(false);
       final offBody = await offBodyPacket.timeout(const Duration(seconds: 2));
@@ -41,9 +59,11 @@ void main() {
       expect(offBody.meanHR, 0.0);
       expect(offBody.meanRR, 0.0);
       expect(offBody.meanTemp, 0.0);
+      expect(service.simulatedStressIncreasing.value, isFalse);
 
       await service.stopSimulation();
       expect(service.isConnected, isFalse);
+      expect(service.lastReading, isNull);
     },
   );
 }
