@@ -14,6 +14,7 @@ import 'pages/main_navigation_page.dart';
 import 'profile_page.dart';
 import 'background_service_helper.dart';
 import 'services/notification_helper.dart';
+import 'services/user_manager.dart';
 import 'services/background/background_service.dart' as bg;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'ema_and_gad7.dart';
@@ -121,6 +122,10 @@ void main() async {
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getString('user_id');
       if (userId != null && userId.isNotEmpty) {
+        // Restore the physiological session on every cold launch. Without
+        // this, BLE packets still reach the dashboard but never enter the
+        // 60-second /ingest pipeline.
+        UserManager().login(userId);
         await bg.initializeService();
       } else {
         debugPrint('Background Service: No User ID, skipping initialization.');
