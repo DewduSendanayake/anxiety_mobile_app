@@ -11,32 +11,54 @@ class SensorManager {
 
   Timer? _oneMinuteTimer;
   bool isCollecting = false;
+  bool _isFlushing = false;
 
-  SensorManager({required this.userId, this.samplingRate = 700});
+  SensorManager({required this.userId, this.samplingRate = 1});
 
   // START HDS COLLECTION
   void startCollection() {
+    if (isCollecting) return;
+
     isCollecting = true;
     _readingsBuffer.clear();
 
     // This periodic timer fires exactly every 60 seconds
-    _oneMinuteTimer = Timer.periodic(const Duration(seconds: 60), (timer) async {
-      if (_readingsBuffer.isEmpty) {
-        print('Buffer warning: No feature data accumulated in the last minute.');
-        return;
-      }
+    _oneMinuteTimer = Timer.periodic(
+      const Duration(seconds: 60),
+      (_) => _flushMinuteWindow(),
+    );
+  }
 
-      final readingsToSend = List<ChestStrapReading>.from(_readingsBuffer);
-      _readingsBuffer.clear();
+  Future<void> _flushMinuteWindow() async {
+    if (_isFlushing) {
+      print('Minute upload is still running; keeping new packets buffered.');
+      return;
+    }
+    if (_readingsBuffer.isEmpty) {
+      print('Buffer warning: No feature data accumulated in the last minute.');
+      return;
+    }
 
+    _isFlushing = true;
+    final readingsToSend = List<ChestStrapReading>.from(_readingsBuffer);
+    _readingsBuffer.clear();
+
+    try {
       print('60 seconds up! Averaging ${readingsToSend.length} feature samples for the server...');
-      
+
+      final wornReadings = readingsToSend.where((r) => r.isWorn).toList();
+      final isWorn = wornReadings.length > (readingsToSend.length / 2);
+
+      // If the strap was worn for most of the minute, exclude off-body zero
+      // packets from the averages. Otherwise send an explicit not-worn block
+      // so the server's data-quality guard can reject it as designed.
+      final readingsForAverages = isWorn ? wornReadings : readingsToSend;
+
       double sumHr = 0, sumRr = 0, sumSdnn = 0, sumRmssd = 0;
       double sumBr = 0, sumStdBr = 0, sumTemp = 0, sumStdTemp = 0;
       double sumAccMag = 0, sumStdAccMag = 0;
-      int wornCount = 0;
 
-      for (var r in readingsToSend) {
+      for (var r in readingsForAverages) {
         sumHr += r.meanHR;
         sumRr += r.meanRR;
         sumSdnn += r.sdnn;
@@ -47,13 +69,11 @@ class SensorManager {
         sumStdTemp += r.stdTemp;
         sumAccMag += r.meanAccMag;
         sumStdAccMag += r.stdAccMag;
-        if (r.isWorn) wornCount++;
       }
 
-      int count = readingsToSend.length;
-      bool isWorn = wornCount > (count / 2);
+      final count = readingsForAverages.length;
 
-      bool success = await ApiService.sendFeatureData(
+      final success = await ApiService.sendFeatureData(
         userId: userId,
         isWorn: isWorn,
         meanHr: sumHr / count,
@@ -70,8 +90,22 @@ class SensorManager {
 
       if (!success) {
         print('Failed to transmit this minute feature block.');
+        if (isWorn && isCollecting) {
+          // Preserve a worn block after a network/server failure instead of
+          // silently losing it. Cap the retry buffer at five minutes.
+          _readingsBuffer.insertAll(0, readingsToSend);
+          final maxBufferedReadings = samplingRate * 60 * 5;
+          if (_readingsBuffer.length > maxBufferedReadings) {
+            _readingsBuffer.removeRange(
+              0,
+              _readingsBuffer.length - maxBufferedReadings,
+            );
+          }
+        }
       }
-    });
+    } finally {
+      _isFlushing = false;
+    }
   }
 
   // CLEAN UP
