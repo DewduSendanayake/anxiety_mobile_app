@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/chest_strap_service.dart';
 import '../services/api_service.dart';
 import '../services/anxiety_feedback_service.dart';
+import '../services/anxiety_level_update_throttle.dart';
 
 /// Home Page — the first tab the user sees.
 ///
@@ -32,6 +33,9 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   // ── Notification state ─────────────────────────────────────
   final List<String> _notifications = [];
+  final AnxietyLevelUpdateThrottle _notificationThrottle =
+      AnxietyLevelUpdateThrottle();
+  Timer? _notificationThrottleTimer;
   bool _hasUnread = false;
 
   // ── Animation ──────────────────────────────────────────────
@@ -67,16 +71,11 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _lastReading = _chestStrap.hasLiveWornReading
         ? _chestStrap.lastReading
         : null;
+    _notificationThrottle.seed(_labelForScore(_overallRisk));
     _readingSubscription = _chestStrap.readingsStream.listen((reading) {
       if (mounted) {
-        final oldLabel = _overallLabel(_lastReading);
         setState(() => _lastReading = reading);
-        final newLabel = _overallLabel(reading);
-        if (_isEscalation(oldLabel, newLabel)) {
-          _addNotification(
-            'Your anxiety level changed from $oldLabel to $newLabel.',
-          );
-        }
+        _observeOverallLevel();
       }
     });
 
@@ -93,17 +92,22 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
       setState(() {
         if (!_chestStrap.isConnected) _lastReading = null;
       });
+      _observeOverallLevel();
     }
   }
 
   void _onLiveAvailabilityChanged() {
     if (mounted && !_chestStrap.hasLiveWornReading) {
       setState(() => _lastReading = null);
+      _observeOverallLevel();
     }
   }
 
   void _onCombinedRiskChanged() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {});
+      _observeOverallLevel();
+    }
   }
 
   Future<void> _loadWeeklySummary() async {
@@ -147,6 +151,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _chestStrap.liveReadingAvailable.removeListener(_onLiveAvailabilityChanged);
     AnxietyFeedbackService().combinedRisk.removeListener(_onCombinedRiskChanged);
     _readingSubscription?.cancel();
+    _notificationThrottleTimer?.cancel();
     _fadeController.dispose();
     _pulseController.dispose();
     super.dispose();
@@ -172,13 +177,6 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (score <= 45) return 'Moderate';
     if (score <= 70) return 'Elevated';
     return 'High';
-  }
-
-  String _overallLabel(ChestStrapReading? reading) {
-    if (!_chestStrap.isConnected || reading == null || !reading.isWorn) {
-      return 'Unavailable';
-    }
-    return _labelForScore(reading.riskScore);
   }
 
   Color _overallColor(double score) {
@@ -211,17 +209,41 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
 
-  bool _isEscalation(String oldLabel, String newLabel) {
-    const levels = ['Low', 'Moderate', 'Elevated', 'High'];
-    final oldIdx = levels.indexOf(oldLabel);
-    final newIdx = levels.indexOf(newLabel);
-    return oldIdx >= 0 && newIdx >= 0 && newIdx > oldIdx;
-  }
-
   void _addNotification(String msg) {
+    if (!mounted) return;
     setState(() {
       _notifications.insert(0, msg);
       _hasUnread = true;
+    });
+  }
+
+  void _observeOverallLevel() {
+    final now = DateTime.now();
+    final update = _notificationThrottle.observe(
+      _labelForScore(_overallRisk),
+      now,
+    );
+    if (update != null) _addNotification(update.message);
+    _schedulePendingNotification(now);
+  }
+
+  void _schedulePendingNotification(DateTime now) {
+    _notificationThrottleTimer?.cancel();
+    final delay = _notificationThrottle.delayUntilFlush(now);
+    if (delay == null) return;
+    _notificationThrottleTimer = Timer(delay, () {
+      if (!mounted) return;
+      final update = _notificationThrottle.flush(DateTime.now());
+      if (update != null) _addNotification(update.message);
+      _schedulePendingNotification(DateTime.now());
+    });
+  }
+
+  void _clearNotifications() {
+    if (!mounted) return;
+    setState(() {
+      _notifications.clear();
+      _hasUnread = false;
     });
   }
 
@@ -231,7 +253,10 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _NotificationsSheet(notifications: _notifications),
+      builder: (_) => _NotificationsSheet(
+        notifications: List.unmodifiable(_notifications),
+        onClear: _clearNotifications,
+      ),
     );
   }
 
@@ -781,7 +806,11 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
 class _NotificationsSheet extends StatelessWidget {
   final List<String> notifications;
-  const _NotificationsSheet({required this.notifications});
+  final VoidCallback onClear;
+  const _NotificationsSheet({
+    required this.notifications,
+    required this.onClear,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -832,24 +861,15 @@ class _NotificationsSheet extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
+                if (notifications.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () {
+                      onClear();
+                      Navigator.of(context).pop();
+                    },
+                    icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                    label: const Text('Clear all'),
                   ),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '${notifications.length}',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ),
               ],
             ),
           ),

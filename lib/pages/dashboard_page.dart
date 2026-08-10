@@ -803,6 +803,10 @@ class _DashboardPageState extends State<DashboardPage>
 
         // ── Service Status Strip ──
         _buildServiceStrip(),
+        if (isWorn) ...[
+          const SizedBox(height: 10),
+          _buildAdviceCard(risk),
+        ],
         if (!_notificationsEnabled) ...[
           const SizedBox(height: 10),
           _buildNotificationWarning(),
@@ -881,8 +885,6 @@ class _DashboardPageState extends State<DashboardPage>
           ],
         ),
 
-        const SizedBox(height: 24),
-        if (isWorn) _buildAdviceCard(risk),
         const SizedBox(height: 24),
         _buildChartsSection(),
         const SizedBox(height: 20),
@@ -1528,8 +1530,12 @@ class _DashboardPageState extends State<DashboardPage>
         ),
       );
     }
-    final currentRisk = (_currentModelRisk ??
-            _currentReading?.riskScore ??
+    final liveCurrentRisk =
+        _chestStrapConnected && (_currentReading?.isWorn ?? false)
+        ? _currentReading?.riskScore
+        : null;
+    final currentRisk = (liveCurrentRisk ??
+            _currentModelRisk ??
             _scaleForecastValue(forecast.first))
         .clamp(0.0, 100.0)
         .toDouble();
@@ -2105,40 +2111,25 @@ class _DashboardPageState extends State<DashboardPage>
     IconData icon = Icons.lightbulb_outline_rounded;
     Color color = Colors.blue;
 
-    // Check if there is an anxiety escalation predicted in the next 10 minutes
-    final forecast = _effectiveForecastData;
-    final currentRisk = _currentModelRisk ?? risk;
-    final futureForecast = forecast.map(_scaleForecastValue).toList();
-    final maxForecastedRisk = futureForecast.isNotEmpty
-        ? futureForecast.reduce(max)
-        : 0.0;
-    final forecastIncrease = maxForecastedRisk - currentRisk;
-    final bool isEscalating =
-        (maxForecastedRisk >= 70.0 && forecastIncrease >= 10.0) ||
-        (maxForecastedRisk >= 45.0 && forecastIncrease >= 20.0);
-
-    if (currentRisk >= 70) {
+    // This banner describes what the live body readings show right now. The
+    // separate forecast card below is responsible for future changes.
+    final currentRisk = risk.clamp(0.0, 100.0).toDouble();
+    if (currentRisk > 70) {
       title = "Your Anxiety Level Is High";
       advice =
           "Take a moment if you can. Try slow breathing, step away briefly, or contact someone you trust.";
       color = const Color(0xFFEF5350);
       icon = Icons.warning_amber_rounded;
-    } else if (isEscalating) {
-      title = "Your Anxiety Level May Rise";
-      advice =
-          "Your anxiety level may rise in the next few minutes. Consider taking a short break or doing a calming exercise now.";
-      color = const Color(0xFFFF7043);
-      icon = Icons.hourglass_top_rounded;
     } else if (currentRisk <= 20) {
-      title = "Feeling Balanced";
+      title = "Your Anxiety Level Is Low";
       advice =
           "Your anxiety level is low right now. Keep doing what helps you feel calm.";
       color = const Color(0xFF4CAF50);
       icon = Icons.spa_rounded;
     } else if (currentRisk <= 45) {
-      title = "Slightly Elevated";
+      title = "Your Anxiety Level Is Moderate";
       advice =
-          "Your current readings suggest mild stress. Consider taking a 5-minute break and breathing slowly.";
+          "Your readings show some stress. Consider taking a short break and breathing slowly.";
       color = const Color(0xFFFFA726);
       icon = Icons.self_improvement_rounded;
     } else {

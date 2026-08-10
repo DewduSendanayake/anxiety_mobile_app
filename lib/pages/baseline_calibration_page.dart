@@ -33,6 +33,21 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   // ── Constants ──────────────────────────────────────────────────
   static const int _totalSeconds = 180; // 3 minutes of resting data
   static const int _minimumReadings = 120;
+  // Three one-minute averages can otherwise produce near-zero variation. A
+  // tiny divisor turns ordinary calm movement into an extreme model input.
+  // These floors are deliberately small relative to real stress changes.
+  static const List<double> _minimumFeatureStds = [
+    1.0, // heart rate (bpm)
+    15.0, // beat interval (ms)
+    2.0, // SDNN (ms)
+    2.0, // RMSSD (ms)
+    0.5, // breathing rate (breaths/min)
+    0.10, // breathing variation
+    0.05, // temperature (°C)
+    0.01, // temperature variation
+    0.01, // movement level (g)
+    0.005, // movement variation (g)
+  ];
 
   // ── State ──────────────────────────────────────────────────────
   _Phase _phase = _Phase.instructions;
@@ -280,14 +295,13 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
       finalMeans[f] = meanVal;
 
       if (vals.length < 2) {
-        finalStds[f] = 1e-6; // standard minimum fallback
+        finalStds[f] = _minimumFeatureStds[f];
       } else {
         final double varSum = vals
             .map((x) => (x - meanVal) * (x - meanVal))
             .reduce((a, b) => a + b);
         double stdVal = sqrt(varSum / vals.length);
-        if (stdVal < 1e-6) stdVal = 1e-6;
-        finalStds[f] = stdVal;
+        finalStds[f] = max(stdVal, _minimumFeatureStds[f]);
       }
     }
 
