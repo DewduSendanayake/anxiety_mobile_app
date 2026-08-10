@@ -49,8 +49,9 @@ Future<void> initializeService() async {
     await androidPlugin.createNotificationChannel(
       const AndroidNotificationChannel(
         'anxiety_alerts',
-        'Anxiety check-ins',
-        description: 'Heads-up check-ins after physiological signals stay high',
+        'Anxiety early warnings',
+        description:
+            'Early check-ins when physiological escalation is forecast',
         importance: Importance.max,
       ),
     );

@@ -55,42 +55,145 @@ void main() {
     expect(preferences.getString('user_id'), participantId);
   });
 
-  test('high-risk alert requires three continuous minutes', () {
-    final gate = SustainedHighRiskGate();
+  test('predictive alert requires a rise five or more minutes ahead', () {
+    final gate = PredictiveEscalationGate();
     final start = DateTime.utc(2026, 1, 1, 12);
 
-    expect(gate.shouldAlert(75, start), isFalse);
+    // A spike only in minutes 1-4 is too late to count as a five-minute
+    // early-warning forecast.
     expect(
-      gate.shouldAlert(75, start.add(const Duration(minutes: 2, seconds: 59))),
-      isFalse,
+      gate.evaluate(
+        currentRisk: 20,
+        riskForecast: [80, 80, 80, 80, 25, 25, 25, 25, 25, 25],
+        observedAt: start,
+      ),
+      isNull,
     );
 
-    // A single dip breaks continuity and starts a fresh three-minute window.
+    const risingForecast = <double>[25, 30, 35, 40, 48, 55, 62, 72, 78, 80];
+    // One forecast is not enough; a second independent poll confirms the
+    // trend without sacrificing the five-minute lead window.
     expect(
-      gate.shouldAlert(69, start.add(const Duration(minutes: 3))),
-      isFalse,
+      gate.evaluate(
+        currentRisk: 25,
+        riskForecast: risingForecast,
+        observedAt: start.add(const Duration(seconds: 30)),
+      ),
+      isNull,
     );
-    final restartedAt = start.add(const Duration(minutes: 3, seconds: 1));
-    expect(gate.shouldAlert(75, restartedAt), isFalse);
+    final escalation = gate.evaluate(
+      currentRisk: 25,
+      riskForecast: risingForecast,
+      observedAt: start.add(const Duration(seconds: 60)),
+    );
+    expect(escalation, isNotNull);
+    expect(escalation!.leadMinutes, greaterThanOrEqualTo(5));
+    expect(escalation.predictedPeakRisk, 80);
+    expect(escalation.increase, 55);
+
+    // Do not repeat during the same episode.
     expect(
-      gate.shouldAlert(75, restartedAt.add(const Duration(minutes: 3))),
-      isTrue,
+      gate.evaluate(
+        currentRisk: 28,
+        riskForecast: risingForecast,
+        observedAt: start.add(const Duration(seconds: 90)),
+      ),
+      isNull,
     );
 
-    // Do not repeat during the same episode. Recovery below 60 rearms it.
+    // Low current and future risk re-arm the gate for a later episode.
     expect(
-      gate.shouldAlert(80, restartedAt.add(const Duration(minutes: 4))),
-      isFalse,
+      gate.evaluate(
+        currentRisk: 18,
+        riskForecast: const [18, 18, 20, 20, 22, 22, 23, 23, 24, 24],
+        observedAt: start.add(const Duration(minutes: 2)),
+      ),
+      isNull,
     );
     expect(
-      gate.shouldAlert(55, restartedAt.add(const Duration(minutes: 5))),
-      isFalse,
+      gate.evaluate(
+        currentRisk: 25,
+        riskForecast: risingForecast,
+        observedAt: start.add(const Duration(minutes: 2, seconds: 30)),
+      ),
+      isNull,
     );
-    final secondEpisode = restartedAt.add(const Duration(minutes: 6));
-    expect(gate.shouldAlert(75, secondEpisode), isFalse);
     expect(
-      gate.shouldAlert(75, secondEpisode.add(const Duration(minutes: 3))),
-      isTrue,
+      gate.evaluate(
+        currentRisk: 25,
+        riskForecast: risingForecast,
+        observedAt: start.add(const Duration(minutes: 3)),
+      ),
+      isNotNull,
+    );
+  });
+
+  test('predictive alert does not reuse a stale confirmation', () {
+    final gate = PredictiveEscalationGate();
+    final start = DateTime.utc(2026, 1, 1, 12);
+    const risingForecast = <double>[25, 30, 35, 40, 48, 55, 62, 72, 78, 80];
+
+    expect(
+      gate.evaluate(
+        currentRisk: 25,
+        riskForecast: risingForecast,
+        observedAt: start,
+      ),
+      isNull,
+    );
+    expect(
+      gate.evaluate(
+        currentRisk: 25,
+        riskForecast: risingForecast,
+        observedAt: start.add(const Duration(minutes: 5)),
+      ),
+      isNull,
+    );
+    expect(
+      gate.evaluate(
+        currentRisk: 25,
+        riskForecast: risingForecast,
+        observedAt: start.add(const Duration(minutes: 5, seconds: 30)),
+      ),
+      isNotNull,
+    );
+  });
+
+  test('predictive gate can retry after notification delivery fails', () {
+    final gate = PredictiveEscalationGate();
+    final start = DateTime.utc(2026, 1, 1, 12);
+    const risingForecast = <double>[25, 30, 35, 40, 48, 55, 62, 72, 78, 80];
+
+    gate.evaluate(
+      currentRisk: 25,
+      riskForecast: risingForecast,
+      observedAt: start,
+    );
+    expect(
+      gate.evaluate(
+        currentRisk: 25,
+        riskForecast: risingForecast,
+        observedAt: start.add(const Duration(seconds: 30)),
+      ),
+      isNotNull,
+    );
+
+    gate.allowRetry();
+    expect(
+      gate.evaluate(
+        currentRisk: 25,
+        riskForecast: risingForecast,
+        observedAt: start.add(const Duration(minutes: 1)),
+      ),
+      isNull,
+    );
+    expect(
+      gate.evaluate(
+        currentRisk: 25,
+        riskForecast: risingForecast,
+        observedAt: start.add(const Duration(minutes: 1, seconds: 30)),
+      ),
+      isNotNull,
     );
   });
 
