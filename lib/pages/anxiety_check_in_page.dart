@@ -154,15 +154,22 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
         children: [
           _infoCard(
             icon: Icons.monitor_heart_outlined,
-            title: 'Your signals stayed high for 3 minutes',
-            body:
-                'Aura noticed a physiological risk index of '
-                '${event.initialRiskScore.toStringAsFixed(0)}. '
-                'This is a check-in, not a diagnosis.',
+            title: event.predictedLeadMinutes == null
+                ? 'Aura noticed a physiological change'
+                : 'Possible rise in about ${event.predictedLeadMinutes} minutes',
+            body: event.predictedRiskScore == null
+                ? 'Aura noticed a physiological risk index of '
+                      '${event.initialRiskScore.toStringAsFixed(0)}. '
+                      'This is a check-in, not a diagnosis.'
+                : 'Your calibrated risk index is currently '
+                      '${event.initialRiskScore.toStringAsFixed(0)} and the '
+                      'model forecasts a peak near '
+                      '${event.predictedRiskScore!.toStringAsFixed(0)}. '
+                      'This is an early check-in, not a diagnosis.',
           ),
           const SizedBox(height: 16),
           _questionCard(
-            title: 'Do you feel anxious right now?',
+            title: 'Do you feel anxious or notice it building?',
             selected: event.confirmedAnxious,
             onYes: () => _saveConfirmation(true),
             onNo: () => _saveConfirmation(false),
@@ -317,7 +324,12 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
           _title('Five-minute follow-up'),
           const SizedBox(height: 8),
           Text(
-            change == null
+            event.predictedRiskScore != null &&
+                    event.followupRiskScore != null &&
+                    event.followupRiskScore! <= event.predictedRiskScore! - 10
+                ? 'Your follow-up risk stayed below the forecast peak by '
+                      '${(event.predictedRiskScore! - event.followupRiskScore!).toStringAsFixed(0)} points.'
+                : change == null
                 ? 'Live signals were unavailable at follow-up.'
                 : change <= -10
                 ? 'Your physiological risk index decreased by ${change.abs().toStringAsFixed(0)} points.'

@@ -11,6 +11,11 @@ class NotificationHelper {
   // Called when the user taps a notification body or action button.
   static void Function(NotificationResponse)? onNotificationResponse;
 
+  static AndroidFlutterLocalNotificationsPlugin? get _androidPlugin => plugin
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >();
+
   static Future<void> init({
     DidReceiveBackgroundNotificationResponseCallback? backgroundCallback,
   }) async {
@@ -30,6 +35,11 @@ class NotificationHelper {
         onDidReceiveBackgroundNotificationResponse: backgroundCallback,
       );
 
+      // Existing installations may have completed onboarding before Android
+      // introduced or the app requested POST_NOTIFICATIONS. Check again here
+      // so an upgrade cannot silently disable critical early-warning alerts.
+      await ensurePermissions();
+
       // Capture payload when app is opened by tapping a notification
       // from a terminated state.
       final launchDetails = await plugin.getNotificationAppLaunchDetails();
@@ -40,6 +50,20 @@ class NotificationHelper {
       // Don't rethrow — log and allow app to continue.
       debugPrint('Notification plugin init failed: $e');
       debugPrint('$st');
+    }
+  }
+
+  static Future<bool> ensurePermissions() async {
+    try {
+      final android = _androidPlugin;
+      if (android == null) return true;
+      final enabled = await android.areNotificationsEnabled();
+      if (enabled == true) return true;
+      return await android.requestNotificationsPermission() ?? false;
+    } catch (error, stack) {
+      debugPrint('Could not check notification permission: $error');
+      debugPrint('$stack');
+      return false;
     }
   }
 
@@ -72,13 +96,21 @@ class NotificationHelper {
     );
   }
 
-  static Future<void> showAnxietyAlert({required String eventId}) async {
+  static Future<bool> showAnxietyAlert({
+    required String eventId,
+    required int leadMinutes,
+    required double predictedRisk,
+  }) async {
+    if (!await ensurePermissions()) {
+      debugPrint('Anxiety alert not shown: notification permission denied.');
+      return false;
+    }
     const details = NotificationDetails(
       android: AndroidNotificationDetails(
         'anxiety_alerts',
-        'Anxiety check-ins',
+        'Anxiety early warnings',
         channelDescription:
-            'Heads-up check-ins after physiological signals stay high',
+            'Early check-ins when physiological escalation is forecast',
         importance: Importance.max,
         priority: Priority.max,
         category: AndroidNotificationCategory.reminder,
@@ -99,13 +131,20 @@ class NotificationHelper {
       ),
     );
 
-    await plugin.show(
-      eventId.hashCode & 0x7fffffff,
-      'Quick anxiety check-in',
-      'Your signals have stayed high for 3 minutes. Do you feel anxious?',
-      details,
-      payload: 'anxiety_checkin:$eventId',
-    );
+    try {
+      await plugin.show(
+        eventId.hashCode & 0x7fffffff,
+        'Possible anxiety rise in about $leadMinutes minutes',
+        'Forecast peak ${predictedRisk.round()}/100. Do you notice anxiety building?',
+        details,
+        payload: 'anxiety_checkin:$eventId',
+      );
+      return true;
+    } catch (error, stack) {
+      debugPrint('Could not show anxiety alert: $error');
+      debugPrint('$stack');
+      return false;
+    }
   }
 
   static Future<void> showAnxietyFollowup({
@@ -115,9 +154,9 @@ class NotificationHelper {
     const details = NotificationDetails(
       android: AndroidNotificationDetails(
         'anxiety_alerts',
-        'Anxiety check-ins',
+        'Anxiety early warnings',
         channelDescription:
-            'Heads-up check-ins after physiological signals stay high',
+            'Early check-ins when physiological escalation is forecast',
         importance: Importance.high,
         priority: Priority.high,
         category: AndroidNotificationCategory.reminder,

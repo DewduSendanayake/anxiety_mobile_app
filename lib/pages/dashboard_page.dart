@@ -16,6 +16,7 @@ import '../ema_and_gad7.dart';
 import '../profile_page.dart';
 import '../services/api_service.dart';
 import '../services/anxiety_feedback_service.dart';
+import '../services/notification_helper.dart';
 import 'baseline_calibration_page.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,11 +32,12 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   String _cachedId = "";
   bool _isServiceRunning = false;
   bool _isOptimized = false;
   bool _chestStrapConnected = false;
+  bool _notificationsEnabled = true;
 
   // ── Prediction Pipeline State ──────────────────────────────
   String _predictionStatus =
@@ -47,7 +49,9 @@ class _DashboardPageState extends State<DashboardPage>
   Timer? _bufferingTimer;
   List<Map<String, dynamic>> _historyData = [];
   String _historyStatus = 'loading';
+  String _historyMessage = '';
   String _historyMetric = 'risk_index';
+  double? _currentModelRisk;
   // Final score returned by the teammate's fusion model when configured.
   double? _fusionRiskScore;
 
@@ -68,6 +72,7 @@ class _DashboardPageState extends State<DashboardPage>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadCachedId();
 
     // Risk indicator pulse animation
@@ -128,7 +133,20 @@ class _DashboardPageState extends State<DashboardPage>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkBluetoothConnection();
+      _checkNotificationPermission();
     });
+  }
+
+  Future<void> _checkNotificationPermission() async {
+    final enabled = await NotificationHelper.ensurePermissions();
+    if (mounted) setState(() => _notificationsEnabled = enabled);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_checkNotificationPermission());
+    }
   }
 
   void _onConnectionChanged() {
@@ -153,6 +171,7 @@ class _DashboardPageState extends State<DashboardPage>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     ChestStrapService().connectionState.removeListener(_onConnectionChanged);
     ChestStrapService().liveReadingAvailable.removeListener(
       _onLiveReadingAvailabilityChanged,
@@ -468,19 +487,31 @@ class _DashboardPageState extends State<DashboardPage>
 
     if (status == 'success') {
       final List? riskForecast = result['risk_forecast'] as List?;
-      final List? rawForecast = result['forecast'] as List?;
-      final List<double> parsedForecast =
-          riskForecast?.map((e) => (e as num).toDouble()).toList() ??
-          rawForecast
-              ?.map((e) => _legacyScaleForecastValue((e as num).toDouble()))
-              .toList() ??
-          [];
+      if (riskForecast == null ||
+          riskForecast.length < 10 ||
+          riskForecast.any((value) => value is! num)) {
+        setState(() {
+          _predictionStatus = 'error';
+          _forecastData = [];
+          _currentModelRisk = null;
+          _statusMessage =
+              'The prediction server is outdated and is not returning a calibrated 10-minute risk forecast.';
+        });
+        return;
+      }
+      final parsedForecast = riskForecast
+          .cast<num>()
+          .take(10)
+          .map((value) => value.toDouble())
+          .toList();
 
       setState(() {
         _predictionStatus = "success";
         _forecastData = parsedForecast;
+        _currentModelRisk = (result['current_risk_index'] as num?)?.toDouble();
         _statusMessage = message;
       });
+      AnxietyFeedbackService().observeForecastResponse(result);
 
       _bufferingTimer?.cancel();
       _bufferingTimer = null;
@@ -556,12 +587,6 @@ class _DashboardPageState extends State<DashboardPage>
     });
   }
 
-  double _legacyScaleForecastValue(double value) {
-    // Compatibility only for an older API deployment that does not yet
-    // return `risk_forecast`. New deployments return a calibrated 0-100 index.
-    return (value * 20.0).clamp(0.0, 100.0);
-  }
-
   double _scaleForecastValue(double value) {
     return value.clamp(0.0, 100.0);
   }
@@ -574,7 +599,12 @@ class _DashboardPageState extends State<DashboardPage>
 
   Future<void> _fetchHistory() async {
     if (_cachedId.isEmpty) return;
-    if (mounted) setState(() => _historyStatus = 'loading');
+    if (mounted) {
+      setState(() {
+        _historyStatus = 'loading';
+        _historyMessage = '';
+      });
+    }
     final result = await ApiService.getPhysiologicalHistory(_cachedId);
     if (!mounted) return;
     if (result['status'] == 'success') {
@@ -585,9 +615,14 @@ class _DashboardPageState extends State<DashboardPage>
       setState(() {
         _historyData = rows;
         _historyStatus = rows.isEmpty ? 'empty' : 'success';
+        _historyMessage = '';
       });
     } else {
-      setState(() => _historyStatus = 'error');
+      setState(() {
+        _historyStatus = 'error';
+        _historyMessage = result['message'] as String? ??
+            'The history service did not return data.';
+      });
     }
   }
 
@@ -747,6 +782,10 @@ class _DashboardPageState extends State<DashboardPage>
 
         // ── Service Status Strip ──
         _buildServiceStrip(),
+        if (!_notificationsEnabled) ...[
+          const SizedBox(height: 10),
+          _buildNotificationWarning(),
+        ],
         if (_isOptimized) ...[
           const SizedBox(height: 10),
           _buildBatteryWarning(),
@@ -872,7 +911,9 @@ class _DashboardPageState extends State<DashboardPage>
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Server offline. Showing last known data. Connect chest strap for live monitoring.',
+              _statusMessage.isEmpty
+                  ? 'Prediction unavailable. Connect the chest strap and retry.'
+                  : _statusMessage,
               style: GoogleFonts.poppins(
                 fontSize: 11,
                 color: Colors.amber.shade800,
@@ -1072,32 +1113,47 @@ class _DashboardPageState extends State<DashboardPage>
                           onChanged: chestStrap.setSimulationWorn,
                         ),
                         if (isWorn)
-                          ValueListenableBuilder<bool>(
-                            valueListenable:
-                                chestStrap.simulatedStressIncreasing,
-                            builder: (context, stressIncreasing, _) {
-                              return SwitchListTile(
-                                contentPadding: EdgeInsets.zero,
-                                title: Text(
-                                  'Progressively increase stress',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 12.5,
-                                    color: AppTheme.kTextDark,
+                          Column(
+                            children: [
+                              ValueListenableBuilder<bool>(
+                                valueListenable:
+                                    chestStrap.simulatedStressIncreasing,
+                                builder: (context, stressIncreasing, _) {
+                                  return SwitchListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    title: Text(
+                                      'Progressively increase stress',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 12.5,
+                                        color: AppTheme.kTextDark,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      stressIncreasing
+                                          ? 'Stress rises from calm to extreme test values over 5 minutes'
+                                          : 'Keep the simulated physiology calm',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 10.5,
+                                        color: AppTheme.kTextLight,
+                                      ),
+                                    ),
+                                    value: stressIncreasing,
+                                    onChanged: chestStrap.setSimulationStress,
+                                  );
+                                },
+                              ),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: _sendTestAnxietyAlert,
+                                  icon: const Icon(
+                                    Icons.notifications_active_outlined,
+                                    size: 18,
                                   ),
+                                  label: const Text('Test popup and check-in'),
                                 ),
-                                subtitle: Text(
-                                  stressIncreasing
-                                      ? 'Stress rises from calm to extreme test values over 5 minutes'
-                                      : 'Keep the simulated physiology calm',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 10.5,
-                                    color: AppTheme.kTextLight,
-                                  ),
-                                ),
-                                value: stressIncreasing,
-                                onChanged: chestStrap.setSimulationStress,
-                              );
-                            },
+                              ),
+                            ],
                           ),
                       ],
                     );
@@ -1107,6 +1163,21 @@ class _DashboardPageState extends State<DashboardPage>
           ),
         );
       },
+    );
+  }
+
+  Future<void> _sendTestAnxietyAlert() async {
+    final shown = await AnxietyFeedbackService().showLocalTestAlert();
+    if (!mounted) return;
+    if (!shown) await _checkNotificationPermission();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          shown
+              ? 'Test early warning sent. Check the notification popup.'
+              : 'Could not show the test alert. Wear the simulated strap and enable notifications.',
+        ),
+      ),
     );
   }
 
@@ -1441,10 +1512,52 @@ class _DashboardPageState extends State<DashboardPage>
         ),
       );
     }
-    final List<FlSpot> spots = List.generate(forecast.length, (index) {
-      final yVal = _scaleForecastValue(forecast[index]);
-      return FlSpot((index + 1).toDouble(), yVal);
-    });
+    final currentRisk = (_currentModelRisk ??
+            _currentReading?.riskScore ??
+            _scaleForecastValue(forecast.first))
+        .clamp(0.0, 100.0)
+        .toDouble();
+    final List<FlSpot> spots = [
+      FlSpot(0, currentRisk),
+      ...List.generate(forecast.length, (index) {
+        final yVal = _scaleForecastValue(forecast[index]);
+        return FlSpot((index + 1).toDouble(), yVal);
+      }),
+    ];
+    final fiveMinuteForecast = forecast.length >= 5
+        ? forecast.skip(4).map(_scaleForecastValue).toList()
+        : forecast.map(_scaleForecastValue).toList();
+    final predictedPeak = fiveMinuteForecast.reduce(max);
+    final forecastIncrease = predictedPeak - currentRisk;
+    final highEscalation = predictedPeak >= 70 && forecastIncrease >= 10;
+    final elevatedEscalation = predictedPeak >= 45 && forecastIncrease >= 20;
+    final escalationPredicted = highEscalation || elevatedEscalation;
+    final target = highEscalation ? 70.0 : 45.0;
+    final requiredIncrease = highEscalation ? 10.0 : 20.0;
+    var leadMinutes = 5;
+    for (var index = 4; index < forecast.length; index++) {
+      final value = _scaleForecastValue(forecast[index]);
+      if (value >= target && value - currentRisk >= requiredIncrease) {
+        leadMinutes = index + 1;
+        break;
+      }
+    }
+    final trendColor = escalationPredicted
+        ? const Color(0xFFEF5350)
+        : forecastIncrease >= 10
+        ? const Color(0xFFFFA726)
+        : const Color(0xFF4CAF50);
+    final trendTitle = escalationPredicted
+        ? 'Early warning: possible rise in about $leadMinutes minutes'
+        : forecastIncrease >= 10
+        ? 'Upward trend, below the alert threshold'
+        : forecastIncrease <= -10
+        ? 'Forecast trending down'
+        : 'No strong escalation predicted';
+    final trendDetail =
+        'Now ${currentRisk.round()}/100  →  predicted peak ${predictedPeak.round()}/100 '
+        '(${forecastIncrease >= 0 ? '+' : ''}${forecastIncrease.round()} points)';
+    final lineColor = _riskColor(predictedPeak);
 
     double minY = 0.0;
     double maxY = 100.0;
@@ -1504,12 +1617,60 @@ class _DashboardPageState extends State<DashboardPage>
               ),
             ],
           ),
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: trendColor.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: trendColor.withValues(alpha: 0.25)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  escalationPredicted
+                      ? Icons.notification_important_rounded
+                      : forecastIncrease >= 10
+                      ? Icons.trending_up_rounded
+                      : Icons.check_circle_outline_rounded,
+                  color: trendColor,
+                  size: 20,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        trendTitle,
+                        style: GoogleFonts.poppins(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: trendColor,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        trendDetail,
+                        style: GoogleFonts.poppins(
+                          fontSize: 10,
+                          color: AppTheme.kTextLight,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 24),
           SizedBox(
             height: 180,
             child: LineChart(
               LineChartData(
-                minX: 1,
+                minX: 0,
                 maxX: 10,
                 minY: minY,
                 maxY: maxY,
@@ -1537,6 +1698,19 @@ class _DashboardPageState extends State<DashboardPage>
                       showTitles: true,
                       reservedSize: 22,
                       getTitlesWidget: (value, meta) {
+                        if (value == 0) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Text(
+                              'Now',
+                              style: GoogleFonts.poppins(
+                                fontSize: 9.5,
+                                color: AppTheme.kTextDark,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          );
+                        }
                         if (value < 1 || value > 10 || value % 2 != 0) {
                           return const SizedBox.shrink();
                         }
@@ -1575,6 +1749,30 @@ class _DashboardPageState extends State<DashboardPage>
                   ),
                 ),
                 borderData: FlBorderData(show: false),
+                rangeAnnotations: RangeAnnotations(
+                  horizontalRangeAnnotations: [
+                    HorizontalRangeAnnotation(
+                      y1: 0,
+                      y2: 20,
+                      color: const Color(0xFF4CAF50).withValues(alpha: 0.055),
+                    ),
+                    HorizontalRangeAnnotation(
+                      y1: 20,
+                      y2: 45,
+                      color: const Color(0xFFFFC107).withValues(alpha: 0.055),
+                    ),
+                    HorizontalRangeAnnotation(
+                      y1: 45,
+                      y2: 70,
+                      color: const Color(0xFFFF7043).withValues(alpha: 0.055),
+                    ),
+                    HorizontalRangeAnnotation(
+                      y1: 70,
+                      y2: 100,
+                      color: const Color(0xFFEF5350).withValues(alpha: 0.065),
+                    ),
+                  ],
+                ),
                 extraLinesData: ExtraLinesData(
                   horizontalLines: [
                     HorizontalLine(
@@ -1631,9 +1829,7 @@ class _DashboardPageState extends State<DashboardPage>
                   LineChartBarData(
                     spots: spots,
                     isCurved: true,
-                    gradient: const LinearGradient(
-                      colors: [AppTheme.kPrimaryDeep, Color(0xFF8B5CF6)],
-                    ),
+                    color: lineColor,
                     barWidth: 4,
                     isStrokeCapRound: true,
                     dotData: FlDotData(
@@ -1643,7 +1839,7 @@ class _DashboardPageState extends State<DashboardPage>
                           radius: index == spots.length - 1 ? 5 : 3.5,
                           color: Colors.white,
                           strokeWidth: 2,
-                          strokeColor: AppTheme.kPrimaryDeep,
+                          strokeColor: lineColor,
                         );
                       },
                     ),
@@ -1651,8 +1847,8 @@ class _DashboardPageState extends State<DashboardPage>
                       show: true,
                       gradient: LinearGradient(
                         colors: [
-                          AppTheme.kPrimaryDeep.withValues(alpha: 0.2),
-                          const Color(0xFF8B5CF6).withValues(alpha: 0.0),
+                          lineColor.withValues(alpha: 0.18),
+                          lineColor.withValues(alpha: 0.0),
                         ],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
@@ -1674,7 +1870,7 @@ class _DashboardPageState extends State<DashboardPage>
                         }
 
                         return LineTooltipItem(
-                          'T+${spot.x.toInt()}m\n${spot.y.toStringAsFixed(0)}% ($riskLabel)',
+                          '${spot.x == 0 ? 'Now' : 'T+${spot.x.toInt()}m'}\n${spot.y.toStringAsFixed(0)}% ($riskLabel)',
                           GoogleFonts.poppins(
                             color: Colors.white,
                             fontWeight: FontWeight.w600,
@@ -1781,6 +1977,45 @@ class _DashboardPageState extends State<DashboardPage>
             Icon(
               Icons.chevron_right_rounded,
               color: Colors.orange.shade400,
+              size: 18,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNotificationWarning() {
+    return GestureDetector(
+      onTap: () => openAppSettings(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.red.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.red.shade200),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.notifications_off_rounded,
+              color: Colors.red.shade700,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Anxiety early warnings are blocked. Tap to enable notifications.',
+                style: GoogleFonts.poppins(
+                  fontSize: 11,
+                  color: Colors.red.shade800,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Icon(
+              Icons.open_in_new_rounded,
+              color: Colors.red.shade400,
               size: 18,
             ),
           ],
@@ -1973,11 +2208,17 @@ class _DashboardPageState extends State<DashboardPage>
 
     // Check if there is an anxiety escalation predicted in the next 10 minutes
     final forecast = _effectiveForecastData;
-    final maxForecastedRisk = forecast.isNotEmpty
-        ? forecast.map(_scaleForecastValue).reduce(max)
+    final currentRisk = _currentModelRisk ?? risk;
+    final futureForecast = forecast.length >= 5
+        ? forecast.skip(4).map(_scaleForecastValue).toList()
+        : forecast.map(_scaleForecastValue).toList();
+    final maxForecastedRisk = futureForecast.isNotEmpty
+        ? futureForecast.reduce(max)
         : 0.0;
-
-    final bool isEscalating = maxForecastedRisk > 70.0 && risk <= 70.0;
+    final forecastIncrease = maxForecastedRisk - currentRisk;
+    final bool isEscalating =
+        (maxForecastedRisk >= 70.0 && forecastIncrease >= 10.0) ||
+        (maxForecastedRisk >= 45.0 && forecastIncrease >= 20.0);
 
     if (isEscalating) {
       title = "Anxiety Escalation Predicted";
@@ -2125,9 +2366,25 @@ class _DashboardPageState extends State<DashboardPage>
           borderRadius: BorderRadius.circular(20),
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Expanded(
-              child: Text('Could not load physiological history.'),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Could not load physiological history.'),
+                  if (_historyMessage.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      _historyMessage,
+                      style: GoogleFonts.poppins(
+                        fontSize: 10.5,
+                        color: AppTheme.kTextLight,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
             IconButton(
               onPressed: _fetchHistory,

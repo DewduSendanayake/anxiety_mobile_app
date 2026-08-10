@@ -130,7 +130,9 @@ class ApiService {
       }
       return {
         'status': 'error',
-        'message': 'History request failed: ${response.statusCode}',
+        'message': response.statusCode == 404
+            ? 'The live prediction server does not have the history API yet.'
+            : 'History request failed: ${response.statusCode}',
       };
     } catch (e) {
       return {'status': 'error', 'message': 'History unavailable: $e'};

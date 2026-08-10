@@ -8,43 +8,140 @@ import 'api_service.dart';
 import 'chest_strap_service.dart';
 import 'notification_helper.dart';
 
-class SustainedHighRiskGate {
-  final double highThreshold;
-  final double recoveryThreshold;
-  final Duration requiredDuration;
+class PredictedEscalation {
+  final double currentRisk;
+  final double predictedPeakRisk;
+  final int leadMinutes;
 
-  DateTime? _highSince;
-  bool _alertIssuedForCurrentEpisode = false;
-
-  SustainedHighRiskGate({
-    this.highThreshold = 70.0,
-    this.recoveryThreshold = 60.0,
-    this.requiredDuration = const Duration(minutes: 3),
+  const PredictedEscalation({
+    required this.currentRisk,
+    required this.predictedPeakRisk,
+    required this.leadMinutes,
   });
 
-  bool shouldAlert(double riskScore, DateTime observedAt) {
-    if (riskScore <= highThreshold) {
-      // Any dip below High breaks continuity. A lower recovery boundary adds
-      // hysteresis so one long event cannot create repeated alerts.
-      _highSince = null;
-      if (riskScore < recoveryThreshold) {
-        _alertIssuedForCurrentEpisode = false;
-      }
-      return false;
+  double get increase => predictedPeakRisk - currentRisk;
+}
+
+/// Detects a meaningful increase from the participant's current calibrated
+/// risk to the model's 5-to-10-minute forecast.
+///
+/// Two forecasts separated in time must agree before an alert is emitted. This
+/// rejects a single noisy prediction while still providing several minutes of
+/// lead time. The gate emits only once until both current and forecast risk
+/// recover to the low range.
+class PredictiveEscalationGate {
+  final int minimumLeadMinutes;
+  final double elevatedThreshold;
+  final double highThreshold;
+  final double minimumElevatedIncrease;
+  final double minimumHighIncrease;
+  final double recoveryThreshold;
+  final int requiredConfirmations;
+  final Duration minimumConfirmationSpacing;
+  final Duration maximumConfirmationGap;
+
+  int _confirmationCount = 0;
+  DateTime? _lastConfirmationAt;
+  bool _alertIssuedForCurrentEpisode = false;
+
+  PredictiveEscalationGate({
+    this.minimumLeadMinutes = 5,
+    this.elevatedThreshold = 45.0,
+    this.highThreshold = 70.0,
+    this.minimumElevatedIncrease = 20.0,
+    this.minimumHighIncrease = 10.0,
+    this.recoveryThreshold = 40.0,
+    this.requiredConfirmations = 2,
+    this.minimumConfirmationSpacing = const Duration(seconds: 20),
+    this.maximumConfirmationGap = const Duration(minutes: 2),
+  });
+
+  PredictedEscalation? evaluate({
+    required double currentRisk,
+    required List<double> riskForecast,
+    required DateTime observedAt,
+  }) {
+    if (riskForecast.length < minimumLeadMinutes) {
+      _clearCandidate();
+      return null;
     }
 
-    _highSince ??= observedAt;
-    if (!_alertIssuedForCurrentEpisode &&
-        observedAt.difference(_highSince!) >= requiredDuration) {
-      _alertIssuedForCurrentEpisode = true;
-      return true;
+    final current = currentRisk.clamp(0.0, 100.0).toDouble();
+    final future = riskForecast
+        .skip(minimumLeadMinutes - 1)
+        .map((value) => value.clamp(0.0, 100.0).toDouble())
+        .toList();
+    final peak = future.reduce((a, b) => a >= b ? a : b);
+    final increase = peak - current;
+
+    final highEscalation =
+        peak >= highThreshold && increase >= minimumHighIncrease;
+    final elevatedEscalation =
+        peak >= elevatedThreshold && increase >= minimumElevatedIncrease;
+    final qualifies = highEscalation || elevatedEscalation;
+
+    if (!qualifies) {
+      _clearCandidate();
+      if (current < recoveryThreshold && peak < recoveryThreshold) {
+        _alertIssuedForCurrentEpisode = false;
+      }
+      return null;
     }
-    return false;
+
+    if (_alertIssuedForCurrentEpisode) return null;
+
+    if (_lastConfirmationAt != null) {
+      final confirmationGap = observedAt.difference(_lastConfirmationAt!);
+      if (confirmationGap.isNegative ||
+          confirmationGap > maximumConfirmationGap) {
+        _clearCandidate();
+      } else if (confirmationGap < minimumConfirmationSpacing) {
+        return null;
+      }
+    }
+    _lastConfirmationAt = observedAt;
+    _confirmationCount++;
+    if (_confirmationCount < requiredConfirmations) return null;
+
+    final targetThreshold = highEscalation
+        ? highThreshold
+        : elevatedThreshold;
+    final requiredIncrease = highEscalation
+        ? minimumHighIncrease
+        : minimumElevatedIncrease;
+    var leadMinutes = minimumLeadMinutes;
+    for (var index = minimumLeadMinutes - 1;
+        index < riskForecast.length;
+        index++) {
+      final predicted = riskForecast[index].clamp(0.0, 100.0).toDouble();
+      if (predicted >= targetThreshold &&
+          predicted - current >= requiredIncrease) {
+        leadMinutes = index + 1;
+        break;
+      }
+    }
+
+    _alertIssuedForCurrentEpisode = true;
+    _clearCandidate();
+    return PredictedEscalation(
+      currentRisk: current,
+      predictedPeakRisk: peak,
+      leadMinutes: leadMinutes,
+    );
+  }
+
+  void _clearCandidate() {
+    _confirmationCount = 0;
+    _lastConfirmationAt = null;
   }
 
   void reset() {
-    _highSince = null;
+    _clearCandidate();
     _alertIssuedForCurrentEpisode = false;
+  }
+
+  void allowRetry() {
+    reset();
   }
 }
 
@@ -57,6 +154,9 @@ class AnxietyAlertEvent {
   final double initialBr;
   final double initialMotion;
   final String riskSource;
+  final double? predictedRiskScore;
+  final int? predictedLeadMinutes;
+  final double? forecastIncrease;
   bool? confirmedAnxious;
   String? activity;
   String? intervention;
@@ -79,6 +179,9 @@ class AnxietyAlertEvent {
     required this.initialBr,
     required this.initialMotion,
     this.riskSource = 'physiological',
+    this.predictedRiskScore,
+    this.predictedLeadMinutes,
+    this.forecastIncrease,
     this.confirmedAnxious,
     this.activity,
     this.intervention,
@@ -103,6 +206,9 @@ class AnxietyAlertEvent {
       initialBr: (json['initial_br'] as num).toDouble(),
       initialMotion: (json['initial_motion'] as num).toDouble(),
       riskSource: json['risk_source'] as String? ?? 'physiological',
+      predictedRiskScore: (json['predicted_risk_score'] as num?)?.toDouble(),
+      predictedLeadMinutes: (json['predicted_lead_minutes'] as num?)?.toInt(),
+      forecastIncrease: (json['forecast_increase'] as num?)?.toDouble(),
       confirmedAnxious: json['confirmed_anxious'] as bool?,
       activity: json['activity'] as String?,
       intervention: json['intervention'] as String?,
@@ -131,6 +237,11 @@ class AnxietyAlertEvent {
     'initial_br': initialBr,
     'initial_motion': initialMotion,
     'risk_source': riskSource,
+    if (predictedRiskScore != null)
+      'predicted_risk_score': predictedRiskScore,
+    if (predictedLeadMinutes != null)
+      'predicted_lead_minutes': predictedLeadMinutes,
+    if (forecastIncrease != null) 'forecast_increase': forecastIncrease,
     if (confirmedAnxious != null) 'confirmed_anxious': confirmedAnxious,
     if (activity != null) 'activity': activity,
     if (intervention != null) 'intervention': intervention,
@@ -158,10 +269,14 @@ class AnxietyFeedbackService {
   AnxietyFeedbackService._internal();
 
   static const String _eventsKey = 'anxiety_alert_events_v1';
+  static const String _pendingUploadsKey = 'anxiety_feedback_pending_v1';
   String? _userId;
   StreamSubscription<ChestStrapReading>? _readingSubscription;
   DateTime? _lastReadingAt;
-  final SustainedHighRiskGate _riskGate = SustainedHighRiskGate();
+  final PredictiveEscalationGate _forecastGate = PredictiveEscalationGate();
+  Timer? _forecastTimer;
+  bool _forecastRequestInFlight = false;
+  DateTime? _latestForecastAt;
   double? _latestFusionRisk;
   DateTime? _latestFusionAt;
   final Map<String, Timer> _followupTimers = {};
@@ -174,15 +289,24 @@ class AnxietyFeedbackService {
       _observeReading,
       onError: (error) => debugPrint('Anxiety alert monitor error: $error'),
     );
+    unawaited(retryPendingUploads());
+    unawaited(refreshForecast());
+    _forecastTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      unawaited(refreshForecast());
+    });
     await _restorePendingFollowups();
   }
 
   Future<void> stop() async {
     await _readingSubscription?.cancel();
     _readingSubscription = null;
+    _forecastTimer?.cancel();
+    _forecastTimer = null;
+    _forecastRequestInFlight = false;
+    _latestForecastAt = null;
     _userId = null;
     _lastReadingAt = null;
-    _riskGate.reset();
+    _forecastGate.reset();
     _latestFusionRisk = null;
     _latestFusionAt = null;
     for (final timer in _followupTimers.values) {
@@ -194,36 +318,16 @@ class AnxietyFeedbackService {
   void _observeReading(ChestStrapReading reading) {
     final userId = _userId;
     if (userId == null || !reading.isWorn) {
-      _resetHighEpisode();
+      _forecastGate.reset();
       return;
     }
 
     final now = DateTime.now();
     if (_lastReadingAt != null &&
         now.difference(_lastReadingAt!) > const Duration(seconds: 10)) {
-      _resetHighEpisode();
+      _forecastGate.reset();
     }
     _lastReadingAt = now;
-
-    final hasFreshFusion =
-        _latestFusionRisk != null &&
-        _latestFusionAt != null &&
-        now.difference(_latestFusionAt!) < const Duration(seconds: 90);
-    final monitoredRisk = hasFreshFusion
-        ? _latestFusionRisk!
-        : reading.riskScore;
-
-    if (_riskGate.shouldAlert(monitoredRisk, now)) {
-      unawaited(
-        _createAlert(
-          userId,
-          reading,
-          now,
-          monitoredRisk,
-          hasFreshFusion ? 'fusion' : 'physiological',
-        ),
-      );
-    }
   }
 
   void updateFusionRisk(double riskScore) {
@@ -231,34 +335,147 @@ class AnxietyFeedbackService {
     _latestFusionAt = DateTime.now();
   }
 
-  void _resetHighEpisode() {
-    _riskGate.reset();
+  double? get latestFusionRisk {
+    final observedAt = _latestFusionAt;
+    if (_latestFusionRisk == null || observedAt == null) return null;
+    if (DateTime.now().difference(observedAt) >= const Duration(seconds: 90)) {
+      return null;
+    }
+    return _latestFusionRisk;
   }
 
-  Future<void> _createAlert(
+  Future<void> refreshForecast() async {
+    final userId = _userId;
+    if (userId == null || _forecastRequestInFlight) return;
+    final latestAt = _latestForecastAt;
+    if (latestAt != null &&
+        DateTime.now().difference(latestAt) < const Duration(seconds: 20)) {
+      return;
+    }
+
+    _forecastRequestInFlight = true;
+    try {
+      final response = await ApiService.getEscalationForecast(userId);
+      observeForecastResponse(response);
+    } finally {
+      _forecastRequestInFlight = false;
+    }
+  }
+
+  void observeForecastResponse(
+    Map<String, dynamic> response, {
+    DateTime? observedAt,
+  }) {
+    if (response['status'] != 'success') return;
+    final rawForecast = response['risk_forecast'];
+    if (rawForecast is! List ||
+        rawForecast.length < 10 ||
+        rawForecast.any((value) => value is! num)) {
+      // Raw reconstruction errors from an older server deployment, or an
+      // incomplete response, must never trigger participant alerts.
+      return;
+    }
+
+    final forecast = rawForecast
+        .cast<num>()
+        .take(10)
+        .map((value) => value.toDouble())
+        .toList();
+    final currentFromApi = response['current_risk_index'];
+    final liveReading = ChestStrapService().hasLiveWornReading
+        ? ChestStrapService().lastReading
+        : null;
+    if (liveReading == null || !liveReading.isWorn) return;
+
+    final currentRisk = currentFromApi is num
+        ? currentFromApi.toDouble()
+        : liveReading.riskScore;
+    final now = observedAt ?? DateTime.now();
+    _latestForecastAt = now;
+    final escalation = _forecastGate.evaluate(
+      currentRisk: currentRisk,
+      riskForecast: forecast,
+      observedAt: now,
+    );
+    if (escalation == null) return;
+    final userId = _userId;
+    if (userId == null) return;
+    unawaited(_createPredictiveAlert(userId, liveReading, now, escalation));
+  }
+
+  Future<void> _createPredictiveAlert(
     String userId,
     ChestStrapReading reading,
     DateTime detectedAt,
-    double monitoredRisk,
-    String riskSource,
+    PredictedEscalation escalation,
   ) async {
     final event = AnxietyAlertEvent(
       eventId: 'anx:${detectedAt.toUtc().millisecondsSinceEpoch}',
       userId: userId,
       detectedAt: detectedAt,
-      initialRiskScore: monitoredRisk,
+      initialRiskScore: escalation.currentRisk,
       initialHr: reading.meanHR,
       initialBr: reading.meanBR,
       initialMotion: reading.stdAccMag,
-      riskSource: riskSource,
+      riskSource: 'physiological_forecast',
+      predictedRiskScore: escalation.predictedPeakRisk,
+      predictedLeadMinutes: escalation.leadMinutes,
+      forecastIncrease: escalation.increase,
     );
     await _upsertEvent(event);
-    await _upload(event);
-    await NotificationHelper.showAnxietyAlert(eventId: event.eventId);
+    final shown = await NotificationHelper.showAnxietyAlert(
+      eventId: event.eventId,
+      leadMinutes: escalation.leadMinutes,
+      predictedRisk: escalation.predictedPeakRisk,
+    );
+    if (!shown) {
+      await _removeEvent(event.eventId);
+      _forecastGate.allowRetry();
+      return;
+    }
+    unawaited(_upload(event));
+  }
+
+  /// Exercises the complete Android notification and check-in route without
+  /// sending a synthetic event to the research backend.
+  Future<bool> showLocalTestAlert() async {
+    final userId = _userId;
+    final reading = ChestStrapService().hasLiveWornReading
+        ? ChestStrapService().lastReading
+        : null;
+    if (userId == null || reading == null || !reading.isWorn) return false;
+
+    final now = DateTime.now();
+    final currentRisk = reading.riskScore.clamp(0.0, 100.0).toDouble();
+    final predictedRisk = (currentRisk + 30.0).clamp(0.0, 100.0).toDouble();
+    final event = AnxietyAlertEvent(
+      eventId: 'anx:test:${now.toUtc().millisecondsSinceEpoch}',
+      userId: userId,
+      detectedAt: now,
+      initialRiskScore: currentRisk,
+      initialHr: reading.meanHR,
+      initialBr: reading.meanBR,
+      initialMotion: reading.stdAccMag,
+      riskSource: 'notification_test',
+      predictedRiskScore: predictedRisk,
+      predictedLeadMinutes: 5,
+      forecastIncrease: predictedRisk - currentRisk,
+    );
+    await _upsertEvent(event);
+    final shown = await NotificationHelper.showAnxietyAlert(
+      eventId: event.eventId,
+      leadMinutes: 5,
+      predictedRisk: predictedRisk,
+    );
+    if (!shown) await _removeEvent(event.eventId);
+    return shown;
   }
 
   static Future<List<AnxietyAlertEvent>> _loadEvents() async {
     final prefs = await SharedPreferences.getInstance();
+    // Notification action callbacks may run in a background isolate. Reload so
+    // both isolates see the newest event before recording Yes/No feedback.
+    await prefs.reload();
     final encoded = prefs.getString(_eventsKey);
     if (encoded == null || encoded.isEmpty) return [];
     try {
@@ -294,6 +511,12 @@ class AnxietyFeedbackService {
     await _saveEvents(events);
   }
 
+  static Future<void> _removeEvent(String eventId) async {
+    final events = await _loadEvents();
+    events.removeWhere((event) => event.eventId == eventId);
+    await _saveEvents(events);
+  }
+
   static Future<AnxietyAlertEvent?> getEvent(String eventId) async {
     final events = await _loadEvents();
     for (final event in events) {
@@ -302,8 +525,51 @@ class AnxietyFeedbackService {
     return null;
   }
 
+  static Future<Set<String>> _loadPendingUploadIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    return (prefs.getStringList(_pendingUploadsKey) ?? []).toSet();
+  }
+
+  static Future<void> _markUploadPending(String eventId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final pending = await _loadPendingUploadIds();
+    pending.add(eventId);
+    await prefs.setStringList(_pendingUploadsKey, pending.toList());
+  }
+
+  static Future<void> _clearPendingUpload(String eventId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final pending = await _loadPendingUploadIds();
+    if (!pending.remove(eventId)) return;
+    await prefs.setStringList(_pendingUploadsKey, pending.toList());
+  }
+
   static Future<void> _upload(AnxietyAlertEvent event) async {
-    await ApiService.sendAnxietyFeedback(event.toJson());
+    if (event.riskSource == 'notification_test') return;
+    final uploaded = await ApiService.sendAnxietyFeedback(event.toJson());
+    if (uploaded) {
+      await _clearPendingUpload(event.eventId);
+    } else {
+      await _markUploadPending(event.eventId);
+    }
+  }
+
+  static Future<void> retryPendingUploads() async {
+    final pending = await _loadPendingUploadIds();
+    if (pending.isEmpty) return;
+    final events = await _loadEvents();
+    for (final event in events) {
+      if (pending.contains(event.eventId)) {
+        await _upload(event);
+      }
+    }
+  }
+
+  static Future<void> clearLocalEvents() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_eventsKey);
+    await prefs.remove(_pendingUploadsKey);
   }
 
   static Future<void> recordConfirmation(String eventId, bool confirmed) async {
@@ -383,7 +649,10 @@ class AnxietyFeedbackService {
       eventId: eventId,
       signalsImproved:
           event.followupRiskScore != null &&
-          event.followupRiskScore! <= event.initialRiskScore - 10.0,
+          (event.predictedRiskScore == null
+              ? event.followupRiskScore! <= event.initialRiskScore - 10.0
+              : event.followupRiskScore! <=
+                    event.predictedRiskScore! - 10.0),
     );
   }
 

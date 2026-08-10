@@ -7,6 +7,7 @@ import '../services/background/service_config.dart';
 import '../services/background_service_helper.dart';
 import '../services/user_manager.dart';
 import '../services/participant_identity_service.dart';
+import '../services/anxiety_feedback_service.dart';
 import 'informed_consent_page.dart';
 import 'privacy_policy_page.dart';
 import '../main.dart';
@@ -185,6 +186,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
     );
 
     // Clear all study data but keep withdrawal record
+    await AnxietyFeedbackService.clearLocalEvents();
     await ParticipantIdentityService.clearLocalIdentity();
     await prefs.remove('consent_accepted');
     await prefs.remove('profile_complete');
@@ -192,6 +194,8 @@ class _DataRightsPageState extends State<DataRightsPage> {
     await prefs.remove('chest_strap_last_reading');
     await prefs.remove('user_profile_data');
     await prefs.remove('offline_queue');
+    await prefs.remove('offline_queue_main');
+    await prefs.remove('offline_queue_bg');
     await prefs.remove('last_battery_level');
     await prefs.remove('rating_enabled');
 
