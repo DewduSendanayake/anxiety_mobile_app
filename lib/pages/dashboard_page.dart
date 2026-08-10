@@ -1150,7 +1150,7 @@ class _DashboardPageState extends State<DashboardPage>
                                     Icons.notifications_active_outlined,
                                     size: 18,
                                   ),
-                                  label: const Text('Test popup and check-in'),
+                                  label: const Text('Check in manually'),
                                 ),
                               ),
                             ],
