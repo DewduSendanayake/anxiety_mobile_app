@@ -90,7 +90,7 @@ class NotificationHelper {
     await plugin.show(
       999,
       'How was your stress today?',
-      'Tap to rate 0–5',
+      'Tap to rate it from 0 to 5',
       details,
       payload: 'stress_rating',
     );
@@ -99,7 +99,6 @@ class NotificationHelper {
   static Future<bool> showAnxietyAlert({
     required String eventId,
     required int leadMinutes,
-    required double predictedRisk,
   }) async {
     if (!await ensurePermissions()) {
       debugPrint('Anxiety alert not shown: notification permission denied.');
@@ -108,9 +107,8 @@ class NotificationHelper {
     const details = NotificationDetails(
       android: AndroidNotificationDetails(
         'anxiety_alerts',
-        'Anxiety early warnings',
-        channelDescription:
-            'Early check-ins when physiological escalation is forecast',
+        'Anxiety check-ins',
+        channelDescription: 'Check-ins when your anxiety level may be rising',
         importance: Importance.max,
         priority: Priority.max,
         category: AndroidNotificationCategory.reminder,
@@ -134,8 +132,12 @@ class NotificationHelper {
     try {
       await plugin.show(
         eventId.hashCode & 0x7fffffff,
-        'Possible anxiety rise in about $leadMinutes minutes',
-        'Forecast peak ${predictedRisk.round()}/100. Do you notice anxiety building?',
+        leadMinutes <= 0
+            ? 'Your anxiety level may be high right now'
+            : 'Your anxiety level may rise soon',
+        leadMinutes <= 0
+            ? 'Aura noticed a high reading. Do you feel anxious right now?'
+            : 'It may rise in about $leadMinutes minutes. Do you notice anxiety building?',
         details,
         payload: 'anxiety_checkin:$eventId',
       );
@@ -154,9 +156,8 @@ class NotificationHelper {
     const details = NotificationDetails(
       android: AndroidNotificationDetails(
         'anxiety_alerts',
-        'Anxiety early warnings',
-        channelDescription:
-            'Early check-ins when physiological escalation is forecast',
+        'Anxiety check-ins',
+        channelDescription: 'Check-ins when your anxiety level may be rising',
         importance: Importance.high,
         priority: Priority.high,
         category: AndroidNotificationCategory.reminder,
@@ -166,7 +167,7 @@ class NotificationHelper {
       (eventId.hashCode + 1) & 0x7fffffff,
       'How are you feeling now?',
       signalsImproved
-          ? 'Your signals decreased. Tap to tell us what helped.'
+          ? 'Your readings went down. Tap to tell us what helped.'
           : 'Tap for a quick follow-up and tell us what you tried.',
       details,
       payload: 'anxiety_checkin:$eventId',

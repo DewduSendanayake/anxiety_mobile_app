@@ -264,7 +264,7 @@ class _Gad7ScreenState extends State<Gad7Screen> {
         context: context,
         barrierDismissible: false,
         builder: (ctx) => AlertDialog(
-          title: const Text('GAD-7 Complete'),
+          title: const Text('Anxiety Check Complete'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -286,7 +286,7 @@ class _Gad7ScreenState extends State<Gad7Screen> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Thank you for completing this week\'s assessment. This data helps the research team understand your anxiety patterns.',
+                'Thank you for completing this week\'s check-in. Your answers help the research team understand how anxiety changes over time.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
               ),
@@ -323,7 +323,7 @@ class _Gad7ScreenState extends State<Gad7Screen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
-        title: const Text('Weekly GAD-7 Assessment'),
+        title: const Text('Weekly Anxiety Check'),
         leading: const BackButton(),
       ),
       body: Column(
@@ -524,7 +524,7 @@ class _Gad7ScreenState extends State<Gad7Screen> {
                               strokeWidth: 2,
                             ),
                           )
-                        : const Text('Submit Assessment'),
+                        : const Text('Submit Answers'),
                   ),
                 ),
               ],
@@ -624,13 +624,13 @@ class _Pss10ScreenState extends State<Pss10Screen> {
         context: context,
         barrierDismissible: false,
         builder: (ctx) => AlertDialog(
-          title: const Text('PSS-10 Complete'),
+          title: const Text('Stress Check Complete'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text('Your Score: $_total / 40', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
-              const Text('Thank you. This weekly assessment helps track your stress levels over time.', textAlign: TextAlign.center, style: TextStyle(fontSize: 13)),
+              const Text('Thank you. This weekly check helps track your stress over time.', textAlign: TextAlign.center, style: TextStyle(fontSize: 13)),
             ],
           ),
           actions: [ElevatedButton(onPressed: () { Navigator.pop(ctx); Navigator.pop(context); }, child: const Text('Done'))],
@@ -652,7 +652,7 @@ class _Pss10ScreenState extends State<Pss10Screen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
-      appBar: AppBar(title: const Text('Weekly Stress (PSS-10)')),
+      appBar: AppBar(title: const Text('Weekly Stress Check')),
       body: Column(
         children: [
           Expanded(
@@ -673,7 +673,7 @@ class _Pss10ScreenState extends State<Pss10Screen> {
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: allAnswered && !_saving ? _submit : null,
-                    child: _saving ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Text('Submit Assessment'),
+                    child: _saving ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Text('Submit Answers'),
                   ),
                 ),
               ],
@@ -734,4 +734,3 @@ Future<bool> isPss10DueThisWeek() async {
   final lastWeek = prefs.getString('last_pss10_week') ?? '';
   return lastWeek != thisWeek;
 }
-

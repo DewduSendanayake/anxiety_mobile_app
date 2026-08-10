@@ -658,7 +658,7 @@ class _ProfilePageState extends State<ProfilePage> {
               const SizedBox(height: 16),
 
               _sectionLabel(
-                'Have you been diagnosed with an anxiety disorder?',
+                'Has a health professional ever told you that you have an anxiety disorder?',
               ),
               _radioGroup(
                 ['Yes', 'No', 'Unsure'],
@@ -668,7 +668,7 @@ class _ProfilePageState extends State<ProfilePage> {
               const SizedBox(height: 16),
 
               _sectionLabel(
-                'Are you currently on medication for anxiety/mental health?',
+                'Do you currently take medicine for anxiety or another mental health condition?',
               ),
               _radioGroup(
                 ['Yes', 'No', 'Prefer not to say'],
@@ -915,8 +915,8 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
           const SizedBox(height: 12),
           Text(
-            "Your data is collected anonymously using a Participant ID. "
-            "All identifiers are kept separate from health data as per PDPA guidelines.",
+            "Your data is stored under a Participant ID instead of your name. "
+            "Anything that could identify you is kept separate from your health information.",
             style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
           ),
           const SizedBox(height: 16),
@@ -928,7 +928,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 MaterialPageRoute(builder: (_) => const DataRightsPage()),
               ),
               icon: const Icon(Icons.shield_outlined, size: 18),
-              label: const Text('Manage Data Rights & Privacy'),
+              label: const Text('Manage My Data and Privacy'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppTheme.kPrimaryDeep,
                 side: const BorderSide(color: AppTheme.kPrimaryDeep),

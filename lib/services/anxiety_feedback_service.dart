@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -78,7 +79,8 @@ class PredictiveEscalationGate {
         peak >= highThreshold && increase >= minimumHighIncrease;
     final elevatedEscalation =
         peak >= elevatedThreshold && increase >= minimumElevatedIncrease;
-    final qualifies = highEscalation || elevatedEscalation;
+    final currentHigh = current >= highThreshold;
+    final qualifies = currentHigh || highEscalation || elevatedEscalation;
 
     if (!qualifies) {
       _clearCandidate();
@@ -103,21 +105,25 @@ class PredictiveEscalationGate {
     _confirmationCount++;
     if (_confirmationCount < requiredConfirmations) return null;
 
-    final targetThreshold = highEscalation
+    final targetThreshold = currentHigh || highEscalation
         ? highThreshold
         : elevatedThreshold;
-    final requiredIncrease = highEscalation
+    final requiredIncrease = currentHigh
+        ? 0.0
+        : highEscalation
         ? minimumHighIncrease
         : minimumElevatedIncrease;
-    var leadMinutes = minimumLeadMinutes;
-    for (var index = minimumLeadMinutes - 1;
-        index < riskForecast.length;
-        index++) {
-      final predicted = riskForecast[index].clamp(0.0, 100.0).toDouble();
-      if (predicted >= targetThreshold &&
-          predicted - current >= requiredIncrease) {
-        leadMinutes = index + 1;
-        break;
+    var leadMinutes = currentHigh ? 0 : minimumLeadMinutes;
+    if (!currentHigh) {
+      for (var index = minimumLeadMinutes - 1;
+          index < riskForecast.length;
+          index++) {
+        final predicted = riskForecast[index].clamp(0.0, 100.0).toDouble();
+        if (predicted >= targetThreshold &&
+            predicted - current >= requiredIncrease) {
+          leadMinutes = index + 1;
+          break;
+        }
       }
     }
 
@@ -125,7 +131,7 @@ class PredictiveEscalationGate {
     _clearCandidate();
     return PredictedEscalation(
       currentRisk: current,
-      predictedPeakRisk: peak,
+      predictedPeakRisk: max(current, peak),
       leadMinutes: leadMinutes,
     );
   }
@@ -279,6 +285,7 @@ class AnxietyFeedbackService {
   DateTime? _latestForecastAt;
   double? _latestFusionRisk;
   DateTime? _latestFusionAt;
+  final ValueNotifier<double?> combinedRisk = ValueNotifier(null);
   final Map<String, Timer> _followupTimers = {};
 
   Future<void> initializeForUser(String userId) async {
@@ -309,6 +316,7 @@ class AnxietyFeedbackService {
     _forecastGate.reset();
     _latestFusionRisk = null;
     _latestFusionAt = null;
+    combinedRisk.value = null;
     for (final timer in _followupTimers.values) {
       timer.cancel();
     }
@@ -331,8 +339,9 @@ class AnxietyFeedbackService {
   }
 
   void updateFusionRisk(double riskScore) {
-    _latestFusionRisk = riskScore.clamp(0.0, 100.0);
+    _latestFusionRisk = riskScore.clamp(0.0, 100.0).toDouble();
     _latestFusionAt = DateTime.now();
+    combinedRisk.value = _latestFusionRisk;
   }
 
   double? get latestFusionRisk {
@@ -426,7 +435,6 @@ class AnxietyFeedbackService {
     final shown = await NotificationHelper.showAnxietyAlert(
       eventId: event.eventId,
       leadMinutes: escalation.leadMinutes,
-      predictedRisk: escalation.predictedPeakRisk,
     );
     if (!shown) {
       await _removeEvent(event.eventId);
@@ -465,7 +473,6 @@ class AnxietyFeedbackService {
     final shown = await NotificationHelper.showAnxietyAlert(
       eventId: event.eventId,
       leadMinutes: 5,
-      predictedRisk: predictedRisk,
     );
     if (!shown) await _removeEvent(event.eventId);
     return shown;
@@ -570,6 +577,51 @@ class AnxietyFeedbackService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_eventsKey);
     await prefs.remove(_pendingUploadsKey);
+  }
+
+  static Future<Map<String, dynamic>> getLocalWeeklySummary(
+    String userId,
+  ) async {
+    final cutoff = DateTime.now().subtract(const Duration(days: 7));
+    final events = (await _loadEvents())
+        .where(
+          (event) =>
+              event.userId == userId &&
+              event.detectedAt.isAfter(cutoff) &&
+              event.riskSource != 'notification_test',
+        )
+        .toList();
+    final answered = events
+        .where((event) => event.confirmedAnxious != null)
+        .toList();
+    final confirmed = answered
+        .where((event) => event.confirmedAnxious == true)
+        .length;
+
+    String? mostCommon(Iterable<String?> values) {
+      final counts = <String, int>{};
+      for (final value in values) {
+        final cleaned = value?.trim();
+        if (cleaned == null || cleaned.isEmpty) continue;
+        counts[cleaned] = (counts[cleaned] ?? 0) + 1;
+      }
+      if (counts.isEmpty) return null;
+      return counts.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+    }
+
+    final helpfulActions = events.where((event) => event.feltBetter == true);
+    return {
+      'status': 'success',
+      'alerts': events.length,
+      'answered_alerts': answered.length,
+      'confirmation_rate': answered.isEmpty ? null : confirmed / answered.length,
+      'common_activity': mostCommon(events.map((event) => event.activity)),
+      'most_effective_action': mostCommon(
+        helpfulActions.map(
+          (event) => event.alternativeAction ?? event.intervention,
+        ),
+      ),
+    };
   }
 
   static Future<void> recordConfirmation(String eventId, bool confirmed) async {

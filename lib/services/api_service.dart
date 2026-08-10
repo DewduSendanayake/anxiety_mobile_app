@@ -109,11 +109,11 @@ class ApiService {
         return jsonDecode(response.body);
       } else {
         print('Prediction pipeline failed: ${response.body}');
-        return {'status': 'error', 'message': 'API Inference Crash'};
+        return {'status': 'error', 'message': 'Forecast unavailable right now.'};
       }
     } catch (e) {
       print('Network exception during prediction: $e');
-      return {'status': 'error', 'message': 'Network offline'};
+      return {'status': 'error', 'message': 'No internet connection.'};
     }
   }
 
@@ -131,11 +131,11 @@ class ApiService {
       return {
         'status': 'error',
         'message': response.statusCode == 404
-            ? 'The live prediction server does not have the history API yet.'
-            : 'History request failed: ${response.statusCode}',
+            ? 'Your history is not available yet.'
+            : 'Could not load your history.',
       };
     } catch (e) {
-      return {'status': 'error', 'message': 'History unavailable: $e'};
+      return {'status': 'error', 'message': 'Could not load your history.'};
     }
   }
 

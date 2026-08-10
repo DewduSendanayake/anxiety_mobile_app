@@ -23,6 +23,13 @@ import 'baseline_calibration_page.dart';
 // Dashboard Page — Physiological Monitoring
 // ─────────────────────────────────────────────────────────────────────────────
 
+class _TimedAnxietyReading {
+  final DateTime time;
+  final double score;
+
+  const _TimedAnxietyReading(this.time, this.score);
+}
+
 class DashboardPage extends StatefulWidget {
   final String? userId;
   const DashboardPage({super.key, this.userId});
@@ -54,6 +61,9 @@ class _DashboardPageState extends State<DashboardPage>
   double? _currentModelRisk;
   // Final score returned by the teammate's fusion model when configured.
   double? _fusionRiskScore;
+  final List<_TimedAnxietyReading> _recentAnxietyReadings = [];
+  final ScrollController _forecastScrollController = ScrollController();
+  bool _keepForecastAtLatest = true;
 
   // ── Chest Strap Live Data ──────────────────────────────────
   ChestStrapReading? _currentReading;
@@ -62,9 +72,6 @@ class _DashboardPageState extends State<DashboardPage>
   bool _isBluetoothDialogShowing = false;
 
   // ── Animation Controllers ───────────────────────────────────
-  late AnimationController _riskPulseController;
-  late Animation<double> _riskPulseAnimation;
-
   late AnimationController _entryController;
   late Animation<double> _entryFade;
   late Animation<Offset> _entrySlide;
@@ -74,15 +81,6 @@ class _DashboardPageState extends State<DashboardPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadCachedId();
-
-    // Risk indicator pulse animation
-    _riskPulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
-    _riskPulseAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
-      CurvedAnimation(parent: _riskPulseController, curve: Curves.easeInOut),
-    );
 
     // Entry animation
     _entryController = AnimationController(
@@ -176,12 +174,12 @@ class _DashboardPageState extends State<DashboardPage>
     ChestStrapService().liveReadingAvailable.removeListener(
       _onLiveReadingAvailabilityChanged,
     );
-    _riskPulseController.dispose();
     _entryController.dispose();
     _predictionTimer?.cancel();
     _bufferingTimer?.cancel();
     _btStateSubscription?.cancel();
     _readingSubscription?.cancel();
+    _forecastScrollController.dispose();
     super.dispose();
   }
 
@@ -234,7 +232,7 @@ class _DashboardPageState extends State<DashboardPage>
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
         ),
         content: Text(
-          'Please turn on Bluetooth to connect your chest strap for real-time anxiety monitoring.',
+          'Please turn on Bluetooth to connect your chest strap and see your current anxiety level.',
           style: GoogleFonts.poppins(),
         ),
         actions: [
@@ -245,7 +243,7 @@ class _DashboardPageState extends State<DashboardPage>
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text(
-                    'Using saved data / model weights for risk assessment.',
+                    'Using saved information for now.',
                   ),
                 ),
               );
@@ -289,7 +287,7 @@ class _DashboardPageState extends State<DashboardPage>
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
         ),
         content: Text(
-          'Aura needs Bluetooth permission to connect to your ChestStrap_V3 for real-time physiological monitoring.',
+          'Aura needs Bluetooth access to connect to your chest strap and show live readings.',
           style: GoogleFonts.poppins(),
         ),
         actions: [
@@ -340,7 +338,7 @@ class _DashboardPageState extends State<DashboardPage>
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
         ),
         content: Text(
-          'Without the chest strap, we can\'t measure your vitals in real-time. The app will use your previous data or global model weights instead.\n\nIs that okay?',
+          'Without the chest strap, Aura cannot show live body readings. You can continue, but your current anxiety level will be unavailable.\n\nDo you want to continue?',
           style: GoogleFonts.poppins(),
         ),
         actions: [
@@ -360,7 +358,7 @@ class _DashboardPageState extends State<DashboardPage>
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text(
-                    'Using saved data / model weights for risk assessment.',
+                    'Using saved information for now.',
                   ),
                 ),
               );
@@ -387,7 +385,7 @@ class _DashboardPageState extends State<DashboardPage>
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
         ),
         content: Text(
-          'To get the best results, please let us use Bluetooth to connect to your ChestStrap_V3.',
+          'Please let Aura use Bluetooth to connect to your chest strap.',
           style: GoogleFonts.poppins(),
         ),
         actions: [
@@ -396,7 +394,7 @@ class _DashboardPageState extends State<DashboardPage>
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('Using saved data / model weights.'),
+                  content: Text('Using saved information for now.'),
                 ),
               );
             },
@@ -434,7 +432,7 @@ class _DashboardPageState extends State<DashboardPage>
       if (mounted && ChestStrapService().isConnected) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('✅ ChestStrap_V3 connected successfully!'),
+            content: Text('Chest strap connected.'),
             backgroundColor: Colors.green,
           ),
         );
@@ -443,7 +441,7 @@ class _DashboardPageState extends State<DashboardPage>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              '⚠️ ChestStrap_V3 not found. Make sure it is powered on and nearby.',
+              'Chest strap not found. Make sure it is turned on and nearby.',
             ),
             backgroundColor: Colors.orange,
           ),
@@ -495,7 +493,7 @@ class _DashboardPageState extends State<DashboardPage>
           _forecastData = [];
           _currentModelRisk = null;
           _statusMessage =
-              'The prediction server is outdated and is not returning a calibrated 10-minute risk forecast.';
+          'The 10-minute forecast is not available right now.';
         });
         return;
       }
@@ -504,14 +502,38 @@ class _DashboardPageState extends State<DashboardPage>
           .take(10)
           .map((value) => value.toDouble())
           .toList();
+      final currentRisk = (result['current_risk_index'] as num?)?.toDouble() ??
+          (ChestStrapService().hasLiveWornReading
+              ? ChestStrapService().lastReading?.riskScore
+              : null);
+      final now = DateTime.now();
+      if (currentRisk != null) {
+        _recentAnxietyReadings.add(
+          _TimedAnxietyReading(
+            now,
+            currentRisk.clamp(0.0, 100.0).toDouble(),
+          ),
+        );
+        _recentAnxietyReadings.removeWhere(
+          (reading) => now.difference(reading.time) > const Duration(minutes: 30),
+        );
+      }
 
       setState(() {
         _predictionStatus = "success";
         _forecastData = parsedForecast;
-        _currentModelRisk = (result['current_risk_index'] as num?)?.toDouble();
+        _currentModelRisk = currentRisk;
         _statusMessage = message;
       });
       AnxietyFeedbackService().observeForecastResponse(result);
+      if (_keepForecastAtLatest) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_forecastScrollController.hasClients) return;
+          _forecastScrollController.jumpTo(
+            _forecastScrollController.position.maxScrollExtent,
+          );
+        });
+      }
 
       _bufferingTimer?.cancel();
       _bufferingTimer = null;
@@ -713,7 +735,6 @@ class _DashboardPageState extends State<DashboardPage>
     final hasLiveReading =
         _chestStrapConnected && (_currentReading?.isWorn ?? false);
     final risk = hasLiveReading ? _currentReading!.riskScore : 0.0;
-    final riskCol = hasLiveReading ? _riskColor(risk) : Colors.grey;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F3FF),
@@ -721,7 +742,7 @@ class _DashboardPageState extends State<DashboardPage>
         backgroundColor: Colors.transparent,
         elevation: 0,
         title: Text(
-          'Vitals Monitor',
+          'Body Readings',
           style: GoogleFonts.poppins(
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -744,13 +765,13 @@ class _DashboardPageState extends State<DashboardPage>
         position: _entrySlide,
         child: FadeTransition(
           opacity: _entryFade,
-          child: _buildBody(risk, riskCol),
+          child: _buildBody(risk),
         ),
       ),
     );
   }
 
-  Widget _buildBody(double risk, Color riskCol) {
+  Widget _buildBody(double risk) {
     if (!_chestStrapConnected) {
       return _buildDisconnectedScreen();
     }
@@ -765,11 +786,11 @@ class _DashboardPageState extends State<DashboardPage>
       case 'error':
       case 'success':
       default:
-        return _buildDashboardList(risk, riskCol);
+        return _buildDashboardList(risk);
     }
   }
 
-  Widget _buildDashboardList(double risk, Color riskCol) {
+  Widget _buildDashboardList(double risk) {
     final isWorn = _chestStrapConnected && (_currentReading?.isWorn ?? false);
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 30),
@@ -782,6 +803,10 @@ class _DashboardPageState extends State<DashboardPage>
 
         // ── Service Status Strip ──
         _buildServiceStrip(),
+        if (isWorn) ...[
+          const SizedBox(height: 10),
+          _buildAdviceCard(risk),
+        ],
         if (!_notificationsEnabled) ...[
           const SizedBox(height: 10),
           _buildNotificationWarning(),
@@ -792,11 +817,6 @@ class _DashboardPageState extends State<DashboardPage>
         ],
 
         const SizedBox(height: 20),
-
-        // ── Risk Score Card ──
-        _buildRiskCard(risk, riskCol, isAvailable: isWorn),
-
-        const SizedBox(height: 22),
 
         // ── KPI Grid (2x2) ──
         Row(
@@ -866,8 +886,6 @@ class _DashboardPageState extends State<DashboardPage>
         ),
 
         const SizedBox(height: 24),
-        if (isWorn) _buildAdviceCard(risk),
-        const SizedBox(height: 24),
         _buildChartsSection(),
         const SizedBox(height: 20),
 
@@ -881,8 +899,8 @@ class _DashboardPageState extends State<DashboardPage>
             ),
             child: Text(
               _cachedId.isNotEmpty
-                  ? 'ID: $_cachedId  •  Live Monitoring'
-                  : 'Initializing...',
+                  ? 'ID: $_cachedId  •  Live readings'
+                  : 'Starting...',
               style: GoogleFonts.poppins(
                 fontSize: 11,
                 color: AppTheme.kTextLight,
@@ -912,7 +930,7 @@ class _DashboardPageState extends State<DashboardPage>
           Expanded(
             child: Text(
               _statusMessage.isEmpty
-                  ? 'Prediction unavailable. Connect the chest strap and retry.'
+                  ? 'Forecast unavailable. Connect the chest strap and try again.'
                   : _statusMessage,
               style: GoogleFonts.poppins(
                 fontSize: 11,
@@ -936,7 +954,7 @@ class _DashboardPageState extends State<DashboardPage>
           ),
           const SizedBox(height: 20),
           Text(
-            'Connecting to prediction engine...',
+            'Preparing your forecast...',
             style: GoogleFonts.poppins(
               fontSize: 14,
               fontWeight: FontWeight.w500,
@@ -982,7 +1000,7 @@ class _DashboardPageState extends State<DashboardPage>
               ),
               const SizedBox(height: 24),
               Text(
-                'Calibration Required',
+                'One-Time Setup Needed',
                 style: GoogleFonts.poppins(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
@@ -992,7 +1010,7 @@ class _DashboardPageState extends State<DashboardPage>
               ),
               const SizedBox(height: 12),
               Text(
-                'Aura needs to establish your calm resting baseline before the anxiety prediction engine can run accurately. Please complete a 3-minute resting calibration.',
+                'Aura needs to learn what your readings look like while you are calm. This takes 3 minutes and helps make your anxiety results more accurate.',
                 style: GoogleFonts.poppins(
                   fontSize: 13,
                   color: AppTheme.kTextLight,
@@ -1025,7 +1043,7 @@ class _DashboardPageState extends State<DashboardPage>
                 ),
                 icon: const Icon(Icons.play_arrow_rounded, size: 22),
                 label: Text(
-                  'Start Baseline Calibration',
+                  'Start 3-Minute Setup',
                   style: GoogleFonts.poppins(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -1060,7 +1078,7 @@ class _DashboardPageState extends State<DashboardPage>
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(
-                  'Research simulator',
+                  'Test mode',
                   style: GoogleFonts.poppins(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -1069,7 +1087,7 @@ class _DashboardPageState extends State<DashboardPage>
                 ),
                 subtitle: Text(
                   enabled
-                      ? 'Phone-generated packets are using the real physiological pipeline.'
+                      ? 'The phone is creating test readings.'
                       : 'Enable only while testing without the chest strap.',
                   style: GoogleFonts.poppins(
                     fontSize: 10.5,
@@ -1102,8 +1120,8 @@ class _DashboardPageState extends State<DashboardPage>
                           ),
                           subtitle: Text(
                             isWorn
-                                ? 'Live simulated values, isWorn=true'
-                                : 'Zero values, isWorn=false',
+                                ? 'Test readings are active'
+                                : 'The test strap is not being worn',
                             style: GoogleFonts.poppins(
                               fontSize: 10.5,
                               color: AppTheme.kTextLight,
@@ -1130,8 +1148,8 @@ class _DashboardPageState extends State<DashboardPage>
                                     ),
                                     subtitle: Text(
                                       stressIncreasing
-                                          ? 'Stress rises from calm to extreme test values over 5 minutes'
-                                          : 'Keep the simulated physiology calm',
+                                          ? 'Stress rises from calm to very high over 5 minutes'
+                                          : 'Stress slowly returns to calm after this is turned off',
                                       style: GoogleFonts.poppins(
                                         fontSize: 10.5,
                                         color: AppTheme.kTextLight,
@@ -1174,8 +1192,8 @@ class _DashboardPageState extends State<DashboardPage>
       SnackBar(
         content: Text(
           shown
-              ? 'Test early warning sent. Check the notification popup.'
-              : 'Could not show the test alert. Wear the simulated strap and enable notifications.',
+              ? 'Test alert sent. Check the notification popup.'
+              : 'Could not show the test alert. Wear the test strap and allow notifications.',
         ),
       ),
     );
@@ -1217,7 +1235,7 @@ class _DashboardPageState extends State<DashboardPage>
               ),
               const SizedBox(height: 6),
               Text(
-                'Please ensure your physiological sensor is turned on and connected to collect live vitals.',
+                'Turn on the chest strap and connect it to see live readings.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.poppins(
                   fontSize: 13,
@@ -1254,7 +1272,7 @@ class _DashboardPageState extends State<DashboardPage>
                     ChestStrapService().startSimulation(isWorn: true),
                 icon: const Icon(Icons.science_outlined, size: 20),
                 label: Text(
-                  'Use Research Simulator',
+                  'Use Test Mode',
                   style: GoogleFonts.poppins(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -1266,7 +1284,7 @@ class _DashboardPageState extends State<DashboardPage>
         ),
         const SizedBox(height: 28),
         Text(
-          '30-Day Physiological Trends',
+          'Past 30 Days',
           style: GoogleFonts.poppins(
             fontSize: 16,
             fontWeight: FontWeight.w600,
@@ -1302,7 +1320,7 @@ class _DashboardPageState extends State<DashboardPage>
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Establishing Sensor Stream',
+                'Connecting to Your Chest Strap',
                 style: GoogleFonts.poppins(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
@@ -1311,7 +1329,7 @@ class _DashboardPageState extends State<DashboardPage>
               ),
               const SizedBox(height: 6),
               Text(
-                'Collecting initial physiological samples',
+                'Collecting your first readings',
                 style: GoogleFonts.poppins(
                   fontSize: 12,
                   color: AppTheme.kTextLight,
@@ -1362,7 +1380,7 @@ class _DashboardPageState extends State<DashboardPage>
               const SizedBox(height: 36),
 
               Text(
-                'Please sit quietly and breathe normally. Predictions will start immediately once the first 60-second window completes.',
+                'Please sit quietly and breathe normally. Your forecast will appear after one minute of readings.',
                 style: GoogleFonts.poppins(
                   fontSize: 13,
                   color: AppTheme.kTextLight,
@@ -1379,23 +1397,23 @@ class _DashboardPageState extends State<DashboardPage>
                 children: [
                   _buildPipelineStepRow(
                     _chestStrapConnected,
-                    'Chest strap BLE connection active',
+                    'Chest strap connected',
                   ),
                   const SizedBox(height: 10),
                   _buildPipelineStepRow(
                     true,
-                    'Baseline normalization parameters loaded',
+                    'Personal resting level ready',
                   ),
                   const SizedBox(height: 10),
                   _buildPipelineStepRow(
                     _bufferingCountdown == 0,
-                    'Collecting first raw data window (700 Hz)',
+                    'Collecting the first minute of readings',
                     trailing: _bufferingCountdown > 0 ? 'In progress' : null,
                   ),
                   const SizedBox(height: 10),
                   _buildPipelineStepRow(
                     false,
-                    'Awaiting server feature extraction & predict',
+                    'Preparing your first forecast',
                     trailing: _bufferingCountdown == 0
                         ? 'Connecting...'
                         : 'Pending',
@@ -1494,14 +1512,14 @@ class _DashboardPageState extends State<DashboardPage>
             ),
             const SizedBox(height: 12),
             Text(
-              'Awaiting sensor data...',
+              'Waiting for chest strap readings...',
               style: GoogleFonts.poppins(
                 fontSize: 13,
                 color: AppTheme.kTextLight,
               ),
             ),
             Text(
-              'Forecast will appear after first data window',
+              'Your forecast will appear after one minute of readings',
               style: GoogleFonts.poppins(
                 fontSize: 11,
                 color: Colors.grey.shade400,
@@ -1512,8 +1530,12 @@ class _DashboardPageState extends State<DashboardPage>
         ),
       );
     }
-    final currentRisk = (_currentModelRisk ??
-            _currentReading?.riskScore ??
+    final liveCurrentRisk =
+        _chestStrapConnected && (_currentReading?.isWorn ?? false)
+        ? _currentReading?.riskScore
+        : null;
+    final currentRisk = (liveCurrentRisk ??
+            _currentModelRisk ??
             _scaleForecastValue(forecast.first))
         .clamp(0.0, 100.0)
         .toDouble();
@@ -1524,40 +1546,64 @@ class _DashboardPageState extends State<DashboardPage>
         return FlSpot((index + 1).toDouble(), yVal);
       }),
     ];
-    final fiveMinuteForecast = forecast.length >= 5
-        ? forecast.skip(4).map(_scaleForecastValue).toList()
-        : forecast.map(_scaleForecastValue).toList();
-    final predictedPeak = fiveMinuteForecast.reduce(max);
+    final scaledForecast = forecast.map(_scaleForecastValue).toList();
+    final predictedPeak = scaledForecast.reduce(max);
     final forecastIncrease = predictedPeak - currentRisk;
     final highEscalation = predictedPeak >= 70 && forecastIncrease >= 10;
     final elevatedEscalation = predictedPeak >= 45 && forecastIncrease >= 20;
     final escalationPredicted = highEscalation || elevatedEscalation;
     final target = highEscalation ? 70.0 : 45.0;
     final requiredIncrease = highEscalation ? 10.0 : 20.0;
-    var leadMinutes = 5;
-    for (var index = 4; index < forecast.length; index++) {
+    var leadMinutes = 1;
+    for (var index = 0; index < forecast.length; index++) {
       final value = _scaleForecastValue(forecast[index]);
       if (value >= target && value - currentRisk >= requiredIncrease) {
         leadMinutes = index + 1;
         break;
       }
     }
-    final trendColor = escalationPredicted
+    final currentHigh = currentRisk >= 70;
+    final currentElevated = currentRisk >= 45;
+    final stayingLow = currentRisk <= 20 && predictedPeak <= 20;
+    final trendColor = currentHigh || escalationPredicted
         ? const Color(0xFFEF5350)
-        : forecastIncrease >= 10
+        : currentElevated || forecastIncrease >= 10
         ? const Color(0xFFFFA726)
         : const Color(0xFF4CAF50);
-    final trendTitle = escalationPredicted
-        ? 'Early warning: possible rise in about $leadMinutes minutes'
+    final trendTitle = currentHigh
+        ? 'Your anxiety level is high right now'
+        : escalationPredicted
+        ? 'Your anxiety level may rise in about $leadMinutes minutes'
+        : stayingLow
+        ? 'Your anxiety level is expected to stay low'
+        : forecastIncrease <= -10 && currentRisk > 20
+        ? 'Your anxiety level may ease'
+        : currentElevated
+        ? 'Your anxiety level is elevated right now'
         : forecastIncrease >= 10
-        ? 'Upward trend, below the alert threshold'
-        : forecastIncrease <= -10
-        ? 'Forecast trending down'
-        : 'No strong escalation predicted';
+        ? 'Your anxiety level may rise a little'
+        : 'No major change is expected';
     final trendDetail =
-        'Now ${currentRisk.round()}/100  →  predicted peak ${predictedPeak.round()}/100 '
-        '(${forecastIncrease >= 0 ? '+' : ''}${forecastIncrease.round()} points)';
-    final lineColor = _riskColor(predictedPeak);
+        'Current level: ${currentRisk.round()} out of 100. '
+        'Highest level expected in the next 10 minutes: ${predictedPeak.round()} out of 100.';
+    final lineColor = _riskColor(max(currentRisk, predictedPeak));
+
+    final now = DateTime.now();
+    final pastSpots = _recentAnxietyReadings
+        .map(
+          (reading) => FlSpot(
+            -now.difference(reading.time).inSeconds / 60.0,
+            reading.score,
+          ),
+        )
+        .where((spot) => spot.x <= -0.2)
+        .toList()
+      ..sort((a, b) => a.x.compareTo(b.x));
+    final visibleSpots = <FlSpot>[
+      ...pastSpots,
+      ...spots,
+    ];
+    final minX = pastSpots.isEmpty ? 0.0 : min(-2.0, pastSpots.first.x.floorToDouble());
 
     double minY = 0.0;
     double maxY = 100.0;
@@ -1606,7 +1652,7 @@ class _DashboardPageState extends State<DashboardPage>
                       ),
                     ),
                     Text(
-                      'Predictive stress escalation trajectory',
+                      'Past readings and the next 10 minutes',
                       style: GoogleFonts.poppins(
                         fontSize: 11,
                         color: AppTheme.kTextLight,
@@ -1630,7 +1676,7 @@ class _DashboardPageState extends State<DashboardPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(
-                  escalationPredicted
+                  currentHigh || escalationPredicted
                       ? Icons.notification_important_rounded
                       : forecastIncrease >= 10
                       ? Icons.trending_up_rounded
@@ -1666,11 +1712,40 @@ class _DashboardPageState extends State<DashboardPage>
             ),
           ),
           const SizedBox(height: 24),
-          SizedBox(
-            height: 180,
-            child: LineChart(
+          Text(
+            'Swipe left to see earlier readings.',
+            style: GoogleFonts.poppins(
+              fontSize: 10,
+              color: AppTheme.kTextLight,
+            ),
+          ),
+          const SizedBox(height: 8),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final pixelsPerMinute = constraints.maxWidth / 10.0;
+              final chartWidth = max(
+                constraints.maxWidth,
+                (10.0 - minX) * pixelsPerMinute,
+              );
+              return NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  if (notification is UserScrollNotification &&
+                      _forecastScrollController.hasClients) {
+                    final position = _forecastScrollController.position;
+                    _keepForecastAtLatest =
+                        position.maxScrollExtent - position.pixels < 36;
+                  }
+                  return false;
+                },
+                child: SingleChildScrollView(
+                  controller: _forecastScrollController,
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: chartWidth,
+                    height: 180,
+                    child: LineChart(
               LineChartData(
-                minX: 0,
+                minX: minX,
                 maxX: 10,
                 minY: minY,
                 maxY: maxY,
@@ -1698,7 +1773,7 @@ class _DashboardPageState extends State<DashboardPage>
                       showTitles: true,
                       reservedSize: 22,
                       getTitlesWidget: (value, meta) {
-                        if (value == 0) {
+                        if (value.abs() < 0.05) {
                           return Padding(
                             padding: const EdgeInsets.only(top: 4.0),
                             child: Text(
@@ -1711,13 +1786,15 @@ class _DashboardPageState extends State<DashboardPage>
                             ),
                           );
                         }
-                        if (value < 1 || value > 10 || value % 2 != 0) {
+                        if (value < minX || value > 10 || value % 2 != 0) {
                           return const SizedBox.shrink();
                         }
                         return Padding(
                           padding: const EdgeInsets.only(top: 4.0),
                           child: Text(
-                            '+${value.toInt()}m',
+                            value < 0
+                                ? '${value.abs().toInt()}m ago'
+                                : '+${value.toInt()}m',
                             style: GoogleFonts.poppins(
                               fontSize: 9.5,
                               color: AppTheme.kTextLight,
@@ -1820,14 +1897,14 @@ class _DashboardPageState extends State<DashboardPage>
                           color: const Color(0xFFEF5350),
                           fontWeight: FontWeight.w600,
                         ),
-                        labelResolver: (line) => 'High Risk',
+                        labelResolver: (line) => 'High',
                       ),
                     ),
                   ],
                 ),
                 lineBarsData: [
                   LineChartBarData(
-                    spots: spots,
+                    spots: visibleSpots,
                     isCurved: true,
                     color: lineColor,
                     barWidth: 4,
@@ -1836,7 +1913,7 @@ class _DashboardPageState extends State<DashboardPage>
                       show: true,
                       getDotPainter: (spot, percent, barData, index) {
                         return FlDotCirclePainter(
-                          radius: index == spots.length - 1 ? 5 : 3.5,
+                          radius: spot.x == 0 ? 5 : 3.5,
                           color: Colors.white,
                           strokeWidth: 2,
                           strokeColor: lineColor,
@@ -1870,7 +1947,7 @@ class _DashboardPageState extends State<DashboardPage>
                         }
 
                         return LineTooltipItem(
-                          '${spot.x == 0 ? 'Now' : 'T+${spot.x.toInt()}m'}\n${spot.y.toStringAsFixed(0)}% ($riskLabel)',
+                          '${spot.x.abs() < 0.05 ? 'Now' : spot.x < 0 ? '${spot.x.abs().toStringAsFixed(0)} min ago' : 'In ${spot.x.toInt()} min'}\n${spot.y.toStringAsFixed(0)}% ($riskLabel)',
                           GoogleFonts.poppins(
                             color: Colors.white,
                             fontWeight: FontWeight.w600,
@@ -1883,6 +1960,10 @@ class _DashboardPageState extends State<DashboardPage>
                 ),
               ),
             ),
+                  ),
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -1908,13 +1989,13 @@ class _DashboardPageState extends State<DashboardPage>
         borderColor = Colors.green.shade200;
         dotColor = Colors.green;
         textColor = Colors.green.shade800;
-        statusText = 'ChestStrap_V3 Connected & Active';
+        statusText = 'Chest strap connected and active';
       } else {
         bgColor = const Color(0xFFFFF3E0);
         borderColor = Colors.orange.shade300;
         dotColor = Colors.orange;
         textColor = Colors.orange.shade900;
-        statusText = 'ChestStrap_V3 Connected (Not Worn — Put on strap)';
+        statusText = 'Chest strap connected. Please put it on.';
       }
     }
 
@@ -1967,7 +2048,7 @@ class _DashboardPageState extends State<DashboardPage>
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                'Battery optimization may interrupt monitoring. Tap to fix.',
+                'Battery settings may stop background updates. Tap to fix this.',
                 style: GoogleFonts.poppins(
                   fontSize: 11,
                   color: Colors.orange.shade800,
@@ -2005,7 +2086,7 @@ class _DashboardPageState extends State<DashboardPage>
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                'Anxiety early warnings are blocked. Tap to enable notifications.',
+                'Anxiety check-in notifications are turned off. Tap to turn them on.',
                 style: GoogleFonts.poppins(
                   fontSize: 11,
                   color: Colors.red.shade800,
@@ -2024,232 +2105,39 @@ class _DashboardPageState extends State<DashboardPage>
     );
   }
 
-  Widget _buildRiskCard(
-    double risk,
-    Color riskCol, {
-    required bool isAvailable,
-  }) {
-    return AnimatedBuilder(
-      animation: _riskPulseController,
-      builder: (context, child) {
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                riskCol.withValues(alpha: 0.9),
-                riskCol.withValues(alpha: 0.65),
-              ],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: riskCol.withValues(
-                  alpha: 0.25 * _riskPulseAnimation.value,
-                ),
-                blurRadius: 24,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(
-                      Icons.shield_rounded,
-                      color: Colors.white,
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Anxiety Risk Score',
-                          style: GoogleFonts.poppins(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white.withValues(alpha: 0.9),
-                          ),
-                        ),
-                        Text(
-                          isAvailable
-                              ? _currentReading!.riskLabel
-                              : (_currentReading?.isWorn == false
-                                    ? 'Not Worn'
-                                    : 'Unavailable'),
-                          style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Score circle
-                  Container(
-                    width: 62,
-                    height: 62,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.2),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.5),
-                        width: 2.5,
-                      ),
-                    ),
-                    child: Center(
-                      child: Text(
-                        isAvailable ? risk.toStringAsFixed(0) : '--',
-                        style: GoogleFonts.poppins(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-
-              // Risk bar — uses LayoutBuilder for safe animated width
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final barWidth = isAvailable
-                      ? constraints.maxWidth * (risk / 100).clamp(0.02, 1.0)
-                      : 0.0;
-                  return ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: Stack(
-                      children: [
-                        Container(
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                        ),
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 600),
-                          curve: Curves.easeOutCubic,
-                          width: barWidth,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Low',
-                    style: GoogleFonts.poppins(
-                      fontSize: 10,
-                      color: Colors.white.withValues(alpha: 0.7),
-                    ),
-                  ),
-                  Text(
-                    'Moderate',
-                    style: GoogleFonts.poppins(
-                      fontSize: 10,
-                      color: Colors.white.withValues(alpha: 0.7),
-                    ),
-                  ),
-                  Text(
-                    'Elevated',
-                    style: GoogleFonts.poppins(
-                      fontSize: 10,
-                      color: Colors.white.withValues(alpha: 0.7),
-                    ),
-                  ),
-                  Text(
-                    'High',
-                    style: GoogleFonts.poppins(
-                      fontSize: 10,
-                      color: Colors.white.withValues(alpha: 0.7),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   Widget _buildAdviceCard(double risk) {
     String title = "";
     String advice = "";
     IconData icon = Icons.lightbulb_outline_rounded;
     Color color = Colors.blue;
 
-    // Check if there is an anxiety escalation predicted in the next 10 minutes
-    final forecast = _effectiveForecastData;
-    final currentRisk = _currentModelRisk ?? risk;
-    final futureForecast = forecast.length >= 5
-        ? forecast.skip(4).map(_scaleForecastValue).toList()
-        : forecast.map(_scaleForecastValue).toList();
-    final maxForecastedRisk = futureForecast.isNotEmpty
-        ? futureForecast.reduce(max)
-        : 0.0;
-    final forecastIncrease = maxForecastedRisk - currentRisk;
-    final bool isEscalating =
-        (maxForecastedRisk >= 70.0 && forecastIncrease >= 10.0) ||
-        (maxForecastedRisk >= 45.0 && forecastIncrease >= 20.0);
-
-    if (isEscalating) {
-      title = "Anxiety Escalation Predicted";
+    // This banner describes what the live body readings show right now. The
+    // separate forecast card below is responsible for future changes.
+    final currentRisk = risk.clamp(0.0, 100.0).toDouble();
+    if (currentRisk > 70) {
+      title = "Your Anxiety Level Is High";
       advice =
-          "Our predictive model projects a significant rise in your stress levels within the next few minutes. Consider taking a proactive break to practice a grounding exercise now.";
-      color = const Color(0xFFFF7043);
-      icon = Icons.hourglass_top_rounded;
-    } else if (risk <= 20) {
-      title = "Feeling Balanced";
+          "Take a moment if you can. Try slow breathing, step away briefly, or contact someone you trust.";
+      color = const Color(0xFFEF5350);
+      icon = Icons.warning_amber_rounded;
+    } else if (currentRisk <= 20) {
+      title = "Your Anxiety Level Is Low";
       advice =
-          "Your anxiety levels seem to be lowering lately. You appear relaxed and well-rested. Keep up your current routine!";
+          "Your anxiety level is low right now. Keep doing what helps you feel calm.";
       color = const Color(0xFF4CAF50);
       icon = Icons.spa_rounded;
-    } else if (risk <= 45) {
-      title = "Slightly Elevated";
+    } else if (currentRisk <= 45) {
+      title = "Your Anxiety Level Is Moderate";
       advice =
-          "Your physiological signals show mild stress. Consider taking a 5-minute break to do some deep breathing.";
+          "Your readings show some stress. Consider taking a short break and breathing slowly.";
       color = const Color(0xFFFFA726);
       icon = Icons.self_improvement_rounded;
-    } else if (risk <= 70) {
-      title = "Moderate Anxiety Detected";
+    } else {
+      title = "Your Anxiety Level Is Elevated";
       advice =
-          "Your metrics indicate elevated stress levels. It might be helpful to step away, hydrate, and practice a grounding exercise.";
+          "Your anxiety level is elevated. It may help to step away, drink some water, or do a calming exercise.";
       color = const Color(0xFFFF7043);
       icon = Icons.warning_amber_rounded;
-    } else {
-      title = "High Stress Alert";
-      advice =
-          "Your anxiety levels seem to be going higher lately. Please prioritize your well-being right now. Try a guided meditation or reach out to a support system.";
-      color = const Color(0xFFEF5350);
-      icon = Icons.health_and_safety_rounded;
     }
 
     return Container(
@@ -2307,7 +2195,7 @@ class _DashboardPageState extends State<DashboardPage>
         _buildForecastChart(),
         const SizedBox(height: 28),
         Text(
-          '30-Day Physiological Trends',
+          'Past 30 Days',
           style: GoogleFonts.poppins(
             fontSize: 16,
             fontWeight: FontWeight.w600,
@@ -2331,7 +2219,7 @@ class _DashboardPageState extends State<DashboardPage>
       case 'mean_motion':
         return 'Motion';
       default:
-        return 'Risk index';
+        return 'Anxiety score';
     }
   }
 
@@ -2372,7 +2260,7 @@ class _DashboardPageState extends State<DashboardPage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Could not load physiological history.'),
+                  const Text('Could not load your history.'),
                   if (_historyMessage.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text(
@@ -2448,7 +2336,10 @@ class _DashboardPageState extends State<DashboardPage>
                     color: AppTheme.kPrimaryDeep,
                   ),
                   items: const [
-                    DropdownMenuItem(value: 'risk_index', child: Text('Risk')),
+                    DropdownMenuItem(
+                      value: 'risk_index',
+                      child: Text('Anxiety score'),
+                    ),
                     DropdownMenuItem(
                       value: 'mean_hr',
                       child: Text('Heart rate'),
@@ -2603,7 +2494,7 @@ class _DashboardPageState extends State<DashboardPage>
           ),
           const SizedBox(height: 4),
           Text(
-            'Keep using Aura with your chest strap to build your physiological history.',
+            'Keep using Aura with your chest strap to build your history.',
             style: GoogleFonts.poppins(
               fontSize: 12,
               color: Colors.grey.shade400,
