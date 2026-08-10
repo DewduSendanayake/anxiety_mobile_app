@@ -123,8 +123,12 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
   Future<void> _saveFeltBetter(bool value) async {
     setState(() => _saving = true);
     await AnxietyFeedbackService.recordFeltBetter(widget.eventId, value);
-    await _reload();
-    if (mounted) setState(() => _saving = false);
+    if (!mounted) return;
+    final closed = await Navigator.of(context).maybePop();
+    if (!closed && mounted) {
+      await _reload();
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -142,30 +146,45 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
       );
     }
 
+    final isFollowup = event.followupAt != null;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F3FF),
       appBar: AppBar(
-        title: const Text('Quick check-in'),
+        title: Text(isFollowup ? 'Five-minute follow-up' : 'Quick check-in'),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-        children: [
+        children: isFollowup
+            ? [
+                _followupCard(event),
+                if (_saving) ...[
+                  const SizedBox(height: 18),
+                  const Center(child: CircularProgressIndicator()),
+                ],
+              ]
+            : [
           _infoCard(
             icon: Icons.monitor_heart_outlined,
             title: event.predictedLeadMinutes == null
-                ? 'Aura noticed a physiological change'
-                : 'Possible rise in about ${event.predictedLeadMinutes} minutes',
+                ? 'Aura noticed a change'
+                : event.predictedLeadMinutes == 0
+                ? 'Your anxiety level may be high right now'
+                : 'Your anxiety level may rise in about ${event.predictedLeadMinutes} minutes',
             body: event.predictedRiskScore == null
-                ? 'Aura noticed a physiological risk index of '
-                      '${event.initialRiskScore.toStringAsFixed(0)}. '
-                      'This is a check-in, not a diagnosis.'
-                : 'Your calibrated risk index is currently '
-                      '${event.initialRiskScore.toStringAsFixed(0)} and the '
-                      'model forecasts a peak near '
+                ? 'Your current anxiety score is '
+                      '${event.initialRiskScore.toStringAsFixed(0)} out of 100. '
+                      'Aura cannot tell you whether you have anxiety.'
+                : event.predictedLeadMinutes == 0
+                ? 'Your current anxiety score is '
+                      '${event.initialRiskScore.toStringAsFixed(0)} out of 100. '
+                      'Aura cannot tell you whether you have anxiety.'
+                : 'Your anxiety score may rise from '
+                      '${event.initialRiskScore.toStringAsFixed(0)} to about '
                       '${event.predictedRiskScore!.toStringAsFixed(0)}. '
-                      'This is an early check-in, not a diagnosis.',
+                      'This is only an early check-in. Aura cannot tell you whether you have anxiety.',
           ),
           const SizedBox(height: 16),
           _questionCard(
@@ -174,7 +193,7 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
             onYes: () => _saveConfirmation(true),
             onNo: () => _saveConfirmation(false),
           ),
-          if (event.confirmedAnxious != null) ...[
+          if (event.confirmedAnxious != null && event.activity == null) ...[
             const SizedBox(height: 16),
             _activityCard(event),
           ],
@@ -186,14 +205,9 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
             const SizedBox(height: 16),
             _infoCard(
               icon: Icons.check_circle_outline_rounded,
-              title: 'Thanks, that helps correct false alerts',
-              body:
-                  'This event will be treated as a false positive during later personalization.',
+              title: 'Thanks, that helps Aura learn',
+              body: 'Your answer helps Aura learn what is normal for you.',
             ),
-          ],
-          if (event.followupAt != null) ...[
-            const SizedBox(height: 16),
-            _followupCard(event),
           ],
           if (_saving) ...[
             const SizedBox(height: 18),
@@ -241,7 +255,7 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
             width: double.infinity,
             child: FilledButton(
               onPressed: _saving ? null : _saveActivity,
-              child: const Text('Save context'),
+              child: const Text('Continue'),
             ),
           ),
         ],
@@ -251,12 +265,7 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
 
   Widget _guidanceCard(AnxietyAlertEvent event) {
     if (event.interventionCompleted != null) {
-      return _infoCard(
-        icon: Icons.schedule_rounded,
-        title: 'Follow-up scheduled',
-        body:
-            'Aura will compare your available signals again in 5 minutes and ask how you feel. A decrease is useful evidence, but it does not prove what caused the change.',
-      );
+      return _followupScheduledCard();
     }
 
     final breathingActive = _breathingTimer?.isActive ?? false;
@@ -266,7 +275,7 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _title('Try a 2-minute paced breath'),
+          _title('Try two minutes of slow breathing'),
           const SizedBox(height: 8),
           const Text(
             'If comfortable, breathe in for 4 seconds and out for 6 seconds. Stop if you feel dizzy or uncomfortable.',
@@ -291,14 +300,14 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
             child: FilledButton.icon(
               onPressed: breathingActive ? null : _startBreathing,
               icon: const Icon(Icons.air_rounded),
-              label: const Text('Start guided breathing'),
+              label: const Text('Start breathing exercise'),
             ),
           ),
           const Divider(height: 30),
           TextField(
             controller: _alternativeActionController,
             decoration: const InputDecoration(
-              labelText: 'Did something else instead?',
+              labelText: 'Did you try something else?',
               hintText: 'Example: took a walk or called someone',
               border: OutlineInputBorder(),
             ),
@@ -327,13 +336,13 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
             event.predictedRiskScore != null &&
                     event.followupRiskScore != null &&
                     event.followupRiskScore! <= event.predictedRiskScore! - 10
-                ? 'Your follow-up risk stayed below the forecast peak by '
-                      '${(event.predictedRiskScore! - event.followupRiskScore!).toStringAsFixed(0)} points.'
+                ? 'Your anxiety score is '
+                      '${(event.predictedRiskScore! - event.followupRiskScore!).toStringAsFixed(0)} points lower than the highest level Aura expected.'
                 : change == null
-                ? 'Live signals were unavailable at follow-up.'
+                ? 'Aura could not get a current reading, but your answer still helps.'
                 : change <= -10
-                ? 'Your physiological risk index decreased by ${change.abs().toStringAsFixed(0)} points.'
-                : 'Your physiological risk index changed by ${change.toStringAsFixed(0)} points.',
+                ? 'Your anxiety score went down by ${change.abs().toStringAsFixed(0)} points.'
+                : 'Your anxiety score changed by ${change.abs().toStringAsFixed(0)} points.',
           ),
           const SizedBox(height: 12),
           _questionCard(
@@ -342,6 +351,36 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
             onYes: () => _saveFeltBetter(true),
             onNo: () => _saveFeltBetter(false),
             nested: true,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _followupScheduledCard() {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.schedule_rounded, color: AppTheme.kPrimaryDeep),
+              const SizedBox(width: 10),
+              Expanded(child: _title('Follow-up scheduled')),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Aura will check again in 5 minutes and ask how you feel.',
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => Navigator.of(context).maybePop(),
+              icon: const Icon(Icons.arrow_back_rounded),
+              label: const Text('Go back'),
+            ),
           ),
         ],
       ),

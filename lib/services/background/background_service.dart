@@ -33,7 +33,7 @@ Future<void> initializeService() async {
       const AndroidNotificationChannel(
         ServiceConfig.channelId,
         ServiceConfig.channelName,
-        description: 'Running background research tasks',
+        description: 'Aura is working in the background',
         importance: Importance.low,
       ),
     );
@@ -42,16 +42,15 @@ Future<void> initializeService() async {
       const AndroidNotificationChannel(
         'ema_channel',
         'Daily Check-ins',
-        description: 'Scheduled mood and anxiety ratings',
+        description: 'Reminders to check how you feel',
         importance: Importance.high,
       ),
     );
     await androidPlugin.createNotificationChannel(
       const AndroidNotificationChannel(
         'anxiety_alerts',
-        'Anxiety early warnings',
-        description:
-            'Early check-ins when physiological escalation is forecast',
+        'Anxiety check-ins',
+        description: 'Check-ins when your anxiety level may be rising',
         importance: Importance.max,
       ),
     );
@@ -59,8 +58,8 @@ Future<void> initializeService() async {
     await androidPlugin.createNotificationChannel(
       const AndroidNotificationChannel(
         'gad7_channel',
-        'Weekly Assessments',
-        description: 'Weekly GAD-7 clinical questionnaires',
+        'Weekly Check-ins',
+        description: 'Reminder for your weekly anxiety check-in',
         importance: Importance.high,
       ),
     );
@@ -68,8 +67,8 @@ Future<void> initializeService() async {
     await androidPlugin.createNotificationChannel(
       const AndroidNotificationChannel(
         'pss_channel',
-        'Monthly Assessments',
-        description: 'Monthly PSS-10 stress scale assessments',
+        'Weekly Check-ins',
+        description: 'Reminder for your weekly stress check-in',
         importance: Importance.high,
       ),
     );
@@ -81,8 +80,8 @@ Future<void> initializeService() async {
       autoStart: true,
       isForegroundMode: true,
       notificationChannelId: ServiceConfig.channelId,
-      initialNotificationTitle: 'Research Active',
-      initialNotificationContent: 'Monitoring in background…',
+      initialNotificationTitle: 'Aura is running',
+      initialNotificationContent: 'Keeping your check-ins ready',
       foregroundServiceNotificationId: ServiceConfig.notificationId,
       autoStartOnBoot: true,
     ),

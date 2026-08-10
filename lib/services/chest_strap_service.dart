@@ -229,6 +229,9 @@ class ChestStrapService {
   final ValueNotifier<bool> simulatedIsWorn = ValueNotifier(true);
   final ValueNotifier<bool> simulatedStressIncreasing = ValueNotifier(false);
   DateTime? _stressSimulationStartedAt;
+  double _stressRampStartLevel = 0.0;
+  DateTime? _stressRecoveryStartedAt;
+  double _stressRecoveryStartLevel = 0.0;
 
   static const Duration _stressRampDuration = Duration(minutes: 5);
   static const Duration _liveReadingTimeout = Duration(seconds: 5);
@@ -271,15 +274,48 @@ class ChestStrapService {
       (lastReading?.isWorn ?? false);
 
   double get simulatedStressProgress {
-    if (!simulatedStressIncreasing.value ||
-        _stressSimulationStartedAt == null) {
-      return 0.0;
+    if (simulatedStressIncreasing.value &&
+        _stressSimulationStartedAt != null) {
+      final elapsed = DateTime.now().difference(_stressSimulationStartedAt!);
+      return simulationStressLevelForElapsed(
+        startLevel: _stressRampStartLevel,
+        increasing: true,
+        elapsed: elapsed,
+      );
     }
-    final elapsed = DateTime.now().difference(_stressSimulationStartedAt!);
-    final linear = (elapsed.inMilliseconds / _stressRampDuration.inMilliseconds)
-        .clamp(0.0, 1.0)
-        .toDouble();
-    return pow(linear, 1.25).toDouble();
+
+    if (_stressRecoveryStartedAt != null) {
+      final elapsed = DateTime.now().difference(_stressRecoveryStartedAt!);
+      final level = simulationStressLevelForElapsed(
+        startLevel: _stressRecoveryStartLevel,
+        increasing: false,
+        elapsed: elapsed,
+      );
+      if (level <= 0.0) {
+        _stressRecoveryStartedAt = null;
+        _stressRecoveryStartLevel = 0.0;
+      }
+      return level;
+    }
+
+    return 0.0;
+  }
+
+  @visibleForTesting
+  double simulationStressLevelForElapsed({
+    required double startLevel,
+    required bool increasing,
+    required Duration elapsed,
+  }) {
+    final linear =
+        (elapsed.inMilliseconds / _stressRampDuration.inMilliseconds)
+            .clamp(0.0, 1.0)
+            .toDouble();
+    final curved = pow(linear, 1.25).toDouble();
+    final start = startLevel.clamp(0.0, 1.0).toDouble();
+    return increasing
+        ? start + (1.0 - start) * curved
+        : start * (1.0 - curved);
   }
 
   /// Starts a phone-side physiological simulator. This never changes or
@@ -293,6 +329,9 @@ class ChestStrapService {
     simulatedIsWorn.value = isWorn;
     simulatedStressIncreasing.value = false;
     _stressSimulationStartedAt = null;
+    _stressRampStartLevel = 0.0;
+    _stressRecoveryStartedAt = null;
+    _stressRecoveryStartLevel = 0.0;
     connectionState.value = ChestStrapState.connected;
 
     _emitSimulatedReading();
@@ -310,6 +349,9 @@ class ChestStrapService {
     if (!isWorn) {
       simulatedStressIncreasing.value = false;
       _stressSimulationStartedAt = null;
+      _stressRampStartLevel = 0.0;
+      _stressRecoveryStartedAt = null;
+      _stressRecoveryStartLevel = 0.0;
     }
     _emitSimulatedReading();
   }
@@ -318,8 +360,20 @@ class ChestStrapService {
   /// starts calm, then raises heart and breathing rate while lowering HRV.
   void setSimulationStress(bool stressIncreasing) {
     if (!simulationEnabled.value || !simulatedIsWorn.value) return;
+
+    final currentLevel = simulatedStressProgress;
     simulatedStressIncreasing.value = stressIncreasing;
-    _stressSimulationStartedAt = stressIncreasing ? DateTime.now() : null;
+    if (stressIncreasing) {
+      _stressRampStartLevel = currentLevel;
+      _stressSimulationStartedAt = DateTime.now();
+      _stressRecoveryStartedAt = null;
+      _stressRecoveryStartLevel = 0.0;
+    } else {
+      _stressSimulationStartedAt = null;
+      _stressRampStartLevel = 0.0;
+      _stressRecoveryStartLevel = currentLevel;
+      _stressRecoveryStartedAt = currentLevel > 0.0 ? DateTime.now() : null;
+    }
     _emitSimulatedReading();
   }
 
@@ -329,6 +383,9 @@ class ChestStrapService {
     simulationEnabled.value = false;
     simulatedStressIncreasing.value = false;
     _stressSimulationStartedAt = null;
+    _stressRampStartLevel = 0.0;
+    _stressRecoveryStartedAt = null;
+    _stressRecoveryStartLevel = 0.0;
     lastReading = null;
     liveReadingAvailable.value = false;
     _readingExpiryTimer?.cancel();
@@ -758,6 +815,9 @@ class ChestStrapService {
       simulationEnabled.value = false;
       simulatedStressIncreasing.value = false;
       _stressSimulationStartedAt = null;
+      _stressRampStartLevel = 0.0;
+      _stressRecoveryStartedAt = null;
+      _stressRecoveryStartLevel = 0.0;
       _readingExpiryTimer?.cancel();
       liveReadingAvailable.value = false;
       _scanSubscription?.cancel();

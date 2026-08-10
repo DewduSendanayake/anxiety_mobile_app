@@ -73,9 +73,9 @@ class _C {
 // PHENOTYPE DEFINITIONS
 // ─────────────────────────────────────────────
 const Map<int, Map<String, String>> kPhenotypes = {
-  0: {'name': 'Social-Spatial\nWithdrawal',  'badge': 'Cluster A'},
-  1: {'name': 'Circadian\nDisruption',        'badge': 'Cluster B'},
-  2: {'name': 'Hypervigilant\nMobility',      'badge': 'Cluster C'},
+  0: {'name': 'Less social and\nless active',  'badge': 'Pattern A'},
+  1: {'name': 'Irregular sleep\nand routine',  'badge': 'Pattern B'},
+  2: {'name': 'Restless\nmovement',            'badge': 'Pattern C'},
 };
 
 class DigitalPhenotypingPage extends StatefulWidget {
@@ -261,7 +261,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
       score > 0.7 ? _C.riskHigh : (score > 0.4 ? _C.riskMid : _C.riskLow);
 
   String _riskLabel(double score) =>
-      score > 0.7 ? 'High Risk' : (score > 0.4 ? 'Moderate Risk' : 'Low Risk');
+      score > 0.7 ? 'High' : (score > 0.4 ? 'Moderate' : 'Low');
 
   Color _riskBadgeBg(double score) => score > 0.7
       ? _C.roseLight
@@ -312,7 +312,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
                 const SizedBox(height: 18),
                 _buildRiskCurveCard(),
                 const SizedBox(height: 24),
-                _buildSectionTitle('Data Collection Metrics', live: true),
+                _buildSectionTitle('Your phone activity', live: true),
                 const SizedBox(height: 10),
                 if (_isLoadingRealData) 
                   const Center(child: Padding(
@@ -322,71 +322,71 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
                 else ...[
                   _buildMetricCard(
                     icon: Icons.screen_lock_portrait_rounded,
-                    title: 'Screen State',
+                    title: 'Screen time',
                     value: '${_screenTimeHours.toStringAsFixed(1)} hrs today',
-                    subtitle: 'Foreground app usage',
+                    subtitle: 'Time spent using apps',
                   ),
                   const SizedBox(height: 10),
                   _buildMetricCard(
                     icon: Icons.directions_walk_rounded,
                     title: 'Physical Activity',
-                    value: 'Monitoring Movement',
-                    subtitle: 'Based on GPS speed estimates',
+                    value: 'Tracking movement',
+                    subtitle: 'Estimated from how your phone moves',
                   ),
                   const SizedBox(height: 10),
                   _buildMetricCard(
                     icon: Icons.location_on_rounded,
-                    title: 'Location Status',
+                    title: 'Location',
                     value: _locationDesc,
-                    subtitle: 'Current GPS coordinate via Geolocator',
+                    subtitle: 'Your current general location',
                   ),
                   const SizedBox(height: 10),
                   _buildMetricCard(
                     icon: Icons.record_voice_over_rounded,
-                    title: 'Social Interactions',
+                    title: 'Calls and messages',
                     value: '$_totalCallCount calls, $_totalSmsCount SMS',
-                    subtitle: 'Device logs over last 24h/today',
+                    subtitle: 'Totals from today',
                   ),
                   const SizedBox(height: 10),
                   _buildMetricCard(
                     icon: Icons.battery_charging_full_rounded,
-                    title: 'Battery Health',
+                    title: 'Battery',
                     value: _batteryDesc,
-                    subtitle: 'Current device power state',
+                    subtitle: 'Your phone\'s current battery level',
                   ),
                 ],
                 const SizedBox(height: 26),
-                _buildSectionTitle('Live Subject Details', live: true),
+                _buildSectionTitle('Your recent patterns', live: true),
                 const SizedBox(height: 12),
                 _buildChartCard(
-                  title: 'Clinical Metrics (EMA)',
-                  subtitle: 'Daily anxiety vs mood correlation',
+                  title: 'Anxiety and mood',
+                  subtitle: 'Your daily check-in answers',
                   icon: Icons.monitor_heart_rounded,
                   child: _buildClinicalLineChart(),
                 ),
                 const SizedBox(height: 14),
                 _buildChartCard(
-                  title: 'Sociability Index',
-                  subtitle: 'Daily interactions (calls & SMS)',
+                  title: 'Calls and messages',
+                  subtitle: 'Your daily totals',
                   icon: Icons.people_alt_rounded,
                   child: _buildSociabilityBarChart(),
                 ),
                 const SizedBox(height: 14),
                 _buildChartCard(
                   title: 'Physical Activity',
-                  subtitle: 'High motion events per day',
+                  subtitle: 'Times you moved a lot each day',
                   icon: Icons.fitness_center_rounded,
                   child: _buildPhysicalActivityAreaChart(),
                 ),
                 const SizedBox(height: 14),
                 _buildChartCard(
-                  title: 'Digital Engagement',
-                  subtitle: 'Total screen time (hours)',
+                  title: 'Screen time',
+                  subtitle: 'Hours spent using your phone',
                   icon: Icons.phone_android_rounded,
                   child: _buildDigitalEngagementChart(),
                 ),
                 const SizedBox(height: 26),
-                _buildSectionTitle('Weekly Trend'),
+                _buildSectionTitle('Your week'),
                 const SizedBox(height: 12),
                 _buildWeeklyTrendCard(),
                 const SizedBox(height: 30),
@@ -426,12 +426,12 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
   Widget _buildHeader() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text('Analysis Overview',
+      Text('Your Activity Patterns',
           style: GoogleFonts.poppins(
               fontSize: 24, fontWeight: FontWeight.w700,
               color: _C.textPrimary, letterSpacing: -0.5)),
       const SizedBox(height: 3),
-      Text('Based on your recent digital interactions',
+      Text('Based on how you have recently used your phone',
           style: GoogleFonts.poppins(fontSize: 13, color: _C.textMuted)),
     ],
   );
@@ -455,7 +455,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Heads up — 2pm window approaching',
+              Text('A harder time may be approaching around 2 PM',
                   style: GoogleFonts.poppins(
                       fontSize: 13, fontWeight: FontWeight.w600,
                       color: _C.primary)),
@@ -525,11 +525,15 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
           Row(children: [
             Icon(Icons.health_and_safety_rounded, color: _C.textMuted, size: 18),
             const SizedBox(width: 6),
-            Text('Risk Score',
-                style: GoogleFonts.poppins(fontSize: 12, color: _C.textMuted)),
+            Expanded(
+              child: Text(
+                'Anxiety Level From Phone Activity',
+                style: GoogleFonts.poppins(fontSize: 12, color: _C.textMuted),
+              ),
+            ),
           ]),
           const SizedBox(height: 12),
-          Text(score.toStringAsFixed(2),
+          Text('${(score * 100).round()}',
               style: GoogleFonts.poppins(
                   fontSize: 34, fontWeight: FontWeight.w700,
                   color: color, letterSpacing: -1)),
@@ -593,7 +597,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
           Row(children: [
             const Text('✨', style: TextStyle(fontSize: 16)),
             const SizedBox(width: 6),
-            Text('Phenotype',
+            Text('Current Pattern',
                 style: GoogleFonts.poppins(fontSize: 12, color: Colors.white.withValues(alpha: 0.85))),
           ]),
           const SizedBox(height: 12),
@@ -633,12 +637,12 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('24-Hour Risk Curve',
+        Text('Your Anxiety Pattern Today',
             style: GoogleFonts.poppins(
                 fontSize: 16, fontWeight: FontWeight.w600,
                 color: _C.textPrimary)),
         const SizedBox(height: 3),
-        Text('Estimated anxiety risk based on your daily patterns',
+        Text('How your anxiety level may change during the day',
             style: GoogleFonts.poppins(fontSize: 11, color: _C.textMuted)),
         const SizedBox(height: 20),
         SizedBox(
@@ -737,7 +741,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
           )).toList(),
         ),
         const SizedBox(height: 8),
-        Text('from GATv2 attention weights',
+        Text('Based on the daily habits most linked with changes',
             style: GoogleFonts.poppins(fontSize: 10, color: _C.textMuted)),
       ],
     ),
@@ -811,12 +815,12 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('7-Day Vulnerability',
+        Text('Anxiety Pattern Over 7 Days',
             style: GoogleFonts.poppins(
                 fontSize: 14, fontWeight: FontWeight.w600,
                 color: _C.textPrimary)),
         const SizedBox(height: 3),
-        Text('Colour intensity = risk level · no raw numbers shown',
+        Text('Darker bars mean a higher anxiety level',
             style: GoogleFonts.poppins(fontSize: 11, color: _C.textMuted)),
         const SizedBox(height: 16),
         // Bar chart
@@ -866,7 +870,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
             color: _C.amberLight,
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Text('⚠  3 higher-risk evenings in a row — Fri through Sun',
+          child: Text('⚠  Anxiety was higher for 3 evenings in a row, from Friday to Sunday',
               style: GoogleFonts.poppins(
                   fontSize: 11, fontWeight: FontWeight.w500,
                   color: const Color(0xFF854F0B))),

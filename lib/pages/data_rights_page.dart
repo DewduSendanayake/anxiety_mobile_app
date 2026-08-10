@@ -44,12 +44,12 @@ class _DataRightsPageState extends State<DataRightsPage> {
   // ── Request Data Export (Right to Access) ──
   Future<void> _requestDataExport() async {
     final confirm = await _showConfirmDialog(
-      title: 'Request Data Export',
+      title: 'Get a Copy of My Data',
       content:
           'This will send a request to the research team to provide you with '
           'a copy of all data collected about you.\n\n'
-          'You will be contacted at the email associated with your research enrollment.',
-      confirmText: 'Request Export',
+          'The research team will contact you using the email you gave when you joined the study.',
+      confirmText: 'Send Request',
       confirmColor: AppTheme.kPrimaryDeep,
     );
     if (confirm != true) return;
@@ -72,7 +72,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Data export request submitted. The research team will process your request.',
+            'Request sent. The research team will prepare a copy of your data.',
           ),
           backgroundColor: Colors.green,
           duration: Duration(seconds: 4),
@@ -84,13 +84,13 @@ class _DataRightsPageState extends State<DataRightsPage> {
   // ── Request Data Deletion (Right to Erasure) ──
   Future<void> _requestDataDeletion() async {
     final confirm = await _showConfirmDialog(
-      title: '⚠️ Request Data Deletion',
+      title: 'Delete My Data',
       content:
-          'This will send a formal request to the research team to permanently '
+          'This will ask the research team to permanently '
           'delete all data associated with your Participant ID.\n\n'
-          'This action is logged and cannot be undone. The research team will '
-          'process your request within 21 business days as required by the PDPA.',
-      confirmText: 'Request Deletion',
+          'Once the data is deleted, it cannot be restored. The research team will '
+          'handle your request within 21 business days, as required by Sri Lanka\'s data protection law.',
+      confirmText: 'Send Delete Request',
       confirmColor: Colors.red,
     );
     if (confirm != true) return;
@@ -113,7 +113,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Data deletion request submitted. Processing within 21 business days.',
+            'Delete request sent. The research team will handle it within 21 business days.',
           ),
           backgroundColor: Colors.orange,
           duration: Duration(seconds: 4),
@@ -128,10 +128,10 @@ class _DataRightsPageState extends State<DataRightsPage> {
       title: '⚠️ Withdraw from Study',
       content:
           'This will:\n\n'
-          '• Stop all data collection immediately\n'
-          '• Stop the background service\n'
-          '• Clear all locally stored data\n'
-          '• Send a withdrawal record to the research team\n\n'
+          '• Stop collecting new data immediately\n'
+          '• Stop Aura from working in the background\n'
+          '• Delete data saved on this phone\n'
+          '• Tell the research team that you left the study\n\n'
           'You can also request deletion of previously collected data.\n\n'
           'This action cannot be undone. Are you sure?',
       confirmText: 'Yes, Withdraw',
@@ -144,7 +144,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
       title: 'Final Confirmation',
       content:
           'Please confirm one more time that you wish to withdraw from '
-          'the research study. All local data will be erased.',
+          'the research study. All data saved on this phone will be deleted.',
       confirmText: 'Confirm Withdrawal',
       confirmColor: Colors.red.shade700,
     );
@@ -248,7 +248,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.kBgTop,
-      appBar: AppBar(title: const Text('Data Rights & Privacy')),
+      appBar: AppBar(title: const Text('Your Data and Privacy')),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
@@ -258,7 +258,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
 
           // ── Your Rights ──
           const Text(
-            'Your Rights Under the PDPA',
+            'Your Rights Under Sri Lanka\'s Data Protection Law',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 12),
@@ -268,8 +268,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
             icon: Icons.download_outlined,
             iconColor: Colors.blue,
             title: 'Request My Data',
-            subtitle:
-                'Get a copy of all data collected about you (Right to Access)',
+            subtitle: 'Get a copy of all data collected about you',
             onTap: _isWithdrawn ? null : _requestDataExport,
           ),
 
@@ -277,9 +276,8 @@ class _DataRightsPageState extends State<DataRightsPage> {
           _buildActionCard(
             icon: Icons.delete_forever_outlined,
             iconColor: Colors.orange,
-            title: 'Request Data Deletion',
-            subtitle:
-                'Request permanent deletion of your data (Right to Erasure)',
+            title: 'Delete My Data',
+            subtitle: 'Ask for all data about you to be permanently deleted',
             onTap: _isWithdrawn ? null : _requestDataDeletion,
           ),
 
@@ -288,7 +286,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
             icon: Icons.exit_to_app_rounded,
             iconColor: Colors.red,
             title: 'Withdraw from Study',
-            subtitle: 'Stop all data collection and clear local data',
+            subtitle: 'Stop new data collection and delete data saved on this phone',
             onTap: _isWithdrawn ? null : _withdrawFromStudy,
           ),
 
@@ -305,7 +303,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
             icon: Icons.description_outlined,
             iconColor: AppTheme.kPrimaryDeep,
             title: 'Privacy Policy',
-            subtitle: 'Full PDPA-compliant privacy notice',
+            subtitle: 'Full privacy notice',
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const PrivacyPolicyPage()),
@@ -315,8 +313,8 @@ class _DataRightsPageState extends State<DataRightsPage> {
           _buildActionCard(
             icon: Icons.gavel_outlined,
             iconColor: AppTheme.kPrimaryDeep,
-            title: 'View Informed Consent',
-            subtitle: 'Review the consent document you agreed to',
+            title: 'View Consent Form',
+            subtitle: 'Review the form you agreed to',
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const InformedConsentPage()),
@@ -342,7 +340,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'For any queries about your data or rights:\n'
+                  'For any questions about your data or rights:\n'
                   '${ServiceConfig.researchTeamEmail}\n\n'
                   'Ethics Review Committee:\n'
                   '${ServiceConfig.ercSecretaryEmail}',
@@ -392,8 +390,8 @@ class _DataRightsPageState extends State<DataRightsPage> {
               const SizedBox(width: 8),
               Text(
                 _isWithdrawn
-                    ? 'Consent Status: Withdrawn'
-                    : 'Consent Status: Active',
+                    ? 'Study Agreement: Ended'
+                    : 'Study Agreement: Active',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   color: _isWithdrawn
@@ -405,8 +403,8 @@ class _DataRightsPageState extends State<DataRightsPage> {
           ),
           const SizedBox(height: 12),
           _statusRow('Participant ID', _participantId),
-          _statusRow('Consent Given', _formatTimestamp(_consentTimestamp)),
-          _statusRow('Consent Version', _consentVersion),
+          _statusRow('Agreed on', _formatTimestamp(_consentTimestamp)),
+          _statusRow('Form version', _consentVersion),
           _statusRow('Study', ServiceConfig.studyTitle),
         ],
       ),

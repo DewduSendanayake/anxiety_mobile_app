@@ -113,7 +113,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
     if (!ChestStrapService().isConnected) {
       setState(() {
         _errorMessage =
-            'No physiological stream is connected. Connect the chest strap or enable the research simulator.';
+            'No chest strap readings are available. Connect the chest strap or turn on test mode.';
         _phase = _Phase.error;
       });
       return;
@@ -122,7 +122,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
     if (lastReading == null || !lastReading.isWorn) {
       setState(() {
         _errorMessage =
-            'Chest strap is connected, but not detected on your chest. Please put on the strap properly before starting calibration.';
+            'The chest strap is connected but not being worn. Put it on properly before starting.';
         _phase = _Phase.error;
       });
       return;
@@ -160,7 +160,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
         _collectionSubscription?.cancel();
         _collectionSubscription = null;
         setState(() {
-          _errorMessage = 'Chest strap disconnected during calibration.';
+          _errorMessage = 'The chest strap disconnected during setup.';
           _phase = _Phase.error;
         });
         return;
@@ -191,8 +191,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
     if (_collectedReadings.length < _minimumReadings) {
       setState(() {
         _errorMessage =
-            'Only ${_collectedReadings.length} valid worn packets were received. '
-            'At least $_minimumReadings are required. Check the connection and try again.';
+            'Aura received only ${_collectedReadings.length} usable readings. '
+            'At least $_minimumReadings are needed. Check the connection and try again.';
         _phase = _Phase.error;
       });
       return;
@@ -263,7 +263,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
 
     if (featuresPerWindow.isEmpty) {
       setState(() {
-        _errorMessage = 'Insufficient data collected for calibration.';
+        _errorMessage = 'Aura did not receive enough readings. Please try again.';
         _phase = _Phase.error;
       });
       return;
@@ -324,7 +324,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
       _phase = ok ? _Phase.done : _Phase.error;
       if (!ok) {
         _errorMessage =
-            'Could not reach the server. Please check your connection and try again.';
+            'Could not save your setup. Check your internet connection and try again.';
       }
     });
   }
@@ -434,7 +434,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           const SizedBox(height: 32),
 
           Text(
-            'Baseline Calibration',
+            'Set Up Your Resting Level',
             textAlign: TextAlign.center,
             style: GoogleFonts.poppins(
               fontSize: 26,
@@ -447,7 +447,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           const SizedBox(height: 10),
 
           Text(
-            'Before Aura can accurately detect anxiety patterns, '
+            'Before Aura can understand changes in your anxiety level, '
             'it needs to learn what your body looks like at rest.',
             textAlign: TextAlign.center,
             style: GoogleFonts.poppins(
@@ -473,15 +473,15 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
             icon: Icons.timer_outlined,
             title: 'Wait 3 minutes',
             description:
-                'The sensor stream will record your resting physiological baseline.',
+                'Aura will learn what your readings look like while you are calm.',
           ),
           const SizedBox(height: 14),
           _StepCard(
             number: '3',
             icon: Icons.cloud_upload_outlined,
-            title: 'Data is uploaded securely',
+            title: 'Your results are saved securely',
             description:
-                'Your personal mean and standard deviation are stored on the prediction server — never raw readings.',
+                'Aura saves a summary of your resting readings so future results can be personal to you.',
           ),
 
           const SizedBox(height: 28),
@@ -508,9 +508,9 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'IMPORTANT: Only calibrate when you are feeling calm and relaxed. '
-                    'If you are currently stressed or active, please skip and calibrate later, '
-                    'as calibrating now will cause inaccurate stress predictions.',
+                    'IMPORTANT: Start only when you feel calm and relaxed. '
+                    'If you feel stressed or have been active, skip this for now and return later. '
+                    'Starting while stressed can make future results less accurate.',
                     style: GoogleFonts.poppins(
                       fontSize: 11.5,
                       color: Colors.white.withValues(alpha: 0.9),
@@ -536,7 +536,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
               onPressed: _startCalibration,
               icon: const Icon(Icons.play_circle_outline_rounded, size: 22),
               label: Text(
-                'Start Calibration',
+                'Start 3-Minute Setup',
                 style: GoogleFonts.poppins(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -560,7 +560,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           TextButton(
             onPressed: _skip,
             child: Text(
-              'Skip calibration for now',
+              'Skip setup for now',
               style: GoogleFonts.poppins(
                 fontSize: 12,
                 color: Colors.white.withValues(alpha: 0.65),
@@ -603,7 +603,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
                     ),
                     title: Text(
                       chestStrap.isConnected
-                          ? 'Physiological stream connected'
+                          ? 'Chest strap readings connected'
                           : 'Connect real chest strap',
                       style: GoogleFonts.poppins(
                         color: Colors.white,
@@ -616,7 +616,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
                         : TextButton(
                             onPressed: chestStrap.startScan,
                             child: const Text(
-                              'Scan',
+                              'Find strap',
                               style: TextStyle(color: Colors.white),
                             ),
                           ),
@@ -627,14 +627,14 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(
-                  'Research simulator',
+                  'Test mode',
                   style: GoogleFonts.poppins(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
                 subtitle: Text(
-                  'Uses realistic 10-feature packets without changing the firmware.',
+                  'Creates realistic test readings without a chest strap.',
                   style: GoogleFonts.poppins(
                     color: Colors.white.withValues(alpha: 0.75),
                     fontSize: 11,
@@ -664,8 +664,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
                       ),
                       subtitle: Text(
                         isWorn
-                            ? 'Sending realistic calm physiological values'
-                            : 'Sending firmware-matching zero values with isWorn=false',
+                            ? 'Creating calm test readings'
+                            : 'The test strap is not being worn',
                         style: GoogleFonts.poppins(
                           color: Colors.white.withValues(alpha: 0.7),
                           fontSize: 10.5,
@@ -699,7 +699,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
-            'Recording Baseline',
+            'Learning Your Resting Level',
             style: GoogleFonts.poppins(
               fontSize: 24,
               fontWeight: FontWeight.w700,
@@ -843,12 +843,12 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           _statChip(
             Icons.timeline_rounded,
             '${_collectedReadings.length}',
-            'Packets',
+            'Readings',
           ),
           _vertDivider(),
-          _statChip(Icons.graphic_eq_rounded, '10', 'Features'),
+          _statChip(Icons.graphic_eq_rounded, '10', 'Types'),
           _vertDivider(),
-          _statChip(Icons.speed_rounded, '1Hz', 'Rate'),
+          _statChip(Icons.speed_rounded, '1/sec', 'Speed'),
         ],
       ),
     );
@@ -909,7 +909,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
             ),
             const SizedBox(height: 32),
             Text(
-              _uploading ? 'Uploading to server…' : 'Computing statistics…',
+              _uploading ? 'Saving securely...' : 'Preparing your results...',
               style: GoogleFonts.poppins(
                 fontSize: 20,
                 fontWeight: FontWeight.w600,
@@ -919,8 +919,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
             const SizedBox(height: 12),
             Text(
               _uploading
-                  ? 'Sending your personalised baseline parameters securely.'
-                  : 'Calculating mean and standard deviation for each sensor channel.',
+                  ? 'Saving your personal resting level securely.'
+                  : 'Preparing your resting-level summary.',
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(
                 fontSize: 13,
@@ -973,7 +973,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           const SizedBox(height: 28),
 
           Text(
-            'Calibration Complete!',
+            'Setup Complete!',
             style: GoogleFonts.poppins(
               fontSize: 26,
               fontWeight: FontWeight.w700,
@@ -984,8 +984,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           const SizedBox(height: 10),
 
           Text(
-            'Your resting baseline has been securely uploaded. '
-            'The prediction engine is now personalised to your physiology.',
+            'Your resting level was saved securely. '
+            'Aura can now give results that are personal to you.',
             textAlign: TextAlign.center,
             style: GoogleFonts.poppins(
               fontSize: 14,
@@ -1009,7 +1009,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Calibration Summary',
+                  'Setup Summary',
                   style: GoogleFonts.poppins(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -1018,21 +1018,21 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
                 ),
                 const SizedBox(height: 16),
                 _summaryRow('Duration', '${_totalSeconds ~/ 60} minutes'),
-                _summaryRow('Valid feature packets', '$totalPackets'),
-                _summaryRow('Features extracted', '10'),
+                _summaryRow('Usable readings', '$totalPackets'),
+                _summaryRow('Reading types', '10'),
                 _summaryRow(
-                  'Resting HR',
-                  '${_restingHR.toStringAsFixed(1)} BPM',
+                  'Resting heart rate',
+                  '${_restingHR.toStringAsFixed(1)} beats/min',
                 ),
                 _summaryRow(
-                  'Resting BR',
+                  'Resting breathing rate',
                   '${_restingBR.toStringAsFixed(1)} breaths/min',
                 ),
                 _summaryRow(
                   'Resting Temp',
                   '${_restingTemp.toStringAsFixed(2)} °C',
                 ),
-                _summaryRow('Upload status', 'Success ✓'),
+                _summaryRow('Save status', 'Saved ✓'),
               ],
             ),
           ),
@@ -1121,7 +1121,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           const SizedBox(height: 28),
 
           Text(
-            'Calibration Failed',
+            'Setup Failed',
             style: GoogleFonts.poppins(
               fontSize: 24,
               fontWeight: FontWeight.w700,
@@ -1157,7 +1157,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
               icon: const Icon(Icons.refresh_rounded),
               label: Text(
                 _collectedReadings.length >= _minimumReadings
-                    ? 'Retry Upload'
+                    ? 'Try Saving Again'
                     : 'Back to Setup',
                 style: GoogleFonts.poppins(
                   fontSize: 15,
@@ -1181,7 +1181,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           TextButton(
             onPressed: _skip,
             child: Text(
-              'Skip and continue without calibration',
+              'Skip and continue without setup',
               style: GoogleFonts.poppins(
                 fontSize: 12,
                 color: Colors.white.withValues(alpha: 0.65),

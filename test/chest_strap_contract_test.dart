@@ -41,6 +41,31 @@ void main() {
     },
   );
 
+  test('simulated stress returns to calm gradually', () {
+    final service = ChestStrapService();
+
+    final justSwitchedOff = service.simulationStressLevelForElapsed(
+      startLevel: 1.0,
+      increasing: false,
+      elapsed: Duration.zero,
+    );
+    final halfwayDown = service.simulationStressLevelForElapsed(
+      startLevel: 1.0,
+      increasing: false,
+      elapsed: const Duration(minutes: 2, seconds: 30),
+    );
+    final calmAgain = service.simulationStressLevelForElapsed(
+      startLevel: 1.0,
+      increasing: false,
+      elapsed: const Duration(minutes: 5),
+    );
+
+    expect(justSwitchedOff, 1.0);
+    expect(halfwayDown, greaterThan(0.0));
+    expect(halfwayDown, lessThan(1.0));
+    expect(calmAgain, 0.0);
+  });
+
   test('participant IDs contain no entered display name', () async {
     SharedPreferences.setMockInitialValues({});
 
@@ -157,6 +182,41 @@ void main() {
       ),
       isNotNull,
     );
+  });
+
+  test('a high current anxiety level triggers a check-in', () {
+    final gate = PredictiveEscalationGate();
+    final start = DateTime.utc(2026, 1, 1, 12);
+    const flatHighForecast = <double>[
+      98,
+      98,
+      97,
+      97,
+      96,
+      96,
+      95,
+      95,
+      94,
+      94,
+    ];
+
+    expect(
+      gate.evaluate(
+        currentRisk: 100,
+        riskForecast: flatHighForecast,
+        observedAt: start,
+      ),
+      isNull,
+    );
+    final alert = gate.evaluate(
+      currentRisk: 100,
+      riskForecast: flatHighForecast,
+      observedAt: start.add(const Duration(seconds: 30)),
+    );
+
+    expect(alert, isNotNull);
+    expect(alert!.leadMinutes, 0);
+    expect(alert.predictedPeakRisk, 100);
   });
 
   test('predictive gate can retry after notification delivery fails', () {
