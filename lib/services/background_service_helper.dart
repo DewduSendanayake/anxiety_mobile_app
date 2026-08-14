@@ -205,4 +205,14 @@ class BackgroundServiceHelper {
   static Future<bool> isServiceRunning() async {
     return await FlutterBackgroundService().isRunning();
   }
+
+  /// Returns total count of items pending in offline queues.
+  static Future<int> getOfflineQueueSize() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    final mainQ = prefs.getStringList('offline_queue_main') ?? [];
+    final bgQ = prefs.getStringList('offline_queue_bg') ?? [];
+    final legacyQ = prefs.getStringList('offline_queue') ?? [];
+    return mainQ.length + bgQ.length + legacyQ.length;
+  }
 }
