@@ -167,8 +167,7 @@ class _RatingSettingsPageState extends State<RatingSettingsPage> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'You will also receive a weekly GAD-7 and PSS-10 '
-                      'questionnaire. All check-ins are required for the research.',
+                      'You will also receive a weekly 7-question anxiety check and a 10-question stress check. All check-ins are needed for the research.',
                       style: TextStyle(
                           fontSize: 13, color: Colors.teal.shade800),
                     ),

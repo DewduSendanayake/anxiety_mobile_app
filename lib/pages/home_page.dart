@@ -1,6 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/chest_strap_service.dart';
+import '../services/api_service.dart';
+import '../services/anxiety_feedback_service.dart';
+import '../services/anxiety_level_update_throttle.dart';
 
 /// Home Page — the first tab the user sees.
 ///
@@ -21,12 +25,17 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
   // ── Chest Strap Service ──────────────────────────────────────
   final ChestStrapService _chestStrap = ChestStrapService();
   ChestStrapReading? _lastReading;
+  StreamSubscription<ChestStrapReading>? _readingSubscription;
 
-  // ── Phenotyping risk (static simulation) ────────────────────
-  static const double _phenotypingRisk = 0.72; // from GATv2
+  Map<String, dynamic>? _weeklySummary;
+  bool _weeklyLoading = false;
+  String? _weeklyError;
 
   // ── Notification state ─────────────────────────────────────
   final List<String> _notifications = [];
+  final AnxietyLevelUpdateThrottle _notificationThrottle =
+      AnxietyLevelUpdateThrottle();
+  Timer? _notificationThrottleTimer;
   bool _hasUnread = false;
 
   // ── Animation ──────────────────────────────────────────────
@@ -59,83 +68,182 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
 
     // Listen to real chest strap data
-    _lastReading = _chestStrap.lastReading; // Load persisted reading
-    _chestStrap.onDataReceived = (reading) {
+    _lastReading = _chestStrap.hasLiveWornReading
+        ? _chestStrap.lastReading
+        : null;
+    _notificationThrottle.seed(_labelForScore(_overallRisk));
+    _readingSubscription = _chestStrap.readingsStream.listen((reading) {
       if (mounted) {
-        final oldLabel = _overallLabel(_lastReading);
         setState(() => _lastReading = reading);
-        final newLabel = _overallLabel(reading);
-        if (_isEscalation(oldLabel, newLabel)) {
-          _addNotification(
-            'Anxiety escalation detected — your risk level changed from $oldLabel to $newLabel.',
-          );
-        }
+        _observeOverallLevel();
       }
-    };
+    });
+
+    // Listen for connection state changes so the UI updates when the
+    // chest strap connects or disconnects.
+    _chestStrap.connectionState.addListener(_onConnectionChanged);
+    _chestStrap.liveReadingAvailable.addListener(_onLiveAvailabilityChanged);
+    AnxietyFeedbackService().combinedRisk.addListener(_onCombinedRiskChanged);
+    _loadWeeklySummary();
+  }
+
+  void _onConnectionChanged() {
+    if (mounted) {
+      setState(() {
+        if (!_chestStrap.isConnected) _lastReading = null;
+      });
+      _observeOverallLevel();
+    }
+  }
+
+  void _onLiveAvailabilityChanged() {
+    if (mounted && !_chestStrap.hasLiveWornReading) {
+      setState(() => _lastReading = null);
+      _observeOverallLevel();
+    }
+  }
+
+  void _onCombinedRiskChanged() {
+    if (mounted) {
+      setState(() {});
+      _observeOverallLevel();
+    }
+  }
+
+  Future<void> _loadWeeklySummary() async {
+    final userId = widget.userId;
+    if (userId == null || userId.isEmpty) {
+      if (mounted) {
+        setState(() => _weeklyError = 'Your weekly summary is not available yet.');
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _weeklyLoading = true;
+        _weeklyError = null;
+      });
+    }
+    try {
+      final onlineSummary = await ApiService.getWeeklyFeedbackSummary(userId);
+      final summary = onlineSummary['status'] == 'success'
+          ? onlineSummary
+          : await AnxietyFeedbackService.getLocalWeeklySummary(userId);
+      if (mounted) {
+        setState(() {
+          _weeklySummary = summary;
+          _weeklyLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _weeklyLoading = false;
+          _weeklyError = 'Could not load your weekly summary. Please try again.';
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
+    _chestStrap.connectionState.removeListener(_onConnectionChanged);
+    _chestStrap.liveReadingAvailable.removeListener(_onLiveAvailabilityChanged);
+    AnxietyFeedbackService().combinedRisk.removeListener(_onCombinedRiskChanged);
+    _readingSubscription?.cancel();
+    _notificationThrottleTimer?.cancel();
     _fadeController.dispose();
     _pulseController.dispose();
     super.dispose();
   }
 
   // ── Combined Risk Logic ─────────────────────────────────────
-  /// Combines physiological risk (0-100) and phenotyping risk (0.0-1.0)
-  /// into an overall normalised score (0-100).
-  double get _overallRisk {
-    final physioNorm = _lastReading?.riskScore ?? 0.0;
-    final phenoNorm = _phenotypingRisk * 100;
-    return (physioNorm * 0.75 + phenoNorm * 0.25).clamp(0, 100);
+  bool get _hasLiveReading =>
+      _chestStrap.hasLiveWornReading && (_lastReading?.isWorn ?? false);
+
+  /// Uses the combined score when it is fresh. If only the chest strap is
+  /// available, that reading becomes the current overall score.
+  double? get _overallRisk {
+    final combinedRisk = AnxietyFeedbackService().latestFusionRisk;
+    if (combinedRisk != null) return combinedRisk;
+    return _hasLiveReading ? _lastReading!.riskScore : null;
   }
 
-  String _overallLabel(ChestStrapReading? reading) {
-    final score = reading?.riskScore ?? 0.0;
-    final combined = (score * 0.75 + _phenotypingRisk * 100 * 0.25).clamp(0, 100);
-    if (combined <= 25) return 'Low';
-    if (combined <= 50) return 'Moderate';
-    if (combined <= 75) return 'Elevated';
+  bool get _hasOverallRisk => _overallRisk != null;
+
+  String _labelForScore(double? score) {
+    if (score == null) return 'Unavailable';
+    if (score <= 20) return 'Low';
+    if (score <= 45) return 'Moderate';
+    if (score <= 70) return 'Elevated';
     return 'High';
   }
 
   Color _overallColor(double score) {
-    if (score <= 25) return const Color(0xFF4CAF50);
-    if (score <= 50) return const Color(0xFFFFA726);
-    if (score <= 75) return const Color(0xFFFF7043);
+    if (score <= 20) return const Color(0xFF4CAF50);
+    if (score <= 45) return const Color(0xFFFFA726);
+    if (score <= 70) return const Color(0xFFFF7043);
     return const Color(0xFFEF5350);
   }
 
   IconData _overallIcon(double score) {
-    if (score <= 25) return Icons.sentiment_very_satisfied_rounded;
-    if (score <= 50) return Icons.sentiment_satisfied_rounded;
-    if (score <= 75) return Icons.sentiment_neutral_rounded;
+    if (!_hasOverallRisk) return Icons.sensors_off_rounded;
+    if (score <= 20) return Icons.sentiment_very_satisfied_rounded;
+    if (score <= 45) return Icons.sentiment_satisfied_rounded;
+    if (score <= 70) return Icons.sentiment_neutral_rounded;
     return Icons.sentiment_very_dissatisfied_rounded;
   }
 
   String _overallMessage(double score) {
-    if (score <= 25) {
-      return 'Your overall anxiety score is currently low. You\'re doing great — keep it up! 🌿';
-    } else if (score <= 50) {
+    if (!_hasOverallRisk) {
+      return 'Connect and wear the chest strap to see your current anxiety level.';
+    }
+    if (score <= 20) {
+      return 'Your overall anxiety score is currently low. You\'re doing well. Keep it up! 🌿';
+    } else if (score <= 45) {
       return 'Your anxiety level is moderate. Consider taking a moment to breathe and relax. 🧘';
-    } else if (score <= 75) {
+    } else if (score <= 70) {
       return 'Your anxiety appears elevated. Try a short break or a calming activity. 💙';
     } else {
-      return 'Your anxiety level is high. Please prioritize self-care and reach out for support if needed. ❤️';
+      return 'Your anxiety level is high. Please take care of yourself and contact someone you trust if you need help. ❤️';
     }
   }
 
-  bool _isEscalation(String oldLabel, String newLabel) {
-    const levels = ['Low', 'Moderate', 'Elevated', 'High'];
-    final oldIdx = levels.indexOf(oldLabel);
-    final newIdx = levels.indexOf(newLabel);
-    return newIdx > oldIdx;
-  }
-
   void _addNotification(String msg) {
+    if (!mounted) return;
     setState(() {
       _notifications.insert(0, msg);
       _hasUnread = true;
+    });
+  }
+
+  void _observeOverallLevel() {
+    final now = DateTime.now();
+    final update = _notificationThrottle.observe(
+      _labelForScore(_overallRisk),
+      now,
+    );
+    if (update != null) _addNotification(update.message);
+    _schedulePendingNotification(now);
+  }
+
+  void _schedulePendingNotification(DateTime now) {
+    _notificationThrottleTimer?.cancel();
+    final delay = _notificationThrottle.delayUntilFlush(now);
+    if (delay == null) return;
+    _notificationThrottleTimer = Timer(delay, () {
+      if (!mounted) return;
+      final update = _notificationThrottle.flush(DateTime.now());
+      if (update != null) _addNotification(update.message);
+      _schedulePendingNotification(DateTime.now());
+    });
+  }
+
+  void _clearNotifications() {
+    if (!mounted) return;
+    setState(() {
+      _notifications.clear();
+      _hasUnread = false;
     });
   }
 
@@ -145,7 +253,10 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _NotificationsSheet(notifications: _notifications),
+      builder: (_) => _NotificationsSheet(
+        notifications: List.unmodifiable(_notifications),
+        onClear: _clearNotifications,
+      ),
     );
   }
 
@@ -154,9 +265,9 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
   // ═══════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    final risk = _overallRisk;
-    final riskCol = _overallColor(risk);
-    final label = _overallLabel(_lastReading);
+    final risk = _overallRisk ?? 0.0;
+    final riskCol = _hasOverallRisk ? _overallColor(risk) : Colors.grey;
+    final label = _labelForScore(_overallRisk);
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -168,10 +279,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF667eea),
-              Color(0xFF764ba2),
-            ],
+            colors: [Color(0xFF667eea), Color(0xFF764ba2)],
           ),
         ),
         child: SafeArea(
@@ -255,25 +363,40 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   ),
 
                   // ── Connection Status ──
-                  if (!_chestStrap.isConnected)
+                  if (!_chestStrap.isConnected ||
+                      !(_lastReading?.isWorn ?? false))
                     Container(
                       margin: const EdgeInsets.only(top: 12),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.2),
+                        ),
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.bluetooth_disabled_rounded, color: Colors.white.withValues(alpha: 0.7), size: 16),
+                          Icon(
+                            !_chestStrap.isConnected
+                                ? Icons.bluetooth_disabled_rounded
+                                : Icons.warning_amber_rounded,
+                            color: Colors.white.withValues(alpha: 0.8),
+                            size: 16,
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              _lastReading != null
-                                  ? 'Chest strap disconnected — showing last known data'
-                                  : 'Chest strap not connected — using model estimates',
-                              style: GoogleFonts.poppins(fontSize: 11, color: Colors.white.withValues(alpha: 0.7)),
+                              !_chestStrap.isConnected
+                                  ? 'Chest strap not connected. Your anxiety level is unavailable.'
+                                  : 'Chest strap connected. Please wear it on your chest to start the readings.',
+                              style: GoogleFonts.poppins(
+                                fontSize: 11,
+                                color: Colors.white.withValues(alpha: 0.9),
+                              ),
                             ),
                           ),
                         ],
@@ -324,7 +447,8 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           boxShadow: [
                             BoxShadow(
                               color: riskCol.withValues(
-                                  alpha: 0.15 * _pulseAnimation.value),
+                                alpha: 0.15 * _pulseAnimation.value,
+                              ),
                               blurRadius: 20,
                               offset: const Offset(0, 8),
                             ),
@@ -362,8 +486,9 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                         'Overall Anxiety Level',
                                         style: GoogleFonts.poppins(
                                           fontSize: 12,
-                                          color: Colors.white
-                                              .withValues(alpha: 0.7),
+                                          color: Colors.white.withValues(
+                                            alpha: 0.7,
+                                          ),
                                         ),
                                       ),
                                       const SizedBox(height: 2),
@@ -386,14 +511,17 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                     shape: BoxShape.circle,
                                     color: Colors.white.withValues(alpha: 0.15),
                                     border: Border.all(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.4),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.4,
+                                      ),
                                       width: 2,
                                     ),
                                   ),
                                   child: Center(
                                     child: Text(
-                                      risk.toStringAsFixed(0),
+                                      _hasOverallRisk
+                                          ? risk.toStringAsFixed(0)
+                                          : '--',
                                       style: GoogleFonts.poppins(
                                         fontSize: 18,
                                         fontWeight: FontWeight.w800,
@@ -414,21 +542,25 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                   Container(
                                     height: 6,
                                     decoration: BoxDecoration(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.15),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.15,
+                                      ),
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                   ),
                                   AnimatedFractionallySizedBox(
                                     duration: const Duration(milliseconds: 600),
-                                    widthFactor: (risk / 100).clamp(0.02, 1.0),
+                                    widthFactor: _hasOverallRisk
+                                        ? (risk / 100)
+                                              .clamp(0.02, 1.0)
+                                              .toDouble()
+                                        : 0.0,
                                     child: Container(
                                       height: 6,
                                       decoration: BoxDecoration(
                                         gradient: LinearGradient(
                                           colors: [
-                                            Colors.white
-                                                .withValues(alpha: 0.9),
+                                            Colors.white.withValues(alpha: 0.9),
                                             riskCol.withValues(alpha: 0.8),
                                           ],
                                         ),
@@ -443,10 +575,22 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                _riskLabel('Low', risk <= 25),
-                                _riskLabel('Moderate', risk > 25 && risk <= 50),
-                                _riskLabel('Elevated', risk > 50 && risk <= 75),
-                                _riskLabel('High', risk > 75),
+                                _riskLabel(
+                                  'Low',
+                                  _hasOverallRisk && risk <= 20,
+                                ),
+                                _riskLabel(
+                                  'Moderate',
+                                  _hasOverallRisk && risk > 20 && risk <= 45,
+                                ),
+                                _riskLabel(
+                                  'Elevated',
+                                  _hasOverallRisk && risk > 45 && risk <= 70,
+                                ),
+                                _riskLabel(
+                                  'High',
+                                  _hasOverallRisk && risk > 70,
+                                ),
                               ],
                             ),
                             const SizedBox(height: 16),
@@ -482,11 +626,17 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
                   const SizedBox(height: 24),
 
+                  _buildWeeklyInsightsCard(),
+
+                  const SizedBox(height: 24),
+
                   // ── Quick Tips Card ──
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 14),
+                      horizontal: 20,
+                      vertical: 14,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(16),
@@ -504,7 +654,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            'All data is encrypted and anonymised for research purposes only.',
+                            'Your data is protected and stored without your name for research only.',
                             style: GoogleFonts.poppins(
                               fontSize: 11,
                               color: Colors.white.withValues(alpha: 0.7),
@@ -537,6 +687,117 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
       ),
     );
   }
+
+  Widget _buildWeeklyInsightsCard() {
+    final summary = _weeklySummary;
+    final alerts = (summary?['alerts'] as num?)?.toInt() ?? 0;
+    final answered = (summary?['answered_alerts'] as num?)?.toInt() ?? 0;
+    final commonActivity = summary?['common_activity'] as String?;
+    final effectiveAction = summary?['most_effective_action'] as String?;
+    final confirmationRate = (summary?['confirmation_rate'] as num?)
+        ?.toDouble();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.13),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.insights_rounded, color: Colors.white),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Your week at a glance',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: _weeklyLoading ? null : _loadWeeklySummary,
+                icon: _weeklyLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.refresh_rounded, color: Colors.white),
+                tooltip: 'Refresh weekly summary',
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _weeklyError != null
+                ? _weeklyError!
+                : summary == null
+                ? 'Loading your weekly summary...'
+                : alerts == 0
+                ? 'No anxiety alerts were recorded in the last 7 days.'
+                : '$alerts alert${alerts == 1 ? '' : 's'}, $answered answered'
+                      '${confirmationRate == null ? '' : ' · ${(confirmationRate * 100).round()}% felt anxious'}',
+            style: GoogleFonts.poppins(
+              color: Colors.white.withValues(alpha: 0.88),
+              fontSize: 12,
+              height: 1.45,
+            ),
+          ),
+          if (commonActivity != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Most common situation: $commonActivity',
+              style: GoogleFonts.poppins(
+                color: Colors.white.withValues(alpha: 0.82),
+                fontSize: 11,
+              ),
+            ),
+          ],
+          if (effectiveAction != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              'You often felt better after: $effectiveAction',
+              style: GoogleFonts.poppins(
+                color: Colors.white.withValues(alpha: 0.82),
+                fontSize: 11,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Text(
+            'These are patterns from your check-ins, not medical advice.',
+            style: GoogleFonts.poppins(
+              color: Colors.white.withValues(alpha: 0.62),
+              fontSize: 10,
+            ),
+          ),
+          if (_weeklyError != null) ...[
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _weeklyLoading ? null : _loadWeeklySummary,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Try again'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.white70),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -545,7 +806,11 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
 class _NotificationsSheet extends StatelessWidget {
   final List<String> notifications;
-  const _NotificationsSheet({required this.notifications});
+  final VoidCallback onClear;
+  const _NotificationsSheet({
+    required this.notifications,
+    required this.onClear,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -596,22 +861,15 @@ class _NotificationsSheet extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(20),
+                if (notifications.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () {
+                      onClear();
+                      Navigator.of(context).pop();
+                    },
+                    icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                    label: const Text('Clear all'),
                   ),
-                  child: Text(
-                    '${notifications.length}',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
@@ -623,8 +881,11 @@ class _NotificationsSheet extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.notifications_none_rounded,
-                            size: 48, color: Colors.grey.shade300),
+                        Icon(
+                          Icons.notifications_none_rounded,
+                          size: 48,
+                          color: Colors.grey.shade300,
+                        ),
                         const SizedBox(height: 12),
                         Text(
                           'No alerts yet',
@@ -635,7 +896,7 @@ class _NotificationsSheet extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'You\'ll be notified here when anxiety escalations are predicted.',
+                          'You\'ll be notified here when your anxiety level may be rising.',
                           textAlign: TextAlign.center,
                           style: GoogleFonts.poppins(
                             fontSize: 12,
@@ -656,15 +917,16 @@ class _NotificationsSheet extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: const Color(0xFFFFF3E0),
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: Colors.orange.shade200,
-                          ),
+                          border: Border.all(color: Colors.orange.shade200),
                         ),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.warning_amber_rounded,
-                                color: Colors.orange.shade700, size: 20),
+                            Icon(
+                              Icons.warning_amber_rounded,
+                              color: Colors.orange.shade700,
+                              size: 20,
+                            ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
