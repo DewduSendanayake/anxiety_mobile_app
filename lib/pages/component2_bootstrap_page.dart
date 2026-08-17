@@ -2,12 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../services/background_service_helper.dart';
 import '../services/component2_data_service.dart';
-import 'digital_phenotyping_page.dart';
+import 'participant_behavior_page.dart';
 
-/// Ensures the participant-facing Component 2 page receives the latest
-/// display-safe behavioural payload before it reads its SharedPreferences
-/// cache. Network/API failures never block the page: it falls back to the
-/// previously cached payload or to the existing baseline-building state.
+/// Syncs Component 2 display-safe data before opening the participant-facing
+/// behavioural page. Network/API failures never block the UI: the page falls
+/// back to cached data or the honest baseline-building state.
 class Component2BootstrapPage extends StatefulWidget {
   final String? userId;
 
@@ -33,13 +32,6 @@ class _Component2BootstrapPageState extends State<Component2BootstrapPage> {
     await Component2DataService.sync(participantId);
   }
 
-  Future<void> _retry() async {
-    setState(() {
-      _bootstrapFuture = _sync();
-    });
-    await _bootstrapFuture;
-  }
-
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<void>(
@@ -47,16 +39,14 @@ class _Component2BootstrapPageState extends State<Component2BootstrapPage> {
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Scaffold(
-            backgroundColor: Color(0xFFF5F3FF),
+            backgroundColor: Color(0xFFF7F5FF),
             body: Center(
-              child: CircularProgressIndicator(color: Color(0xFF5E60CE)),
+              child: CircularProgressIndicator(color: Color(0xFF6D5BD0)),
             ),
           );
         }
 
-        // A new key ensures the existing page re-reads the freshly synced
-        // SharedPreferences payload after a manual retry.
-        return DigitalPhenotypingPage(
+        return ParticipantBehaviorPage(
           key: ValueKey(_bootstrapFuture),
           userId: widget.userId,
         );
