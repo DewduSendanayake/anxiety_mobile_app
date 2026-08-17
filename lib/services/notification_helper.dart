@@ -73,6 +73,33 @@ class NotificationHelper {
     return payload;
   }
 
+  static Future<void> cancelDailyCheckIn(String period) async {
+    final int id;
+    if (period == 'morning') {
+      id = 901;
+    } else if (period == 'afternoon') {
+      id = 902;
+    } else {
+      id = 903;
+    }
+    await plugin.cancel(id);
+  }
+
+  static Future<void> cancelAllDailyCheckIns() async {
+    for (final id in [901, 902, 903]) {
+      await plugin.cancel(id);
+    }
+  }
+
+  static Future<void> cancelWeeklyCheckIns() async {
+    await plugin.cancel(700);
+    await plugin.cancel(800);
+  }
+
+  static Future<void> cancelWeeklyCheckIn(String type) async {
+    await plugin.cancel(type == 'anxiety' ? 700 : 800);
+  }
+
   static Future<void> showRatingNotification() async {
     const AndroidNotificationDetails androidDetails =
         AndroidNotificationDetails(

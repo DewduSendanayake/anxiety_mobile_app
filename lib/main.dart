@@ -43,6 +43,60 @@ Future<void> _resumeExistingParticipant(String userId) async {
   await BackgroundServiceHelper.retryOfflineQueue();
 }
 
+String _dateKey(DateTime date) {
+  return '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
+}
+
+Future<void> _openEmaCheckInIfDue(BuildContext context, String period) async {
+  final prefs = await SharedPreferences.getInstance();
+  final completedToday =
+      prefs.getString('ema_submitted_$period') == _dateKey(DateTime.now());
+  if (completedToday) {
+    await NotificationHelper.cancelDailyCheckIn(period);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You already completed this check-in.')),
+      );
+    }
+    return;
+  }
+  if (!context.mounted) return;
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => EmaRatingSheet(timePeriod: period),
+  );
+}
+
+Future<void> _openWeeklyCheckInIfDue(
+  BuildContext context, {
+  required bool anxiety,
+}) async {
+  final due = anxiety ? await isGad7DueThisWeek() : await isPss10DueThisWeek();
+  if (!due) {
+    await NotificationHelper.cancelWeeklyCheckIn(
+      anxiety ? 'anxiety' : 'stress',
+    );
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You already completed this weekly check-in.'),
+        ),
+      );
+    }
+    return;
+  }
+  if (!context.mounted) return;
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => anxiety ? const Gad7Screen() : const Pss10Screen(),
+    ),
+  );
+}
+
 void _routeNotificationPayload(String? payload) {
   if (payload == null || payload.isEmpty) return;
 
@@ -56,12 +110,7 @@ void _routeNotificationPayload(String? payload) {
 
   if (payload.startsWith('ema_rating_')) {
     final period = payload.replaceFirst('ema_rating_', '');
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => EmaRatingSheet(timePeriod: period),
-    );
+    unawaited(_openEmaCheckInIfDue(context, period));
     return;
   }
 
@@ -74,16 +123,12 @@ void _routeNotificationPayload(String? payload) {
   }
 
   if (payload == 'gad7_weekly') {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const Gad7Screen()));
+    unawaited(_openWeeklyCheckInIfDue(context, anxiety: true));
     return;
   }
 
   if (payload == 'pss10_weekly' || payload == 'pss10_monthly') {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const Pss10Screen()));
+    unawaited(_openWeeklyCheckInIfDue(context, anxiety: false));
     return;
   }
 }

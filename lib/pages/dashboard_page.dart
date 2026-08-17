@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:intl/intl.dart';
 
 import '../theme/app_theme.dart';
 import '../background_service_helper.dart';
@@ -614,6 +615,99 @@ class _DashboardPageState extends State<DashboardPage>
     return [];
   }
 
+  double? _historyNumber(Map<String, dynamic> row, List<String> keys) {
+    for (final key in keys) {
+      final value = row[key];
+      if (value is num) return value.toDouble();
+      if (value is String) {
+        final parsed = double.tryParse(value);
+        if (parsed != null) return parsed;
+      }
+    }
+    return null;
+  }
+
+  DateTime? _historyTimestamp(Map<String, dynamic> row) {
+    for (final key in ['timestamp', '_time', 'time', 'datetime', 'date']) {
+      final value = row[key];
+      if (value is num) {
+        if (!value.isFinite) continue;
+        final absolute = value.abs();
+        final int milliseconds;
+        if (absolute >= 100000000000000000) {
+          milliseconds = value.toInt() ~/ 1000000;
+        } else if (absolute >= 100000000000000) {
+          milliseconds = value.toInt() ~/ 1000;
+        } else if (absolute >= 100000000000) {
+          milliseconds = value.toInt();
+        } else {
+          milliseconds = value.toInt() * 1000;
+        }
+        try {
+          return DateTime.fromMillisecondsSinceEpoch(
+            milliseconds,
+            isUtc: true,
+          ).toLocal();
+        } on RangeError {
+          continue;
+        }
+      }
+      if (value is String && value.isNotEmpty) {
+        final parsed = DateTime.tryParse(value);
+        if (parsed != null) return parsed.toLocal();
+      }
+    }
+    return null;
+  }
+
+  List<Map<String, dynamic>> _normaliseHistoryRows(List<dynamic> rawRows) {
+    final grouped = <String, Map<String, List<double>>>{};
+
+    for (final rawRow in rawRows.whereType<Map>()) {
+      final row = Map<String, dynamic>.from(rawRow);
+      final timestamp = _historyTimestamp(row);
+      if (timestamp == null) continue;
+      final date = DateFormat('yyyy-MM-dd').format(timestamp);
+      final bucket = grouped.putIfAbsent(date, () => <String, List<double>>{});
+
+      final values = <String, double?>{
+        'risk_index': _historyNumber(row, ['risk_index', 'risk_score', 'risk']),
+        'mean_hr': _historyNumber(row, ['mean_hr', 'mean_HR', 'meanHR']),
+        'mean_br': _historyNumber(row, ['mean_br', 'mean_BR', 'meanBR']),
+        'mean_temp': _historyNumber(row, [
+          'mean_temp',
+          'mean_temperature',
+          'temperature',
+        ]),
+        'mean_motion': _historyNumber(row, [
+          'mean_motion',
+          'std_acc_mag',
+          'mean_acc_mag',
+          'motion',
+        ]),
+      };
+
+      for (final entry in values.entries) {
+        final value = entry.value;
+        if (value != null && value.isFinite) {
+          bucket.putIfAbsent(entry.key, () => <double>[]).add(value);
+        }
+      }
+    }
+
+    final dates = grouped.keys.toList()..sort();
+    return dates.map((date) {
+      final row = <String, dynamic>{'date': date};
+      for (final entry in grouped[date]!.entries) {
+        if (entry.value.isNotEmpty) {
+          row[entry.key] =
+              entry.value.reduce((a, b) => a + b) / entry.value.length;
+        }
+      }
+      return row;
+    }).toList();
+  }
+
   Future<void> _fetchHistory() async {
     if (_cachedId.isEmpty) return;
     if (mounted) {
@@ -625,10 +719,9 @@ class _DashboardPageState extends State<DashboardPage>
     final result = await ApiService.getPhysiologicalHistory(_cachedId);
     if (!mounted) return;
     if (result['status'] == 'success') {
-      final rows = (result['history'] as List? ?? [])
-          .whereType<Map>()
-          .map((row) => Map<String, dynamic>.from(row))
-          .toList();
+      final rows = _normaliseHistoryRows(
+        (result['history'] as List?)?.cast<dynamic>() ?? <dynamic>[],
+      );
       setState(() {
         _historyData = rows;
         _historyStatus = rows.isEmpty ? 'empty' : 'success';
@@ -2219,6 +2312,42 @@ class _DashboardPageState extends State<DashboardPage>
     }
   }
 
+  int get _historyAxisDecimals {
+    if (_historyMetric == 'mean_motion') return 3;
+    if (_historyMetric == 'mean_temp' || _historyMetric == 'mean_br') return 1;
+    return 0;
+  }
+
+  double get _historyMinimumPadding {
+    switch (_historyMetric) {
+      case 'mean_hr':
+        return 5;
+      case 'mean_br':
+        return 1;
+      case 'mean_temp':
+        return 0.1;
+      case 'mean_motion':
+        return 0.001;
+      default:
+        return 0;
+    }
+  }
+
+  double get _historyMinimumInterval {
+    switch (_historyMetric) {
+      case 'mean_hr':
+        return 1;
+      case 'mean_br':
+        return 0.5;
+      case 'mean_temp':
+        return 0.1;
+      case 'mean_motion':
+        return 0.001;
+      default:
+        return 20;
+    }
+  }
+
   Widget _buildHistoryCard() {
     if (_historyStatus == 'loading') {
       return const SizedBox(
@@ -2265,20 +2394,42 @@ class _DashboardPageState extends State<DashboardPage>
       );
     }
 
-    final spots = List<FlSpot>.generate(_historyData.length, (index) {
-      final value =
-          (_historyData[index][_historyMetric] as num?)?.toDouble() ?? 0.0;
+    final metricRows = _historyData
+        .where((row) => row[_historyMetric] is num)
+        .toList();
+    if (metricRows.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          'No $_historyMetricLabel history is available yet.',
+          style: GoogleFonts.poppins(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+
+    final spots = List<FlSpot>.generate(metricRows.length, (index) {
+      final value = (metricRows[index][_historyMetric] as num).toDouble();
       return FlSpot(index.toDouble(), value);
     });
     final values = spots.map((spot) => spot.y).toList();
     final fixedRiskAxis = _historyMetric == 'risk_index';
     final minValue = values.reduce(min);
     final maxValue = values.reduce(max);
-    final padding = max((maxValue - minValue) * 0.18, 0.5);
+    final padding = max((maxValue - minValue) * 0.18, _historyMinimumPadding);
     final minY = fixedRiskAxis ? 0.0 : max(0.0, minValue - padding);
     final maxY = fixedRiskAxis
         ? 100.0
         : (maxValue + padding <= minY ? minY + 1.0 : maxValue + padding);
+    final axisInterval = fixedRiskAxis
+        ? 20.0
+        : max((maxY - minY) / 4, _historyMinimumInterval);
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -2356,7 +2507,7 @@ class _DashboardPageState extends State<DashboardPage>
             child: LineChart(
               LineChartData(
                 minX: 0,
-                maxX: max(1, _historyData.length - 1).toDouble(),
+                maxX: max(1, metricRows.length - 1).toDouble(),
                 minY: minY,
                 maxY: maxY,
                 borderData: FlBorderData(show: false),
@@ -2378,11 +2529,10 @@ class _DashboardPageState extends State<DashboardPage>
                   leftTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      reservedSize: 42,
+                      reservedSize: 46,
+                      interval: axisInterval,
                       getTitlesWidget: (value, meta) => Text(
-                        value.toStringAsFixed(
-                          _historyMetric == 'mean_motion' ? 2 : 0,
-                        ),
+                        value.toStringAsFixed(_historyAxisDecimals),
                         style: GoogleFonts.poppins(
                           fontSize: 8.5,
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -2396,18 +2546,23 @@ class _DashboardPageState extends State<DashboardPage>
                       reservedSize: 24,
                       getTitlesWidget: (value, meta) {
                         final index = value.round();
-                        if (index < 0 || index >= _historyData.length) {
+                        if ((value - index).abs() > 0.01) {
                           return const SizedBox.shrink();
                         }
-                        final every = max(1, (_historyData.length / 5).ceil());
+                        if (index < 0 || index >= metricRows.length) {
+                          return const SizedBox.shrink();
+                        }
+                        final every = max(1, (metricRows.length / 5).ceil());
                         if (index % every != 0 &&
-                            index != _historyData.length - 1) {
+                            index != metricRows.length - 1) {
                           return const SizedBox.shrink();
                         }
-                        final date =
-                            _historyData[index]['date'] as String? ?? '';
+                        final date = metricRows[index]['date'] as String? ?? '';
+                        final parsedDate = DateTime.tryParse(date);
                         return Text(
-                          date.length >= 10 ? date.substring(5) : date,
+                          parsedDate == null
+                              ? date
+                              : DateFormat('d MMM').format(parsedDate),
                           style: GoogleFonts.poppins(
                             fontSize: 8,
                             color: Theme.of(
@@ -2437,7 +2592,7 @@ class _DashboardPageState extends State<DashboardPage>
           ),
           const SizedBox(height: 8),
           Text(
-            '${_historyData.length} day${_historyData.length == 1 ? '' : 's'} of data'
+            '${metricRows.length} day${metricRows.length == 1 ? '' : 's'} of data'
             '${_historyMetricUnit.isEmpty ? '' : ' · $_historyMetricUnit'}',
             style: GoogleFonts.poppins(
               fontSize: 10,

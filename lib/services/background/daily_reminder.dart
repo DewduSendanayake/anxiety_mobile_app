@@ -3,7 +3,6 @@ import 'package:flutter/material.dart' show Color;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
-import 'dart:math' show Random;
 import '../../ema_and_gad7.dart';
 
 /// DailyReminder
@@ -16,8 +15,7 @@ import '../../ema_and_gad7.dart';
 ///     – Throttle timestamp is cleared whenever the user saves new times
 ///       (call [clearThrottleTimestamps] from RatingSettingsPage._save).
 ///
-///   • GAD-7 weekly  — between 09:00–21:00, re-fires every 4 h until done.
-///   • PSS-10 weekly — between 09:00–21:00, once per day until done.
+///   • GAD-7 and PSS-10 each fire once per week at the configured day and time.
 ///
 /// Called from Timer.periodic(Duration(minutes: 1)) in background_service.dart.
 class DailyReminder {
@@ -38,10 +36,10 @@ class DailyReminder {
     // by the UI isolate (settings changes, submission flags).
     await prefs.reload();
 
-    final bool enabled = prefs.getBool('rating_enabled') ?? true;
-    if (!enabled) {
-      debugPrint("DailyReminder: disabled by user — skip.");
-      debugPrint("EMA_DEBUG: action=skip reason=rating_disabled");
+    final bool dailyEnabled = prefs.getBool('rating_enabled') ?? true;
+    final bool weeklyEnabled = prefs.getBool('weekly_checkins_enabled') ?? true;
+    if (!dailyEnabled && !weeklyEnabled) {
+      debugPrint("DailyReminder: all scheduled check-ins disabled by user.");
       return;
     }
 
@@ -65,17 +63,21 @@ class DailyReminder {
       "${now.minute.toString().padLeft(2, '0')} — $today",
     );
 
-    for (final period in ['morning', 'afternoon', 'evening']) {
-      if (await _checkPeriod(prefs, plugin, now, today, period)) {
-        await prefs.setInt(_lastScheduledReminderKey, nowMs);
-        return;
+    if (dailyEnabled) {
+      for (final period in ['morning', 'afternoon', 'evening']) {
+        if (await _checkPeriod(prefs, plugin, now, today, period)) {
+          await prefs.setInt(_lastScheduledReminderKey, nowMs);
+          return;
+        }
       }
     }
-    if (await _checkWeeklyGad7(prefs, plugin, now, today)) {
+    if (!weeklyEnabled) return;
+
+    if (await _checkWeeklyGad7(prefs, plugin, now)) {
       await prefs.setInt(_lastScheduledReminderKey, nowMs);
       return;
     }
-    if (await _checkWeeklyPss10(prefs, plugin, now, today)) {
+    if (await _checkWeeklyPss10(prefs, plugin, now)) {
       await prefs.setInt(_lastScheduledReminderKey, nowMs);
     }
   }
@@ -123,41 +125,6 @@ class DailyReminder {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // RANDOM TIME GENERATION
-  // ─────────────────────────────────────────────────────────────────────────
-
-  static Future<void> _ensureRandomTimesForToday(
-    SharedPreferences prefs,
-    String today,
-  ) async {
-    final String lastGenerated = prefs.getString('ema_random_times_date') ?? '';
-    if (lastGenerated == today) return;
-
-    final random = Random();
-
-    for (var period in ['morning', 'afternoon', 'evening']) {
-      final int baseHour = prefs.getInt('ema_${period}_hour') ??
-          (period == 'morning'
-              ? 9
-              : period == 'afternoon'
-              ? 14
-              : 20);
-      final int baseMinute = prefs.getInt('ema_${period}_minute') ?? 0;
-      final int baseMinutes = baseHour * 60 + baseMinute;
-
-      // Random time offset within the 3-hour window (-60 mins to +120 mins).
-      // This protects morning sleep schedules while allowing full unpredictability.
-      final int offset = random.nextInt(181) - 60; // 0..180 maps to -60..120
-      final int randomMinutes = (baseMinutes + offset) % 1440;
-
-      await prefs.setInt('ema_random_minutes_$period', randomMinutes);
-    }
-
-    await prefs.setString('ema_random_times_date', today);
-    debugPrint("DailyReminder: Generated randomized EMA target times for date=$today");
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
   // EMA PERIOD
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -178,20 +145,14 @@ class DailyReminder {
       return false;
     }
 
-    // Ensure we have random times generated for today
-    await _ensureRandomTimesForToday(prefs, today);
-
-    // Read the randomized target time (in minutes of day)
-    final int targetMinutes = prefs.getInt('ema_random_minutes_$period') ??
-        ((period == 'morning'
-                ? 9
-                : period == 'afternoon'
-                ? 14
-                : 20) *
-            60);
-
-    final int targetHour = targetMinutes ~/ 60;
-    final int targetMinute = targetMinutes % 60;
+    final int defaultHour = period == 'morning'
+        ? 9
+        : period == 'afternoon'
+        ? 14
+        : 20;
+    final int targetHour = prefs.getInt('ema_${period}_hour') ?? defaultHour;
+    final int targetMinute = prefs.getInt('ema_${period}_minute') ?? 0;
+    final int targetMinutes = targetHour * 60 + targetMinute;
 
     final int nowMinutes = now.hour * 60 + now.minute;
 
@@ -204,7 +165,8 @@ class DailyReminder {
       inWindow = nowMinutes >= targetMinutes && nowMinutes < endMinutes;
     } else {
       // Handles windows that cross midnight (e.g. 11 PM to 3 AM)
-      inWindow = nowMinutes >= targetMinutes || nowMinutes < (endMinutes - 1440);
+      inWindow =
+          nowMinutes >= targetMinutes || nowMinutes < (endMinutes - 1440);
     }
 
     debugPrint(
@@ -299,17 +261,23 @@ class DailyReminder {
     SharedPreferences prefs,
     FlutterLocalNotificationsPlugin plugin,
     DateTime now,
-    String today,
   ) async {
-    if (now.hour < 9 || now.hour > 21) return false;
+    if (!_weeklyScheduleReached(
+      prefs,
+      now,
+      hourKey: 'gad7_hour',
+      minuteKey: 'gad7_minute',
+      defaultHour: 20,
+    )) {
+      return false;
+    }
+
+    final weekKey = weeklyCheckInWeekKey(now);
+    if (prefs.getString('gad7_notified_week') == weekKey) return false;
 
     final bool due = await isGad7DueThisWeek();
     debugPrint("DailyReminder: GAD-7 due=$due");
     if (!due) return false;
-
-    final int lastTs = prefs.getInt('gad7_reminder_ts') ?? 0;
-    final int nowMs = DateTime.now().millisecondsSinceEpoch;
-    if ((nowMs - lastTs) < 4 * 60 * 60 * 1000) return false;
 
     debugPrint("DailyReminder: ▶ FIRING GAD-7 weekly notification");
 
@@ -329,7 +297,7 @@ class DailyReminder {
         ),
         payload: 'gad7_weekly',
       );
-      await prefs.setInt('gad7_reminder_ts', nowMs);
+      await prefs.setString('gad7_notified_week', weekKey);
       debugPrint("DailyReminder: ✅ GAD-7 notification sent.");
       return true;
     } catch (e) {
@@ -346,10 +314,19 @@ class DailyReminder {
     SharedPreferences prefs,
     FlutterLocalNotificationsPlugin plugin,
     DateTime now,
-    String today,
   ) async {
-    if (now.hour < 9 || now.hour > 21) return false;
-    if (prefs.getString('pss10_notified_today') == today) return false;
+    if (!_weeklyScheduleReached(
+      prefs,
+      now,
+      hourKey: 'pss10_hour',
+      minuteKey: 'pss10_minute',
+      defaultHour: 21,
+    )) {
+      return false;
+    }
+
+    final weekKey = weeklyCheckInWeekKey(now);
+    if (prefs.getString('pss10_notified_week') == weekKey) return false;
 
     final bool due = await isPss10DueThisWeek();
     debugPrint("DailyReminder: PSS-10 due=$due");
@@ -371,9 +348,9 @@ class DailyReminder {
             priority: Priority.high,
           ),
         ),
-        payload: 'pss10_monthly',
+        payload: 'pss10_weekly',
       );
-      await prefs.setString('pss10_notified_today', today);
+      await prefs.setString('pss10_notified_week', weekKey);
       debugPrint("DailyReminder: ✅ PSS-10 notification sent.");
       return true;
     } catch (e) {
@@ -385,6 +362,22 @@ class DailyReminder {
   // ─────────────────────────────────────────────────────────────────────────
   // HELPERS
   // ─────────────────────────────────────────────────────────────────────────
+
+  static bool _weeklyScheduleReached(
+    SharedPreferences prefs,
+    DateTime now, {
+    required String hourKey,
+    required String minuteKey,
+    required int defaultHour,
+  }) {
+    final weekday = prefs.getInt('weekly_checkin_weekday') ?? DateTime.sunday;
+    if (now.weekday != weekday) return false;
+
+    final targetMinutes =
+        (prefs.getInt(hourKey) ?? defaultHour) * 60 +
+        (prefs.getInt(minuteKey) ?? 0);
+    return now.hour * 60 + now.minute >= targetMinutes;
+  }
 
   static int _idForPeriod(String period) {
     if (period == 'morning') return 901;
