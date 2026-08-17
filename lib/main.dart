@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
@@ -38,8 +39,10 @@ Future<bool> _hasCurrentConsent() async {
 
 Future<void> _resumeExistingParticipant(String userId) async {
   UserManager().login(userId);
-  await bg.initializeService();
-  await bg.startBackgroundServiceIfPermitted();
+  if (!kIsWeb) {
+    await bg.initializeService();
+    await bg.startBackgroundServiceIfPermitted();
+  }
   await BackgroundServiceHelper.retryOfflineQueue();
 }
 
@@ -116,29 +119,32 @@ void main() async {
     debugPrint('${details.stack}');
   };
 
-  // Catch async errors that escape zones.
   PlatformDispatcher.instance.onError = (error, stack) {
     debugPrint('🔴 PlatformDispatcher error: $error');
     debugPrint('$stack');
-    return true; // Prevent the app from being terminated.
+    return true;
   };
 
-  // Run the entire app inside an error zone for extra safety.
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
       await ThemeController.instance.initialize();
-      try {
-        await NotificationHelper.init(
-          backgroundCallback: notificationTapBackground,
-        );
-        NotificationHelper.onNotificationResponse = _handleNotificationResponse;
-      } catch (e, st) {
-        debugPrint('Notification init error: $e');
-        debugPrint('$st');
+
+      // Local notifications and background callbacks are mobile-only here.
+      if (!kIsWeb) {
+        try {
+          await NotificationHelper.init(
+            backgroundCallback: notificationTapBackground,
+          );
+          NotificationHelper.onNotificationResponse = _handleNotificationResponse;
+        } catch (e, st) {
+          debugPrint('Notification init error: $e');
+          debugPrint('$st');
+        }
+      } else {
+        debugPrint('Web preview: skipping mobile notification initialization.');
       }
 
-      // 1. Queue Retry (Offline Architecture)
       final hasCurrentConsentAtStartup = await _hasCurrentConsent();
       if (hasCurrentConsentAtStartup) {
         BackgroundServiceHelper.retryOfflineQueue().catchError((e) {
@@ -146,10 +152,6 @@ void main() async {
         });
       }
 
-      // 2. Connectivity Listener (Auto-Upload when internet returns)
-      // NOTE: connectivity_plus ^4.0 returns List<ConnectivityResult>,
-      //       NOT a single ConnectivityResult. Using `dynamic` to be safe
-      //       across all versions.
       try {
         Connectivity().onConnectivityChanged.listen(
           (event) async {
@@ -172,23 +174,26 @@ void main() async {
         debugPrint('Connectivity Listener Error: $e');
       }
 
-      // 3. Configure Background Service (Only if User ID exists). The service
-      // is deliberately started after the first frame, when Android considers
-      // the app foreground-eligible and the permission can be checked safely.
       var shouldStartBackgroundService = false;
       try {
         await ParticipantIdentityService.migrateLegacyIdentity();
         final prefs = await SharedPreferences.getInstance();
         final userId = prefs.getString('user_id');
         if (userId != null && userId.isNotEmpty && hasCurrentConsentAtStartup) {
-          // Restore the physiological session on every cold launch. Without
-          // this, BLE packets still reach the dashboard but never enter the
-          // 60-second /ingest pipeline.
           UserManager().login(userId);
-          await bg.initializeService();
-          shouldStartBackgroundService = true;
+
+          if (!kIsWeb) {
+            await bg.initializeService();
+            shouldStartBackgroundService = true;
+          } else {
+            debugPrint(
+              'Web preview: skipping FlutterBackgroundService initialization.',
+            );
+          }
         } else if (userId != null && userId.isNotEmpty) {
-          FlutterBackgroundService().invoke('stopService');
+          if (!kIsWeb) {
+            FlutterBackgroundService().invoke('stopService');
+          }
           UserManager().logout();
           debugPrint(
             'Background Service: paused until the current consent version is accepted.',
@@ -205,16 +210,15 @@ void main() async {
       runApp(const ResearchApp());
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (hasCurrentConsentAtStartup) {
+        if (hasCurrentConsentAtStartup && !kIsWeb) {
           _routeNotificationPayload(NotificationHelper.consumeLaunchPayload());
         }
-        if (shouldStartBackgroundService) {
+        if (shouldStartBackgroundService && !kIsWeb) {
           unawaited(bg.startBackgroundServiceIfPermitted());
         }
       });
     },
     (error, stack) {
-      // Zone-level fallback — catches anything that slips through.
       debugPrint('🔴 Uncaught zone error: $error');
       debugPrint('$stack');
     },
