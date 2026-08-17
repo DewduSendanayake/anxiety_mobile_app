@@ -5,7 +5,6 @@ import 'package:flutter_sms_inbox/flutter_sms_inbox.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:usage_stats/usage_stats.dart';
-
 import '../background_service_helper.dart';
 
 class DataCollector {
@@ -15,21 +14,16 @@ class DataCollector {
     debugPrint('🚀 DataCollector: Starting sync for $userId');
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
-
     await _collectHourlyHeartbeat(userId, prefs);
     await _collectLocation(userId);
     await _collectDailyCommunication(userId, prefs);
     await _collectAppUsage(userId);
     await _collectHourlyBattery(userId, prefs);
-
     await BackgroundServiceHelper.retryOfflineQueue();
     debugPrint('✅ DataCollector: Sync Complete');
   }
 
-  static Future<void> _collectHourlyHeartbeat(
-    String userId,
-    SharedPreferences prefs,
-  ) async {
+  static Future<void> _collectHourlyHeartbeat(String userId, SharedPreferences prefs) async {
     final now = DateTime.now();
     final last = DateTime.tryParse(prefs.getString('c2_last_heartbeat_at') ?? '');
     if (last != null && now.difference(last) < _hourly) return;
@@ -42,11 +36,7 @@ class DataCollector {
       final p = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       ).timeout(const Duration(seconds: 15));
-
-      // Privacy transformation now happens on-device. Three decimals retains
-      // neighbourhood-scale mobility signal (~100 m latitude) without sending
-      // the phone's exact GPS fix.
-      await _send(userId, 'Location', {
+      await _send(userId, 'Location_Grid_100m', {
         'lat': _round(p.latitude, 3),
         'lng': _round(p.longitude, 3),
         'speed_mps': _round(p.speed, 2),
@@ -55,22 +45,13 @@ class DataCollector {
       });
     } catch (e) {
       debugPrint('Location Error or Timeout: $e');
-      await _send(userId, 'System_Log', {
-        'event': 'location_error',
-        'message': e.toString(),
-      });
+      await _send(userId, 'System_Log', {'event': 'location_error', 'message': e.toString()});
     }
   }
 
-  /// Calls and SMS are daily aggregates, so querying them every 15 minutes
-  /// creates redundant data. Run at most once per local calendar day.
-  static Future<void> _collectDailyCommunication(
-    String userId,
-    SharedPreferences prefs,
-  ) async {
+  static Future<void> _collectDailyCommunication(String userId, SharedPreferences prefs) async {
     final today = _dateKey(DateTime.now());
     if (prefs.getString('c2_last_communication_day') == today) return;
-
     try {
       final now = DateTime.now();
       final start = DateTime(now.year, now.month, now.day);
@@ -78,7 +59,6 @@ class DataCollector {
         dateFrom: start.millisecondsSinceEpoch,
         dateTo: now.millisecondsSinceEpoch,
       ).timeout(const Duration(seconds: 10));
-
       await _send(userId, 'Call_Stats_Daily', {
         'date': today,
         'incoming': entries.where((c) => c.callType == CallType.incoming).length,
@@ -89,18 +69,12 @@ class DataCollector {
     } catch (e) {
       debugPrint('Call Log Error or Timeout: $e');
     }
-
     try {
       final query = SmsQuery();
-      final inbox = await query
-          .querySms(kinds: [SmsQueryKind.inbox])
-          .timeout(const Duration(seconds: 10));
-      final sent = await query
-          .querySms(kinds: [SmsQueryKind.sent])
-          .timeout(const Duration(seconds: 10));
+      final inbox = await query.querySms(kinds: [SmsQueryKind.inbox]).timeout(const Duration(seconds: 10));
+      final sent = await query.querySms(kinds: [SmsQueryKind.sent]).timeout(const Duration(seconds: 10));
       final received = inbox.where((m) => _isToday(m.date)).length;
       final sentCount = sent.where((m) => _isToday(m.date)).length;
-
       await _send(userId, 'SMS_Activity_Daily', {
         'date': today,
         'received': received,
@@ -110,8 +84,6 @@ class DataCollector {
     } catch (e) {
       debugPrint('SMS Error or Timeout: $e');
     }
-
-    // Avoid repeating permission-sensitive queries throughout the day.
     await prefs.setString('c2_last_communication_day', today);
   }
 
@@ -119,10 +91,7 @@ class DataCollector {
     try {
       final end = DateTime.now();
       final start = end.subtract(const Duration(minutes: 15));
-      final usage = await UsageStats.queryUsageStats(start, end)
-          .timeout(const Duration(seconds: 10));
-
-      // Package names are categorized on-device and never uploaded.
+      final usage = await UsageStats.queryUsageStats(start, end).timeout(const Duration(seconds: 10));
       final categories = <String, double>{};
       for (final u in usage) {
         final ms = int.tryParse(u.totalTimeInForeground ?? '0') ?? 0;
@@ -130,14 +99,10 @@ class DataCollector {
         final category = _categorizeApp(u.packageName ?? 'unknown');
         categories[category] = (categories[category] ?? 0) + ms / 1000.0;
       }
-
       if (categories.isNotEmpty) {
         await _send(userId, 'App_Usage_Category_15m', {
           'window_minutes': 15,
-          'categories_sec': {
-            for (final e in categories.entries)
-              e.key: double.parse(e.value.toStringAsFixed(1)),
-          },
+          'categories_sec': {for (final e in categories.entries) e.key: double.parse(e.value.toStringAsFixed(1))},
         });
       }
     } catch (e) {
@@ -145,47 +110,28 @@ class DataCollector {
     }
   }
 
-  static Future<void> _collectHourlyBattery(
-    String userId,
-    SharedPreferences prefs,
-  ) async {
+  static Future<void> _collectHourlyBattery(String userId, SharedPreferences prefs) async {
     final now = DateTime.now();
-    final last = DateTime.tryParse(
-      prefs.getString('c2_last_battery_upload_at') ?? '',
-    );
+    final last = DateTime.tryParse(prefs.getString('c2_last_battery_upload_at') ?? '');
     if (last != null && now.difference(last) < _hourly) return;
-
     try {
       final battery = Battery();
       final level = await battery.batteryLevel.timeout(const Duration(seconds: 5));
       final state = await battery.batteryState.timeout(const Duration(seconds: 5));
       await prefs.setInt('last_battery_level', level);
-      await _send(userId, 'Battery_Status', {
-        'level_percent': level,
-        'state': state.name,
-      });
+      await _send(userId, 'Battery_Status', {'level_percent': level, 'state': state.name});
       await prefs.setString('c2_last_battery_upload_at', now.toIso8601String());
     } catch (e) {
       debugPrint('Battery Status Error: $e');
     }
   }
 
-  static Future<void> _send(
-    String userId,
-    String type,
-    dynamic value, {
-    DateTime? eventTime,
-  }) async {
+  static Future<void> _send(String userId, String type, dynamic value, {DateTime? eventTime}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.reload();
       final currentId = prefs.getString('user_id') ?? userId;
-      await BackgroundServiceHelper.enqueueResearchEvent(
-        currentId,
-        type,
-        value,
-        eventTime: eventTime,
-      );
+      await BackgroundServiceHelper.enqueueResearchEvent(currentId, type, value, eventTime: eventTime);
       debugPrint('📤 Queued: $type');
     } catch (e) {
       debugPrint('Queue Error for $type: $e');
@@ -198,8 +144,7 @@ class DataCollector {
     return date.year == now.year && date.month == now.month && date.day == now.day;
   }
 
-  static String _dateKey(DateTime d) =>
-      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  static String _dateKey(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   static double _round(double value, int decimals) {
     final factor = decimals == 1 ? 10.0 : decimals == 2 ? 100.0 : 1000.0;
