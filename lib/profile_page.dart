@@ -12,7 +12,9 @@ import 'pages/data_rights_page.dart';
 import 'pages/baseline_calibration_page.dart';
 import 'pages/appearance_settings_page.dart';
 import 'services/background/service_config.dart';
+import 'services/background/daily_reminder.dart';
 import 'services/participant_identity_service.dart';
+import 'services/rating_settings.dart';
 import 'theme/theme_controller.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -180,18 +182,22 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() {
       if (period == 'morning') {
         _morningTime = time;
-        prefs.setInt('ema_morning_hour', time.hour);
-        prefs.setInt('ema_morning_minute', time.minute);
       } else if (period == 'afternoon') {
         _afternoonTime = time;
-        prefs.setInt('ema_afternoon_hour', time.hour);
-        prefs.setInt('ema_afternoon_minute', time.minute);
       } else if (period == 'evening') {
         _eveningTime = time;
-        prefs.setInt('ema_evening_hour', time.hour);
-        prefs.setInt('ema_evening_minute', time.minute);
       }
     });
+    await prefs.setInt('ema_${period}_hour', time.hour);
+    await prefs.setInt('ema_${period}_minute', time.minute);
+    await DailyReminder.clearThrottleTimestamps();
+  }
+
+  Future<void> _openCheckInSettings() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const RatingSettingsPage()));
+    await _loadProfile();
   }
 
   final _formKey = GlobalKey<FormState>();
@@ -546,6 +552,16 @@ class _ProfilePageState extends State<ProfilePage> {
                       _eveningTime,
                       (t) => _saveTime('evening', t),
                       Icons.nightlight_round,
+                    ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _openCheckInSettings,
+                        icon: const Icon(Icons.tune_rounded),
+                        label: const Text(
+                          'Manage or turn off check-in reminders',
+                        ),
+                      ),
                     ),
                   ]),
                   const SizedBox(height: 14),
