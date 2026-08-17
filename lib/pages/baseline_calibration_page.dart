@@ -1057,7 +1057,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: _proceed,
-              icon: const Icon(Icons.arrow_forward_rounded),
+              icon: const Icon(Icons.dashboard_outlined),
               label: Text(
                 'Go to Dashboard',
                 style: GoogleFonts.poppins(

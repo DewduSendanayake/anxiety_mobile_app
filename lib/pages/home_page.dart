@@ -203,16 +203,16 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   String _overallMessage(double score) {
     if (!_hasOverallRisk) {
-      return 'Connect and wear the chest strap to see your current anxiety level.';
+      return 'Connect and wear the chest strap to see your current readings.';
     }
     if (score <= 20) {
-      return 'Your overall anxiety score is currently low. You\'re doing well. Keep it up! 🌿';
+      return 'Your recent readings look settled. Keep doing what helps you feel comfortable.';
     } else if (score <= 45) {
-      return 'Your anxiety level is moderate. Consider taking a moment to breathe and relax. 🧘';
+      return 'Your recent readings have shifted a little. A slow breath or short pause may feel helpful.';
     } else if (score <= 70) {
-      return 'Your anxiety appears elevated. Try a short break or a calming activity. 💙';
+      return 'A gentle pause may help. Try a calming activity if that feels right for you.';
     } else {
-      return 'Your anxiety level is high. Please take care of yourself and contact someone you trust if you need help. ❤️';
+      return 'Take a moment to check in with yourself. Breathe slowly, and contact someone you trust if you would like support.';
     }
   }
 
@@ -398,7 +398,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           Expanded(
                             child: Text(
                               !_chestStrap.isConnected
-                                  ? 'Chest strap not connected. Your anxiety level is unavailable.'
+                                  ? 'Chest strap not connected. Your current readings are unavailable.'
                                   : 'Chest strap connected. Please wear it on your chest to start the readings.',
                               style: GoogleFonts.poppins(
                                 fontSize: 11,
@@ -903,7 +903,7 @@ class _NotificationsSheet extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'You\'ll be notified here when your anxiety level may be rising.',
+                          'Gentle check-ins based on your recent readings will appear here.',
                           textAlign: TextAlign.center,
                           style: GoogleFonts.poppins(
                             fontSize: 12,

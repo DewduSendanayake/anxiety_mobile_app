@@ -738,16 +738,6 @@ class _DashboardPageState extends State<DashboardPage>
           ),
         ),
         automaticallyImplyLeading: false,
-        leading: Navigator.canPop(context)
-            ? IconButton(
-                icon: Icon(
-                  Icons.arrow_back_ios_new_rounded,
-                  color: Theme.of(context).colorScheme.onSurface,
-                  size: 20,
-                ),
-                onPressed: () => Navigator.pop(context),
-              )
-            : null,
       ),
       body: SlideTransition(
         position: _entrySlide,
@@ -1476,14 +1466,14 @@ class _DashboardPageState extends State<DashboardPage>
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(
-                    Icons.trending_up_rounded,
+                    Icons.insights_rounded,
                     color: AppTheme.kPrimaryDeep,
                     size: 20,
                   ),
                 ),
                 const SizedBox(width: 12),
                 Text(
-                  '10-Minute Anxiety Forecast',
+                  'Your Next 10 Minutes',
                   style: GoogleFonts.poppins(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -1507,7 +1497,7 @@ class _DashboardPageState extends State<DashboardPage>
               ),
             ),
             Text(
-              'Your forecast will appear after one minute of readings',
+              'Your 10-minute outlook will appear after one minute of readings',
               style: GoogleFonts.poppins(
                 fontSize: 11,
                 color: Colors.grey.shade400,
@@ -1548,14 +1538,14 @@ class _DashboardPageState extends State<DashboardPage>
         ? const Color(0xFFFFA726)
         : const Color(0xFF4CAF50);
     final trendIcon = forecastSummary.isUrgent
-        ? Icons.notification_important_rounded
+        ? Icons.self_improvement_rounded
         : currentElevated
         ? Icons.info_outline_rounded
         : Icons.check_circle_outline_rounded;
     final trendTitle = forecastSummary.title;
-    final trendDetail =
-        'Current level: ${currentRisk.round()} out of 100. '
-        'Highest level expected in the next 10 minutes: ${predictedPeak.round()} out of 100.';
+    final trendDetail = forecastSummary.isUrgent
+        ? 'This is a model estimate, not a diagnosis. Take a slow breath and notice how you feel.'
+        : 'This model estimate updates as new body readings arrive.';
     final lineColor = _riskColor(max(currentRisk, predictedPeak));
 
     final now = DateTime.now();
@@ -1603,7 +1593,7 @@ class _DashboardPageState extends State<DashboardPage>
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(
-                  Icons.trending_up_rounded,
+                  Icons.insights_rounded,
                   color: AppTheme.kPrimaryDeep,
                   size: 20,
                 ),
@@ -1614,7 +1604,7 @@ class _DashboardPageState extends State<DashboardPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '10-Minute Anxiety Forecast',
+                      'Your Next 10 Minutes',
                       style: GoogleFonts.poppins(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -1622,7 +1612,7 @@ class _DashboardPageState extends State<DashboardPage>
                       ),
                     ),
                     Text(
-                      'Past readings and the next 10 minutes',
+                      'A model estimate from recent body readings',
                       style: GoogleFonts.poppins(
                         fontSize: 11,
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -2104,27 +2094,27 @@ class _DashboardPageState extends State<DashboardPage>
     // separate forecast card below is responsible for future changes.
     final currentRisk = risk.clamp(0.0, 100.0).toDouble();
     if (currentRisk > 70) {
-      title = "Your Anxiety Level Is High";
+      title = "Take a moment to check in";
       advice =
-          "Take a moment if you can. Try slow breathing, step away briefly, or contact someone you trust.";
+          "Your recent body readings are stronger than usual. If you can, pause, breathe slowly, or contact someone you trust.";
       color = const Color(0xFFEF5350);
       icon = Icons.warning_amber_rounded;
     } else if (currentRisk <= 20) {
-      title = "Your Anxiety Level Is Low";
+      title = "Your readings look settled";
       advice =
-          "Your anxiety level is low right now. Keep doing what helps you feel calm.";
+          "Your recent body readings are within your lower range. Keep doing what helps you feel comfortable.";
       color = const Color(0xFF4CAF50);
       icon = Icons.spa_rounded;
     } else if (currentRisk <= 45) {
-      title = "Your Anxiety Level Is Moderate";
+      title = "A gentle check-in may help";
       advice =
-          "Your readings show some stress. Consider taking a short break and breathing slowly.";
+          "Your recent readings have shifted a little. Consider a short pause and a slow breath.";
       color = const Color(0xFFFFA726);
       icon = Icons.self_improvement_rounded;
     } else {
-      title = "Your Anxiety Level Is Elevated";
+      title = "Take a gentle pause";
       advice =
-          "Your anxiety level is elevated. It may help to step away, drink some water, or do a calming exercise.";
+          "Your recent readings are above your usual range. Try some water, a short break, or a calming exercise if that feels helpful.";
       color = const Color(0xFFFF7043);
       icon = Icons.warning_amber_rounded;
     }

@@ -9,10 +9,7 @@ void main() {
     );
 
     expect(summary.tone, ForecastMessageTone.calm);
-    expect(
-      summary.title,
-      'Your anxiety level is expected to stay in the lower range',
-    );
+    expect(summary.title, 'Your recent readings look steady');
   });
 
   test('a real threshold crossing still produces an early warning', () {
@@ -23,7 +20,7 @@ void main() {
 
     expect(summary.tone, ForecastMessageTone.warning);
     expect(summary.leadMinutes, 8);
-    expect(summary.title, 'Your anxiety level may rise in about 8 minutes');
+    expect(summary.title, 'Aura noticed a possible change in your readings');
   });
 
   test('a currently high reading takes priority over future wording', () {
@@ -33,6 +30,6 @@ void main() {
     );
 
     expect(summary.tone, ForecastMessageTone.high);
-    expect(summary.title, 'Your anxiety level is high right now');
+    expect(summary.title, 'Take a gentle moment to check in');
   });
 }

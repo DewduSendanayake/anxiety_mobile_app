@@ -360,16 +360,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
       appBar: AppBar(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
-        leading: Navigator.canPop(context)
-            ? IconButton(
-                icon: Icon(
-                  Icons.arrow_back_ios_new_rounded,
-                  color: Theme.of(context).colorScheme.onSurface,
-                  size: 20,
-                ),
-                onPressed: () => Navigator.pop(context),
-              )
-            : null,
+        automaticallyImplyLeading: false,
         title: Text(
           'Behavioural Context',
           style: GoogleFonts.poppins(
