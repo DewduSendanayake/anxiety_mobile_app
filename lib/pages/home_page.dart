@@ -1,6 +1,8 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+
 import '../services/chest_strap_service.dart';
 import '../services/api_service.dart';
 import '../services/anxiety_feedback_service.dart';
@@ -114,7 +116,9 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final userId = widget.userId;
     if (userId == null || userId.isEmpty) {
       if (mounted) {
-        setState(() => _weeklyError = 'Your weekly summary is not available yet.');
+        setState(
+          () => _weeklyError = 'Your weekly summary is not available yet.',
+        );
       }
       return;
     }
@@ -139,7 +143,8 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
       if (mounted) {
         setState(() {
           _weeklyLoading = false;
-          _weeklyError = 'Could not load your weekly summary. Please try again.';
+          _weeklyError =
+              'Could not load your weekly summary. Please try again.';
         });
       }
     }
@@ -149,7 +154,9 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
   void dispose() {
     _chestStrap.connectionState.removeListener(_onConnectionChanged);
     _chestStrap.liveReadingAvailable.removeListener(_onLiveAvailabilityChanged);
-    AnxietyFeedbackService().combinedRisk.removeListener(_onCombinedRiskChanged);
+    AnxietyFeedbackService().combinedRisk.removeListener(
+      _onCombinedRiskChanged,
+    );
     _readingSubscription?.cancel();
     _notificationThrottleTimer?.cancel();
     _fadeController.dispose();
@@ -818,9 +825,9 @@ class _NotificationsSheet extends StatelessWidget {
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.6,
       ),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -857,7 +864,7 @@ class _NotificationsSheet extends StatelessWidget {
                   style: GoogleFonts.poppins(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
-                    color: const Color(0xFF2D3142),
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
                 const Spacer(),
@@ -915,7 +922,9 @@ class _NotificationsSheet extends StatelessWidget {
                       return Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFF3E0),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(color: Colors.orange.shade200),
                         ),

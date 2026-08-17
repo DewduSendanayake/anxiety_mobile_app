@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'theme/app_theme.dart';
+import 'theme/theme_controller.dart';
 import 'pages/informed_consent_page.dart';
 import 'pages/login_page.dart';
 import 'pages/welcome_splash_page.dart';
@@ -20,7 +21,9 @@ import 'services/user_manager.dart';
 import 'services/participant_identity_service.dart';
 import 'services/anxiety_feedback_service.dart';
 import 'services/background/background_service.dart' as bg;
+
 import 'package:shared_preferences/shared_preferences.dart';
+
 import 'ema_and_gad7.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -109,6 +112,7 @@ void main() async {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      await ThemeController.instance.initialize();
       try {
         await NotificationHelper.init(
           backgroundCallback: notificationTapBackground,
@@ -150,15 +154,10 @@ void main() async {
         debugPrint('Connectivity Listener Error: $e');
       }
 
-      // 3. UI System Styling (Edge-to-edge)
-      SystemChrome.setSystemUIOverlayStyle(
-        const SystemUiOverlayStyle(
-          statusBarColor: Colors.transparent,
-          statusBarIconBrightness: Brightness.dark,
-        ),
-      );
-
-      // 4. Initialize Background Service (Only if User ID exists)
+      // 3. Configure Background Service (Only if User ID exists). The service
+      // is deliberately started after the first frame, when Android considers
+      // the app foreground-eligible and the permission can be checked safely.
+      var shouldStartBackgroundService = false;
       try {
         await ParticipantIdentityService.migrateLegacyIdentity();
         final prefs = await SharedPreferences.getInstance();
@@ -169,6 +168,7 @@ void main() async {
           // 60-second /ingest pipeline.
           UserManager().login(userId);
           await bg.initializeService();
+          shouldStartBackgroundService = true;
         } else {
           debugPrint(
             'Background Service: No User ID, skipping initialization.',
@@ -182,6 +182,9 @@ void main() async {
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _routeNotificationPayload(NotificationHelper.consumeLaunchPayload());
+        if (shouldStartBackgroundService) {
+          unawaited(bg.startBackgroundServiceIfPermitted());
+        }
       });
     },
     (error, stack) {
@@ -197,12 +200,17 @@ class ResearchApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: navigatorKey,
-      title: 'Aura - Mindfulness Tracker',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      home: const SplashRouter(),
+    return AnimatedBuilder(
+      animation: ThemeController.instance,
+      builder: (context, _) => MaterialApp(
+        navigatorKey: navigatorKey,
+        title: 'Aura - Mindfulness Tracker',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: ThemeController.instance.themeMode,
+        home: const SplashRouter(),
+      ),
     );
   }
 }

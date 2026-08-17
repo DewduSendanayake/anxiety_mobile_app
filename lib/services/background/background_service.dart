@@ -1,8 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:battery_plus/battery_plus.dart';
@@ -15,7 +20,10 @@ import 'daily_reminder.dart';
 
 /// Called once from main.dart / login_page.dart to register Android notification
 /// channels and configure the background service.  Must run in the UI isolate.
+bool _serviceConfigured = false;
+
 Future<void> initializeService() async {
+  if (_serviceConfigured) return;
   final service = FlutterBackgroundService();
 
   // ── Create ALL notification channels before configuring the service ──────
@@ -77,16 +85,61 @@ Future<void> initializeService() async {
   await service.configure(
     androidConfiguration: AndroidConfiguration(
       onStart: onStart,
-      autoStart: true,
+      // Starting a location foreground service before the first frame, while
+      // permission is denied, or from a boot receiver can make Android throw a
+      // native SecurityException and terminate the whole process. Configure it
+      // here, then start it only through startBackgroundServiceIfPermitted().
+      autoStart: false,
       isForegroundMode: true,
       notificationChannelId: ServiceConfig.channelId,
       initialNotificationTitle: 'Aura is running',
       initialNotificationContent: 'Keeping your check-ins ready',
       foregroundServiceNotificationId: ServiceConfig.notificationId,
-      autoStartOnBoot: true,
+      autoStartOnBoot: false,
     ),
     iosConfiguration: IosConfiguration(),
   );
+  _serviceConfigured = true;
+}
+
+/// Starts the long-running collector only while the app is visible and Android
+/// has the location permission required by its foreground-service type.
+///
+/// Android foreground-service failures occur in native code, outside Dart's
+/// try/catch boundary, so preventing an invalid start is the reliable fix.
+Future<bool> startBackgroundServiceIfPermitted() async {
+  await initializeService();
+
+  if (kIsWeb) return false;
+
+  if (Platform.isAndroid) {
+    final locationStatus = await Permission.locationWhenInUse.status;
+    if (!locationStatus.isGranted) {
+      debugPrint(
+        'Background Service: location permission is not granted; start skipped.',
+      );
+      return false;
+    }
+
+    final locationServicesEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!locationServicesEnabled) {
+      debugPrint(
+        'Background Service: Android location services are disabled; start skipped.',
+      );
+      return false;
+    }
+
+    if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      debugPrint(
+        'Background Service: app is not resumed; unsafe start skipped.',
+      );
+      return false;
+    }
+  }
+
+  final service = FlutterBackgroundService();
+  if (await service.isRunning()) return true;
+  return service.startService();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -101,12 +154,8 @@ void onStart(ServiceInstance service) async {
   // This routes queue writes to 'offline_queue_bg' instead of 'offline_queue_main'.
   BackgroundServiceHelper.isMainIsolate = false;
 
-  // Log every service start explicitly — lets the heartbeat-gap checker
-  // and ETL directly see *why* a gap ended (service restart) rather than
-  // only seeing that a new heartbeat appeared. Also lets you measure
-  // whether the PowerConnectedReceiver fix is reducing average gap length
-  // over time, by comparing Service_Restart timestamps against the previous
-  // gap analysis.
+  // Log every permitted service start explicitly so heartbeat-gap analysis
+  // can distinguish a restart from a continuously running collector.
   try {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();

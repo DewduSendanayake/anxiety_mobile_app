@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../theme/app_theme.dart';
 
 /// A beautiful welcome / splash screen that shows the Aura branding
 /// with the meditation illustration, then automatically transitions
@@ -18,7 +17,6 @@ class _WelcomeSplashPageState extends State<WelcomeSplashPage>
     with TickerProviderStateMixin {
   late final AnimationController _fadeController;
   late final AnimationController _slideController;
-  late final Animation<double> _fadeAnim;
   late final Animation<Offset> _slideAnim;
   late final Animation<double> _imageFadeAnim;
   late final Animation<double> _textFadeAnim;
@@ -32,23 +30,15 @@ class _WelcomeSplashPageState extends State<WelcomeSplashPage>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     );
-    _fadeAnim = CurvedAnimation(
-      parent: _fadeController,
-      curve: Curves.easeOut,
-    );
-
     // Slide-up animation for content
     _slideController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     );
-    _slideAnim = Tween<Offset>(
-      begin: const Offset(0, 0.15),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _slideController,
-      curve: Curves.easeOutCubic,
-    ));
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero)
+        .animate(
+          CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
+        );
 
     // Staggered fades for image and text
     _imageFadeAnim = Tween<double>(begin: 0, end: 1).animate(
@@ -76,8 +66,7 @@ class _WelcomeSplashPageState extends State<WelcomeSplashPage>
     final oldRoute = ModalRoute.of(context);
     final newRoute = PageRouteBuilder(
       pageBuilder: (_, _, _) => widget.nextPage,
-      transitionsBuilder: (_, a, _, c) =>
-          FadeTransition(opacity: a, child: c),
+      transitionsBuilder: (_, a, _, c) => FadeTransition(opacity: a, child: c),
       transitionDuration: const Duration(milliseconds: 600),
     );
 
@@ -108,11 +97,7 @@ class _WelcomeSplashPageState extends State<WelcomeSplashPage>
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFFF3EEFF),
-              Color(0xFFE8E0F7),
-              Color(0xFFF0ECFF),
-            ],
+            colors: [Color(0xFFF3EEFF), Color(0xFFE8E0F7), Color(0xFFF0ECFF)],
           ),
         ),
         child: SafeArea(
@@ -180,9 +165,13 @@ class _WelcomeSplashPageState extends State<WelcomeSplashPage>
                       const SizedBox(height: 12),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 8),
+                          horizontal: 20,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF9B7FD4).withValues(alpha: 0.12),
+                          color: const Color(
+                            0xFF9B7FD4,
+                          ).withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
@@ -201,10 +190,7 @@ class _WelcomeSplashPageState extends State<WelcomeSplashPage>
                 const Spacer(flex: 3),
 
                 // ── Subtle loading dots ──
-                FadeTransition(
-                  opacity: _textFadeAnim,
-                  child: _PulsingDots(),
-                ),
+                FadeTransition(opacity: _textFadeAnim, child: _PulsingDots()),
 
                 const SizedBox(height: 40),
               ],
@@ -251,10 +237,14 @@ class _PulsingDotsState extends State<_PulsingDots>
           builder: (_, _) {
             // Stagger each dot
             final double delay = i * 0.2;
-            final double t =
-                ((_controller.value - delay) % 1.0).clamp(0.0, 1.0);
-            final double opacity = (1.0 - (2.0 * t - 1.0).abs())
-                .clamp(0.3, 1.0);
+            final double t = ((_controller.value - delay) % 1.0).clamp(
+              0.0,
+              1.0,
+            );
+            final double opacity = (1.0 - (2.0 * t - 1.0).abs()).clamp(
+              0.3,
+              1.0,
+            );
             return Container(
               margin: const EdgeInsets.symmetric(horizontal: 4),
               width: 8,
