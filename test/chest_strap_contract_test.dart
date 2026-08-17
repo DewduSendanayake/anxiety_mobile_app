@@ -72,10 +72,7 @@ void main() {
     final start = DateTime.utc(2026, 8, 10, 12);
     throttle.seed('Low');
 
-    final first = throttle.observe(
-      'Moderate',
-      start,
-    );
+    final first = throttle.observe('Moderate', start);
     expect(first?.message, 'Your anxiety level changed from Low to Moderate.');
 
     expect(
@@ -86,10 +83,7 @@ void main() {
       throttle.observe('High', start.add(const Duration(seconds: 30))),
       isNull,
     );
-    expect(
-      throttle.flush(start.add(const Duration(seconds: 59))),
-      isNull,
-    );
+    expect(throttle.flush(start.add(const Duration(seconds: 59))), isNull);
 
     final combined = throttle.flush(start.add(const Duration(minutes: 1)));
     expect(
@@ -106,16 +100,10 @@ void main() {
     throttle.observe('Moderate', start);
     throttle.observe('Elevated', start.add(const Duration(seconds: 10)));
     throttle.observe('Moderate', start.add(const Duration(seconds: 20)));
-    expect(
-      throttle.flush(start.add(const Duration(minutes: 1))),
-      isNull,
-    );
+    expect(throttle.flush(start.add(const Duration(minutes: 1))), isNull);
 
     expect(
-      throttle.observe(
-        'Unavailable',
-        start.add(const Duration(minutes: 2)),
-      ),
+      throttle.observe('Unavailable', start.add(const Duration(minutes: 2))),
       isNull,
     );
     expect(
@@ -135,6 +123,20 @@ void main() {
     expect(ParticipantIdentityService.isParticipantId(participantId), isTrue);
     expect(participantId, isNot(contains('Real')));
     expect(preferences.getString('display_name'), 'Real Person Name');
+    expect(preferences.getString('user_id'), participantId);
+  });
+
+  test('display name can change without changing participant ID', () async {
+    SharedPreferences.setMockInitialValues({});
+
+    final participantId = await ParticipantIdentityService.createForDisplayName(
+      'First Name',
+    );
+    await ParticipantIdentityService.updateDisplayName('New Name');
+    final preferences = await SharedPreferences.getInstance();
+
+    expect(preferences.getString('display_name'), 'New Name');
+    expect(preferences.getString('participant_id'), participantId);
     expect(preferences.getString('user_id'), participantId);
   });
 
@@ -245,18 +247,7 @@ void main() {
   test('a high current anxiety level triggers a check-in', () {
     final gate = PredictiveEscalationGate();
     final start = DateTime.utc(2026, 1, 1, 12);
-    const flatHighForecast = <double>[
-      98,
-      98,
-      97,
-      97,
-      96,
-      96,
-      95,
-      95,
-      94,
-      94,
-    ];
+    const flatHighForecast = <double>[98, 98, 97, 97, 96, 96, 95, 95, 94, 94];
 
     expect(
       gate.evaluate(

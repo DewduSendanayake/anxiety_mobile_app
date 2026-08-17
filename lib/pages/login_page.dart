@@ -24,6 +24,12 @@ class _LoginPageState extends State<LoginPage> {
   bool _permissionsGranted = false;
   bool _isLoading = false;
 
+  @override
+  void dispose() {
+    _idController.dispose();
+    super.dispose();
+  }
+
   Future<void> _requestPermissions() async {
     setState(() => _isLoading = true);
     await Future.delayed(const Duration(milliseconds: 800)); // UX Delay
@@ -148,6 +154,16 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 if (_permissionsGranted) ...[
                   _buildInputField(),
+                  const SizedBox(height: 10),
+                  Text(
+                    'You can change this name later. Aura creates a separate random Participant ID for research records.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.4,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                   const SizedBox(height: 20),
                   _buildGlassButton(
                     text: "Enter",
@@ -162,7 +178,8 @@ class _LoginPageState extends State<LoginPage> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const InformedConsentPage(),
+                        builder: (_) =>
+                            const InformedConsentPage(readOnly: true),
                       ),
                     );
                   },

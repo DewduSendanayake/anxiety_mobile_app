@@ -12,6 +12,7 @@ import 'pages/data_rights_page.dart';
 import 'pages/baseline_calibration_page.dart';
 import 'pages/appearance_settings_page.dart';
 import 'services/background/service_config.dart';
+import 'services/participant_identity_service.dart';
 import 'theme/theme_controller.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -27,6 +28,7 @@ class _ProfilePageState extends State<ProfilePage> {
   String _displayName = '';
   String? _profileImagePath;
   final ImagePicker _picker = ImagePicker();
+  final TextEditingController _displayNameController = TextEditingController();
 
   @override
   void initState() {
@@ -39,6 +41,12 @@ class _ProfilePageState extends State<ProfilePage> {
   Future<void> _loadProfile() async {
     final prefs = await SharedPreferences.getInstance();
     final displayName = prefs.getString('display_name') ?? '';
+    final savedProfileImagePath = prefs.getString('profile_image_path');
+    final validProfileImagePath =
+        savedProfileImagePath != null &&
+            File(savedProfileImagePath).existsSync()
+        ? savedProfileImagePath
+        : null;
     final profileJson = prefs.getString('user_profile_data');
     if (!mounted) return;
     if (profileJson != null) {
@@ -51,6 +59,7 @@ class _ProfilePageState extends State<ProfilePage> {
       }
       setState(() {
         _displayName = displayName;
+        _displayNameController.text = displayName;
         _ageController.text = data['age'] ?? '';
         _gender = data['gender'];
         _maritalStatus = data['marital_status'];
@@ -75,14 +84,26 @@ class _ProfilePageState extends State<ProfilePage> {
           hour: prefs.getInt('ema_evening_hour') ?? 20,
           minute: prefs.getInt('ema_evening_minute') ?? 0,
         );
-        _profileImagePath = prefs.getString('profile_image_path');
+        _profileImagePath = validProfileImagePath;
       });
     } else {
       setState(() {
         _displayName = displayName;
-        _profileImagePath = prefs.getString('profile_image_path');
+        _displayNameController.text = displayName;
+        _profileImagePath = validProfileImagePath;
       });
     }
+
+    if (savedProfileImagePath != null && validProfileImagePath == null) {
+      await prefs.remove('profile_image_path');
+    }
+  }
+
+  @override
+  void dispose() {
+    _displayNameController.dispose();
+    _ageController.dispose();
+    super.dispose();
   }
 
   @override
@@ -104,6 +125,58 @@ class _ProfilePageState extends State<ProfilePage> {
       }
     } catch (e) {
       debugPrint('Error picking image: $e');
+    }
+  }
+
+  Future<void> _removeProfileImage() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('profile_image_path');
+    if (!mounted) return;
+    setState(() => _profileImagePath = null);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Profile picture removed from Aura.')),
+    );
+  }
+
+  Future<void> _showProfileImageOptions() async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: Text(
+                _profileImagePath == null
+                    ? 'Choose profile picture'
+                    : 'Change profile picture',
+              ),
+              onTap: () => Navigator.pop(context, 'choose'),
+            ),
+            if (_profileImagePath != null)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.red),
+                title: const Text(
+                  'Remove profile picture',
+                  style: TextStyle(color: Colors.red),
+                ),
+                subtitle: const Text(
+                  'This removes it from Aura, not from your phone gallery.',
+                ),
+                onTap: () => Navigator.pop(context, 'remove'),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+
+    if (action == 'choose') {
+      await _pickProfileImage();
+    } else if (action == 'remove') {
+      await _removeProfileImage();
     }
   }
 
@@ -209,6 +282,9 @@ class _ProfilePageState extends State<ProfilePage> {
 
     final prefs = await SharedPreferences.getInstance();
     final uid = prefs.getString('user_id') ?? 'Unknown';
+    final displayName = _displayNameController.text.trim();
+
+    await ParticipantIdentityService.updateDisplayName(displayName);
 
     final profile = {
       'age': _ageController.text.trim(),
@@ -233,7 +309,10 @@ class _ProfilePageState extends State<ProfilePage> {
     await prefs.setString('user_profile_data', jsonEncode(profile));
 
     if (mounted) {
-      setState(() => _isSaving = false);
+      setState(() {
+        _displayName = displayName;
+        _isSaving = false;
+      });
       if (widget.isTab) {
         // In tab mode, go back to view mode after save
         setState(() => _isEditing = false);
@@ -308,7 +387,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 children: [
                   // Avatar
                   GestureDetector(
-                    onTap: _pickProfileImage,
+                    onTap: _showProfileImageOptions,
                     child: Stack(
                       alignment: Alignment.bottomRight,
                       children: [
@@ -719,6 +798,26 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               const SizedBox(height: 28),
 
+              _sectionLabel('Display Name'),
+              TextFormField(
+                controller: _displayNameController,
+                textCapitalization: TextCapitalization.words,
+                decoration: _inputDec('What should Aura call you?').copyWith(
+                  helperText:
+                      'You can change this later. It stays on this phone and does not change your Participant ID.',
+                  helperMaxLines: 3,
+                ),
+                validator: (v) {
+                  final name = v?.trim() ?? '';
+                  if (name.isEmpty) return 'Required';
+                  if (name.length > 80) {
+                    return 'Use 80 characters or fewer';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+
               _sectionLabel('Age'),
               TextFormField(
                 controller: _ageController,
@@ -727,8 +826,8 @@ class _ProfilePageState extends State<ProfilePage> {
                 validator: (v) {
                   if (v == null || v.isEmpty) return 'Required';
                   final n = int.tryParse(v);
-                  if (n == null || n < 16 || n > 60) {
-                    return 'Enter a valid age (16–60)';
+                  if (n == null || n < 18 || n > 30) {
+                    return 'This study is for ages 18 to 30';
                   }
                   return null;
                 },

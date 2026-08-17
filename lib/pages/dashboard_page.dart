@@ -17,6 +17,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../services/api_service.dart';
 import '../services/anxiety_feedback_service.dart';
+import '../services/forecast_message_policy.dart';
 import '../services/notification_helper.dart';
 import 'baseline_calibration_page.dart';
 
@@ -1534,43 +1535,24 @@ class _DashboardPageState extends State<DashboardPage>
         return FlSpot((index + 1).toDouble(), yVal);
       }),
     ];
-    final scaledForecast = forecast.map(_scaleForecastValue).toList();
-    final predictedPeak = scaledForecast.reduce(max);
-    final forecastIncrease = predictedPeak - currentRisk;
-    final highEscalation = predictedPeak >= 70 && forecastIncrease >= 10;
-    final elevatedEscalation = predictedPeak >= 45 && forecastIncrease >= 20;
-    final escalationPredicted = highEscalation || elevatedEscalation;
-    final target = highEscalation ? 70.0 : 45.0;
-    final requiredIncrease = highEscalation ? 10.0 : 20.0;
-    var leadMinutes = 1;
-    for (var index = 0; index < forecast.length; index++) {
-      final value = _scaleForecastValue(forecast[index]);
-      if (value >= target && value - currentRisk >= requiredIncrease) {
-        leadMinutes = index + 1;
-        break;
-      }
-    }
-    final currentHigh = currentRisk >= 70;
-    final currentElevated = currentRisk >= 45;
-    final stayingLow = currentRisk <= 20 && predictedPeak <= 20;
-    final trendColor = currentHigh || escalationPredicted
+    final forecastSummary = describeForecast(
+      currentRisk: currentRisk,
+      forecast: forecast.map(_scaleForecastValue).toList(),
+    );
+    final predictedPeak = forecastSummary.predictedPeak;
+    final currentElevated =
+        forecastSummary.tone == ForecastMessageTone.elevated;
+    final trendColor = forecastSummary.isUrgent
         ? const Color(0xFFEF5350)
-        : currentElevated || forecastIncrease >= 10
+        : currentElevated
         ? const Color(0xFFFFA726)
         : const Color(0xFF4CAF50);
-    final trendTitle = currentHigh
-        ? 'Your anxiety level is high right now'
-        : escalationPredicted
-        ? 'Your anxiety level may rise in about $leadMinutes minutes'
-        : stayingLow
-        ? 'Your anxiety level is expected to stay low'
-        : forecastIncrease <= -10 && currentRisk > 20
-        ? 'Your anxiety level may ease'
+    final trendIcon = forecastSummary.isUrgent
+        ? Icons.notification_important_rounded
         : currentElevated
-        ? 'Your anxiety level is elevated right now'
-        : forecastIncrease >= 10
-        ? 'Your anxiety level may rise a little'
-        : 'No major change is expected';
+        ? Icons.info_outline_rounded
+        : Icons.check_circle_outline_rounded;
+    final trendTitle = forecastSummary.title;
     final trendDetail =
         'Current level: ${currentRisk.round()} out of 100. '
         'Highest level expected in the next 10 minutes: ${predictedPeak.round()} out of 100.';
@@ -1663,15 +1645,7 @@ class _DashboardPageState extends State<DashboardPage>
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  currentHigh || escalationPredicted
-                      ? Icons.notification_important_rounded
-                      : forecastIncrease >= 10
-                      ? Icons.trending_up_rounded
-                      : Icons.check_circle_outline_rounded,
-                  color: trendColor,
-                  size: 20,
-                ),
+                Icon(trendIcon, color: trendColor, size: 20),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(

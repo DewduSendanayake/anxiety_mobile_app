@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'theme/app_theme.dart';
@@ -21,12 +22,26 @@ import 'services/user_manager.dart';
 import 'services/participant_identity_service.dart';
 import 'services/anxiety_feedback_service.dart';
 import 'services/background/background_service.dart' as bg;
+import 'services/background/service_config.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'ema_and_gad7.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+Future<bool> _hasCurrentConsent() async {
+  final prefs = await SharedPreferences.getInstance();
+  return (prefs.getBool('consent_accepted') ?? false) &&
+      prefs.getString('consent_version') == ServiceConfig.consentVersion;
+}
+
+Future<void> _resumeExistingParticipant(String userId) async {
+  UserManager().login(userId);
+  await bg.initializeService();
+  await bg.startBackgroundServiceIfPermitted();
+  await BackgroundServiceHelper.retryOfflineQueue();
+}
 
 void _routeNotificationPayload(String? payload) {
   if (payload == null || payload.isEmpty) return;
@@ -124,9 +139,12 @@ void main() async {
       }
 
       // 1. Queue Retry (Offline Architecture)
-      BackgroundServiceHelper.retryOfflineQueue().catchError((e) {
-        debugPrint('Init Queue Retry Error: $e');
-      });
+      final hasCurrentConsentAtStartup = await _hasCurrentConsent();
+      if (hasCurrentConsentAtStartup) {
+        BackgroundServiceHelper.retryOfflineQueue().catchError((e) {
+          debugPrint('Init Queue Retry Error: $e');
+        });
+      }
 
       // 2. Connectivity Listener (Auto-Upload when internet returns)
       // NOTE: connectivity_plus ^4.0 returns List<ConnectivityResult>,
@@ -139,7 +157,7 @@ void main() async {
               final bool connected = event is List
                   ? (event as List).any((r) => r != ConnectivityResult.none)
                   : event != ConnectivityResult.none;
-              if (connected) {
+              if (connected && await _hasCurrentConsent()) {
                 await BackgroundServiceHelper.retryOfflineQueue();
               }
             } catch (e) {
@@ -162,13 +180,19 @@ void main() async {
         await ParticipantIdentityService.migrateLegacyIdentity();
         final prefs = await SharedPreferences.getInstance();
         final userId = prefs.getString('user_id');
-        if (userId != null && userId.isNotEmpty) {
+        if (userId != null && userId.isNotEmpty && hasCurrentConsentAtStartup) {
           // Restore the physiological session on every cold launch. Without
           // this, BLE packets still reach the dashboard but never enter the
           // 60-second /ingest pipeline.
           UserManager().login(userId);
           await bg.initializeService();
           shouldStartBackgroundService = true;
+        } else if (userId != null && userId.isNotEmpty) {
+          FlutterBackgroundService().invoke('stopService');
+          UserManager().logout();
+          debugPrint(
+            'Background Service: paused until the current consent version is accepted.',
+          );
         } else {
           debugPrint(
             'Background Service: No User ID, skipping initialization.',
@@ -181,7 +205,9 @@ void main() async {
       runApp(const ResearchApp());
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _routeNotificationPayload(NotificationHelper.consumeLaunchPayload());
+        if (hasCurrentConsentAtStartup) {
+          _routeNotificationPayload(NotificationHelper.consumeLaunchPayload());
+        }
         if (shouldStartBackgroundService) {
           unawaited(bg.startBackgroundServiceIfPermitted());
         }
@@ -221,21 +247,34 @@ class SplashRouter extends StatelessWidget {
   Future<Widget> _getHome() async {
     final prefs = await SharedPreferences.getInstance();
     final consentAccepted = prefs.getBool('consent_accepted') ?? false;
+    final consentVersion = prefs.getString('consent_version');
     final userId = prefs.getString('user_id');
     final profileComplete = prefs.getBool('profile_complete') ?? false;
     final calibrationComplete = prefs.getBool('calibration_complete') ?? false;
 
-    if (!consentAccepted) {
-      return const InformedConsentPage();
-    } else if (userId == null || userId.isEmpty) {
-      return const LoginPage();
+    final Widget nextPage;
+    if (userId == null || userId.isEmpty) {
+      nextPage = const LoginPage();
     } else if (!profileComplete) {
-      return const ProfilePage();
+      nextPage = const ProfilePage();
     } else if (!calibrationComplete) {
-      return BaselineCalibrationPage(userId: userId);
+      nextPage = BaselineCalibrationPage(userId: userId);
     } else {
-      return MainNavigationPage(userId: userId);
+      nextPage = MainNavigationPage(userId: userId);
     }
+
+    final hasCurrentConsent =
+        consentAccepted && consentVersion == ServiceConfig.consentVersion;
+    if (!hasCurrentConsent) {
+      return InformedConsentPage(
+        nextPage: nextPage,
+        onAccepted: userId == null || userId.isEmpty
+            ? null
+            : () => _resumeExistingParticipant(userId),
+      );
+    }
+
+    return nextPage;
   }
 
   @override
