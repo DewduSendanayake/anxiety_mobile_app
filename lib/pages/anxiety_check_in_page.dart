@@ -149,7 +149,7 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
     final isFollowup = event.followupAt != null;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F3FF),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(isFollowup ? 'Five-minute follow-up' : 'Quick check-in'),
         backgroundColor: Colors.transparent,
@@ -166,54 +166,58 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
                 ],
               ]
             : [
-          _infoCard(
-            icon: Icons.monitor_heart_outlined,
-            title: event.predictedLeadMinutes == null
-                ? 'Aura noticed a change'
-                : event.predictedLeadMinutes == 0
-                ? 'Your anxiety level may be high right now'
-                : 'Your anxiety level may rise in about ${event.predictedLeadMinutes} minutes',
-            body: event.predictedRiskScore == null
-                ? 'Your current anxiety score is '
-                      '${event.initialRiskScore.toStringAsFixed(0)} out of 100. '
-                      'Aura cannot tell you whether you have anxiety.'
-                : event.predictedLeadMinutes == 0
-                ? 'Your current anxiety score is '
-                      '${event.initialRiskScore.toStringAsFixed(0)} out of 100. '
-                      'Aura cannot tell you whether you have anxiety.'
-                : 'Your anxiety score may rise from '
-                      '${event.initialRiskScore.toStringAsFixed(0)} to about '
-                      '${event.predictedRiskScore!.toStringAsFixed(0)}. '
-                      'This is only an early check-in. Aura cannot tell you whether you have anxiety.',
-          ),
-          const SizedBox(height: 16),
-          _questionCard(
-            title: 'Do you feel anxious or notice it building?',
-            selected: event.confirmedAnxious,
-            onYes: () => _saveConfirmation(true),
-            onNo: () => _saveConfirmation(false),
-          ),
-          if (event.confirmedAnxious != null && event.activity == null) ...[
-            const SizedBox(height: 16),
-            _activityCard(event),
-          ],
-          if (event.confirmedAnxious == true && event.activity != null) ...[
-            const SizedBox(height: 16),
-            _guidanceCard(event),
-          ],
-          if (event.confirmedAnxious == false && event.activity != null) ...[
-            const SizedBox(height: 16),
-            _infoCard(
-              icon: Icons.check_circle_outline_rounded,
-              title: 'Thanks, that helps Aura learn',
-              body: 'Your answer helps Aura learn what is normal for you.',
-            ),
-          ],
-          if (_saving) ...[
-            const SizedBox(height: 18),
-            const Center(child: CircularProgressIndicator()),
-          ],
-        ],
+                _infoCard(
+                  icon: Icons.monitor_heart_outlined,
+                  title: event.predictedLeadMinutes == null
+                      ? 'Aura noticed a change'
+                      : event.predictedLeadMinutes == 0
+                      ? 'Your anxiety level may be high right now'
+                      : 'Your anxiety level may rise in about ${event.predictedLeadMinutes} minutes',
+                  body: event.predictedRiskScore == null
+                      ? 'Your current anxiety score is '
+                            '${event.initialRiskScore.toStringAsFixed(0)} out of 100. '
+                            'Aura cannot tell you whether you have anxiety.'
+                      : event.predictedLeadMinutes == 0
+                      ? 'Your current anxiety score is '
+                            '${event.initialRiskScore.toStringAsFixed(0)} out of 100. '
+                            'Aura cannot tell you whether you have anxiety.'
+                      : 'Your anxiety score may rise from '
+                            '${event.initialRiskScore.toStringAsFixed(0)} to about '
+                            '${event.predictedRiskScore!.toStringAsFixed(0)}. '
+                            'This is only an early check-in. Aura cannot tell you whether you have anxiety.',
+                ),
+                const SizedBox(height: 16),
+                _questionCard(
+                  title: 'Do you feel anxious or notice it building?',
+                  selected: event.confirmedAnxious,
+                  onYes: () => _saveConfirmation(true),
+                  onNo: () => _saveConfirmation(false),
+                ),
+                if (event.confirmedAnxious != null &&
+                    event.activity == null) ...[
+                  const SizedBox(height: 16),
+                  _activityCard(event),
+                ],
+                if (event.confirmedAnxious == true &&
+                    event.activity != null) ...[
+                  const SizedBox(height: 16),
+                  _guidanceCard(event),
+                ],
+                if (event.confirmedAnxious == false &&
+                    event.activity != null) ...[
+                  const SizedBox(height: 16),
+                  _infoCard(
+                    icon: Icons.check_circle_outline_rounded,
+                    title: 'Thanks, that helps Aura learn',
+                    body:
+                        'Your answer helps Aura learn what is normal for you.',
+                  ),
+                ],
+                if (_saving) ...[
+                  const SizedBox(height: 18),
+                  const Center(child: CircularProgressIndicator()),
+                ],
+              ],
       ),
     );
   }
@@ -449,7 +453,7 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -468,7 +472,7 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
     style: GoogleFonts.poppins(
       fontSize: 15,
       fontWeight: FontWeight.w600,
-      color: AppTheme.kTextDark,
+      color: Theme.of(context).colorScheme.onSurface,
     ),
   );
 }

@@ -1,21 +1,23 @@
 import 'dart:async';
 import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
 
 import '../theme/app_theme.dart';
 import '../background_service_helper.dart';
-import '../services/rating_settings.dart';
+import '../background_service.dart' as background_service;
 import '../services/chest_strap_service.dart';
+
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:app_settings/app_settings.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import '../ema_and_gad7.dart';
-import '../profile_page.dart';
+
 import '../services/api_service.dart';
 import '../services/anxiety_feedback_service.dart';
+import '../services/forecast_message_policy.dart';
 import '../services/notification_helper.dart';
 import 'baseline_calibration_page.dart';
 
@@ -41,7 +43,6 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   String _cachedId = "";
-  bool _isServiceRunning = false;
   bool _isOptimized = false;
   bool _chestStrapConnected = false;
   bool _notificationsEnabled = true;
@@ -242,9 +243,7 @@ class _DashboardPageState extends State<DashboardPage>
               // Continue without strap
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text(
-                    'Using saved information for now.',
-                  ),
+                  content: Text('Using saved information for now.'),
                 ),
               );
             },
@@ -357,9 +356,7 @@ class _DashboardPageState extends State<DashboardPage>
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text(
-                    'Using saved information for now.',
-                  ),
+                  content: Text('Using saved information for now.'),
                 ),
               );
             },
@@ -492,8 +489,7 @@ class _DashboardPageState extends State<DashboardPage>
           _predictionStatus = 'error';
           _forecastData = [];
           _currentModelRisk = null;
-          _statusMessage =
-          'The 10-minute forecast is not available right now.';
+          _statusMessage = 'The 10-minute forecast is not available right now.';
         });
         return;
       }
@@ -502,20 +498,19 @@ class _DashboardPageState extends State<DashboardPage>
           .take(10)
           .map((value) => value.toDouble())
           .toList();
-      final currentRisk = (result['current_risk_index'] as num?)?.toDouble() ??
+      final currentRisk =
+          (result['current_risk_index'] as num?)?.toDouble() ??
           (ChestStrapService().hasLiveWornReading
               ? ChestStrapService().lastReading?.riskScore
               : null);
       final now = DateTime.now();
       if (currentRisk != null) {
         _recentAnxietyReadings.add(
-          _TimedAnxietyReading(
-            now,
-            currentRisk.clamp(0.0, 100.0).toDouble(),
-          ),
+          _TimedAnxietyReading(now, currentRisk.clamp(0.0, 100.0).toDouble()),
         );
         _recentAnxietyReadings.removeWhere(
-          (reading) => now.difference(reading.time) > const Duration(minutes: 30),
+          (reading) =>
+              now.difference(reading.time) > const Duration(minutes: 30),
         );
       }
 
@@ -642,7 +637,8 @@ class _DashboardPageState extends State<DashboardPage>
     } else {
       setState(() {
         _historyStatus = 'error';
-        _historyMessage = result['message'] as String? ??
+        _historyMessage =
+            result['message'] as String? ??
             'The history service did not return data.';
       });
     }
@@ -658,10 +654,11 @@ class _DashboardPageState extends State<DashboardPage>
       final optimized = await Permission.ignoreBatteryOptimizations.isDenied;
       if (mounted) {
         setState(() {
-          _isServiceRunning = isRunning;
           _isOptimized = optimized;
         });
-        if (!isRunning) FlutterBackgroundService().startService();
+        if (!isRunning) {
+          await background_service.startBackgroundServiceIfPermitted();
+        }
       }
     });
   }
@@ -688,15 +685,6 @@ class _DashboardPageState extends State<DashboardPage>
       _cachedId,
       'ChestStrap_Vitals',
       data.toString(),
-    );
-  }
-
-  void _showEmaSheet(String period) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => EmaRatingSheet(timePeriod: period),
     );
   }
 
@@ -737,7 +725,7 @@ class _DashboardPageState extends State<DashboardPage>
     final risk = hasLiveReading ? _currentReading!.riskScore : 0.0;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F3FF),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -746,15 +734,15 @@ class _DashboardPageState extends State<DashboardPage>
           style: GoogleFonts.poppins(
             fontSize: 18,
             fontWeight: FontWeight.w600,
-            color: AppTheme.kTextDark,
+            color: Theme.of(context).colorScheme.onSurface,
           ),
         ),
         automaticallyImplyLeading: false,
         leading: Navigator.canPop(context)
             ? IconButton(
-                icon: const Icon(
+                icon: Icon(
                   Icons.arrow_back_ios_new_rounded,
-                  color: AppTheme.kTextDark,
+                  color: Theme.of(context).colorScheme.onSurface,
                   size: 20,
                 ),
                 onPressed: () => Navigator.pop(context),
@@ -763,10 +751,7 @@ class _DashboardPageState extends State<DashboardPage>
       ),
       body: SlideTransition(
         position: _entrySlide,
-        child: FadeTransition(
-          opacity: _entryFade,
-          child: _buildBody(risk),
-        ),
+        child: FadeTransition(opacity: _entryFade, child: _buildBody(risk)),
       ),
     );
   }
@@ -803,10 +788,7 @@ class _DashboardPageState extends State<DashboardPage>
 
         // ── Service Status Strip ──
         _buildServiceStrip(),
-        if (isWorn) ...[
-          const SizedBox(height: 10),
-          _buildAdviceCard(risk),
-        ],
+        if (isWorn) ...[const SizedBox(height: 10), _buildAdviceCard(risk)],
         if (!_notificationsEnabled) ...[
           const SizedBox(height: 10),
           _buildNotificationWarning(),
@@ -903,7 +885,7 @@ class _DashboardPageState extends State<DashboardPage>
                   : 'Starting...',
               style: GoogleFonts.poppins(
                 fontSize: 11,
-                color: AppTheme.kTextLight,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -958,7 +940,7 @@ class _DashboardPageState extends State<DashboardPage>
             style: GoogleFonts.poppins(
               fontSize: 14,
               fontWeight: FontWeight.w500,
-              color: AppTheme.kTextLight,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
         ],
@@ -973,7 +955,7 @@ class _DashboardPageState extends State<DashboardPage>
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
@@ -1004,7 +986,7 @@ class _DashboardPageState extends State<DashboardPage>
                 style: GoogleFonts.poppins(
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
-                  color: AppTheme.kTextDark,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -1013,7 +995,7 @@ class _DashboardPageState extends State<DashboardPage>
                 'Aura needs to learn what your readings look like while you are calm. This takes 3 minutes and helps make your anxiety results more accurate.',
                 style: GoogleFonts.poppins(
                   fontSize: 13,
-                  color: AppTheme.kTextLight,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                   height: 1.6,
                 ),
                 textAlign: TextAlign.center,
@@ -1082,7 +1064,7 @@ class _DashboardPageState extends State<DashboardPage>
                   style: GoogleFonts.poppins(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: AppTheme.kTextDark,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
                 subtitle: Text(
@@ -1091,7 +1073,7 @@ class _DashboardPageState extends State<DashboardPage>
                       : 'Enable only while testing without the chest strap.',
                   style: GoogleFonts.poppins(
                     fontSize: 10.5,
-                    color: AppTheme.kTextLight,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
                 value: enabled,
@@ -1115,7 +1097,7 @@ class _DashboardPageState extends State<DashboardPage>
                             'Strap is worn',
                             style: GoogleFonts.poppins(
                               fontSize: 12.5,
-                              color: AppTheme.kTextDark,
+                              color: Theme.of(context).colorScheme.onSurface,
                             ),
                           ),
                           subtitle: Text(
@@ -1124,7 +1106,9 @@ class _DashboardPageState extends State<DashboardPage>
                                 : 'The test strap is not being worn',
                             style: GoogleFonts.poppins(
                               fontSize: 10.5,
-                              color: AppTheme.kTextLight,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
                             ),
                           ),
                           value: isWorn,
@@ -1143,7 +1127,9 @@ class _DashboardPageState extends State<DashboardPage>
                                       'Progressively increase stress',
                                       style: GoogleFonts.poppins(
                                         fontSize: 12.5,
-                                        color: AppTheme.kTextDark,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
                                       ),
                                     ),
                                     subtitle: Text(
@@ -1152,7 +1138,9 @@ class _DashboardPageState extends State<DashboardPage>
                                           : 'Stress slowly returns to calm after this is turned off',
                                       style: GoogleFonts.poppins(
                                         fontSize: 10.5,
-                                        color: AppTheme.kTextLight,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
                                       ),
                                     ),
                                     value: stressIncreasing,
@@ -1188,6 +1176,7 @@ class _DashboardPageState extends State<DashboardPage>
     final shown = await AnxietyFeedbackService().showLocalTestAlert();
     if (!mounted) return;
     if (!shown) await _checkNotificationPermission();
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -1206,7 +1195,7 @@ class _DashboardPageState extends State<DashboardPage>
         Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
@@ -1230,7 +1219,7 @@ class _DashboardPageState extends State<DashboardPage>
                 style: GoogleFonts.poppins(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
-                  color: AppTheme.kTextDark,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 6),
@@ -1239,7 +1228,7 @@ class _DashboardPageState extends State<DashboardPage>
                 textAlign: TextAlign.center,
                 style: GoogleFonts.poppins(
                   fontSize: 13,
-                  color: AppTheme.kTextLight,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                   height: 1.5,
                 ),
               ),
@@ -1288,7 +1277,7 @@ class _DashboardPageState extends State<DashboardPage>
           style: GoogleFonts.poppins(
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: AppTheme.kTextDark,
+            color: Theme.of(context).colorScheme.onSurface,
           ),
         ),
         const SizedBox(height: 16),
@@ -1306,7 +1295,7 @@ class _DashboardPageState extends State<DashboardPage>
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
@@ -1324,7 +1313,7 @@ class _DashboardPageState extends State<DashboardPage>
                 style: GoogleFonts.poppins(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
-                  color: AppTheme.kTextDark,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 6),
@@ -1332,7 +1321,7 @@ class _DashboardPageState extends State<DashboardPage>
                 'Collecting your first readings',
                 style: GoogleFonts.poppins(
                   fontSize: 12,
-                  color: AppTheme.kTextLight,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 36),
@@ -1361,7 +1350,7 @@ class _DashboardPageState extends State<DashboardPage>
                         style: GoogleFonts.poppins(
                           fontSize: 32,
                           fontWeight: FontWeight.w800,
-                          color: AppTheme.kTextDark,
+                          color: Theme.of(context).colorScheme.onSurface,
                           height: 1.0,
                         ),
                       ),
@@ -1370,7 +1359,7 @@ class _DashboardPageState extends State<DashboardPage>
                         style: GoogleFonts.poppins(
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
-                          color: AppTheme.kTextLight,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -1383,7 +1372,7 @@ class _DashboardPageState extends State<DashboardPage>
                 'Please sit quietly and breathe normally. Your forecast will appear after one minute of readings.',
                 style: GoogleFonts.poppins(
                   fontSize: 13,
-                  color: AppTheme.kTextLight,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                   height: 1.6,
                 ),
                 textAlign: TextAlign.center,
@@ -1400,10 +1389,7 @@ class _DashboardPageState extends State<DashboardPage>
                     'Chest strap connected',
                   ),
                   const SizedBox(height: 10),
-                  _buildPipelineStepRow(
-                    true,
-                    'Personal resting level ready',
-                  ),
+                  _buildPipelineStepRow(true, 'Personal resting level ready'),
                   const SizedBox(height: 10),
                   _buildPipelineStepRow(
                     _bufferingCountdown == 0,
@@ -1443,7 +1429,9 @@ class _DashboardPageState extends State<DashboardPage>
             text,
             style: GoogleFonts.poppins(
               fontSize: 11.5,
-              color: complete ? AppTheme.kTextDark : AppTheme.kTextLight,
+              color: complete
+                  ? Theme.of(context).colorScheme.onSurface
+                  : Theme.of(context).colorScheme.onSurfaceVariant,
               fontWeight: complete ? FontWeight.w500 : FontWeight.normal,
             ),
           ),
@@ -1467,7 +1455,7 @@ class _DashboardPageState extends State<DashboardPage>
       return Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
@@ -1499,7 +1487,7 @@ class _DashboardPageState extends State<DashboardPage>
                   style: GoogleFonts.poppins(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: AppTheme.kTextDark,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
               ],
@@ -1515,7 +1503,7 @@ class _DashboardPageState extends State<DashboardPage>
               'Waiting for chest strap readings...',
               style: GoogleFonts.poppins(
                 fontSize: 13,
-                color: AppTheme.kTextLight,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
             Text(
@@ -1534,11 +1522,12 @@ class _DashboardPageState extends State<DashboardPage>
         _chestStrapConnected && (_currentReading?.isWorn ?? false)
         ? _currentReading?.riskScore
         : null;
-    final currentRisk = (liveCurrentRisk ??
-            _currentModelRisk ??
-            _scaleForecastValue(forecast.first))
-        .clamp(0.0, 100.0)
-        .toDouble();
+    final currentRisk =
+        (liveCurrentRisk ??
+                _currentModelRisk ??
+                _scaleForecastValue(forecast.first))
+            .clamp(0.0, 100.0)
+            .toDouble();
     final List<FlSpot> spots = [
       FlSpot(0, currentRisk),
       ...List.generate(forecast.length, (index) {
@@ -1546,64 +1535,45 @@ class _DashboardPageState extends State<DashboardPage>
         return FlSpot((index + 1).toDouble(), yVal);
       }),
     ];
-    final scaledForecast = forecast.map(_scaleForecastValue).toList();
-    final predictedPeak = scaledForecast.reduce(max);
-    final forecastIncrease = predictedPeak - currentRisk;
-    final highEscalation = predictedPeak >= 70 && forecastIncrease >= 10;
-    final elevatedEscalation = predictedPeak >= 45 && forecastIncrease >= 20;
-    final escalationPredicted = highEscalation || elevatedEscalation;
-    final target = highEscalation ? 70.0 : 45.0;
-    final requiredIncrease = highEscalation ? 10.0 : 20.0;
-    var leadMinutes = 1;
-    for (var index = 0; index < forecast.length; index++) {
-      final value = _scaleForecastValue(forecast[index]);
-      if (value >= target && value - currentRisk >= requiredIncrease) {
-        leadMinutes = index + 1;
-        break;
-      }
-    }
-    final currentHigh = currentRisk >= 70;
-    final currentElevated = currentRisk >= 45;
-    final stayingLow = currentRisk <= 20 && predictedPeak <= 20;
-    final trendColor = currentHigh || escalationPredicted
+    final forecastSummary = describeForecast(
+      currentRisk: currentRisk,
+      forecast: forecast.map(_scaleForecastValue).toList(),
+    );
+    final predictedPeak = forecastSummary.predictedPeak;
+    final currentElevated =
+        forecastSummary.tone == ForecastMessageTone.elevated;
+    final trendColor = forecastSummary.isUrgent
         ? const Color(0xFFEF5350)
-        : currentElevated || forecastIncrease >= 10
+        : currentElevated
         ? const Color(0xFFFFA726)
         : const Color(0xFF4CAF50);
-    final trendTitle = currentHigh
-        ? 'Your anxiety level is high right now'
-        : escalationPredicted
-        ? 'Your anxiety level may rise in about $leadMinutes minutes'
-        : stayingLow
-        ? 'Your anxiety level is expected to stay low'
-        : forecastIncrease <= -10 && currentRisk > 20
-        ? 'Your anxiety level may ease'
+    final trendIcon = forecastSummary.isUrgent
+        ? Icons.notification_important_rounded
         : currentElevated
-        ? 'Your anxiety level is elevated right now'
-        : forecastIncrease >= 10
-        ? 'Your anxiety level may rise a little'
-        : 'No major change is expected';
+        ? Icons.info_outline_rounded
+        : Icons.check_circle_outline_rounded;
+    final trendTitle = forecastSummary.title;
     final trendDetail =
         'Current level: ${currentRisk.round()} out of 100. '
         'Highest level expected in the next 10 minutes: ${predictedPeak.round()} out of 100.';
     final lineColor = _riskColor(max(currentRisk, predictedPeak));
 
     final now = DateTime.now();
-    final pastSpots = _recentAnxietyReadings
-        .map(
-          (reading) => FlSpot(
-            -now.difference(reading.time).inSeconds / 60.0,
-            reading.score,
-          ),
-        )
-        .where((spot) => spot.x <= -0.2)
-        .toList()
-      ..sort((a, b) => a.x.compareTo(b.x));
-    final visibleSpots = <FlSpot>[
-      ...pastSpots,
-      ...spots,
-    ];
-    final minX = pastSpots.isEmpty ? 0.0 : min(-2.0, pastSpots.first.x.floorToDouble());
+    final pastSpots =
+        _recentAnxietyReadings
+            .map(
+              (reading) => FlSpot(
+                -now.difference(reading.time).inSeconds / 60.0,
+                reading.score,
+              ),
+            )
+            .where((spot) => spot.x <= -0.2)
+            .toList()
+          ..sort((a, b) => a.x.compareTo(b.x));
+    final visibleSpots = <FlSpot>[...pastSpots, ...spots];
+    final minX = pastSpots.isEmpty
+        ? 0.0
+        : min(-2.0, pastSpots.first.x.floorToDouble());
 
     double minY = 0.0;
     double maxY = 100.0;
@@ -1611,7 +1581,7 @@ class _DashboardPageState extends State<DashboardPage>
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
@@ -1648,14 +1618,14 @@ class _DashboardPageState extends State<DashboardPage>
                       style: GoogleFonts.poppins(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: AppTheme.kTextDark,
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                     Text(
                       'Past readings and the next 10 minutes',
                       style: GoogleFonts.poppins(
                         fontSize: 11,
-                        color: AppTheme.kTextLight,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -1675,15 +1645,7 @@ class _DashboardPageState extends State<DashboardPage>
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  currentHigh || escalationPredicted
-                      ? Icons.notification_important_rounded
-                      : forecastIncrease >= 10
-                      ? Icons.trending_up_rounded
-                      : Icons.check_circle_outline_rounded,
-                  color: trendColor,
-                  size: 20,
-                ),
+                Icon(trendIcon, color: trendColor, size: 20),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -1702,7 +1664,7 @@ class _DashboardPageState extends State<DashboardPage>
                         trendDetail,
                         style: GoogleFonts.poppins(
                           fontSize: 10,
-                          color: AppTheme.kTextLight,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -1716,7 +1678,7 @@ class _DashboardPageState extends State<DashboardPage>
             'Swipe left to see earlier readings.',
             style: GoogleFonts.poppins(
               fontSize: 10,
-              color: AppTheme.kTextLight,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 8),
@@ -1744,222 +1706,249 @@ class _DashboardPageState extends State<DashboardPage>
                     width: chartWidth,
                     height: 180,
                     child: LineChart(
-              LineChartData(
-                minX: minX,
-                maxX: 10,
-                minY: minY,
-                maxY: maxY,
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: false,
-                  getDrawingHorizontalLine: (value) {
-                    return FlLine(
-                      color: Colors.grey.withValues(alpha: 0.08),
-                      strokeWidth: 1,
-                      dashArray: [5, 5],
-                    );
-                  },
-                ),
-                titlesData: FlTitlesData(
-                  show: true,
-                  rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  topTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 22,
-                      getTitlesWidget: (value, meta) {
-                        if (value.abs() < 0.05) {
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 4.0),
-                            child: Text(
-                              'Now',
-                              style: GoogleFonts.poppins(
-                                fontSize: 9.5,
-                                color: AppTheme.kTextDark,
-                                fontWeight: FontWeight.w600,
+                      LineChartData(
+                        minX: minX,
+                        maxX: 10,
+                        minY: minY,
+                        maxY: maxY,
+                        gridData: FlGridData(
+                          show: true,
+                          drawVerticalLine: false,
+                          getDrawingHorizontalLine: (value) {
+                            return FlLine(
+                              color: Colors.grey.withValues(alpha: 0.08),
+                              strokeWidth: 1,
+                              dashArray: [5, 5],
+                            );
+                          },
+                        ),
+                        titlesData: FlTitlesData(
+                          show: true,
+                          rightTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
+                          topTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 22,
+                              getTitlesWidget: (value, meta) {
+                                if (value.abs() < 0.05) {
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 4.0),
+                                    child: Text(
+                                      'Now',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 9.5,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  );
+                                }
+                                if (value < minX ||
+                                    value > 10 ||
+                                    value % 2 != 0) {
+                                  return const SizedBox.shrink();
+                                }
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 4.0),
+                                  child: Text(
+                                    value < 0
+                                        ? '${value.abs().toInt()}m ago'
+                                        : '+${value.toInt()}m',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 9.5,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          leftTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 32,
+                              interval: 25,
+                              getTitlesWidget: (value, meta) {
+                                if (value < 0 || value > 100) {
+                                  return const SizedBox.shrink();
+                                }
+                                return Text(
+                                  '${value.toInt()}%',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 9.5,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                        borderData: FlBorderData(show: false),
+                        rangeAnnotations: RangeAnnotations(
+                          horizontalRangeAnnotations: [
+                            HorizontalRangeAnnotation(
+                              y1: 0,
+                              y2: 20,
+                              color: const Color(
+                                0xFF4CAF50,
+                              ).withValues(alpha: 0.055),
+                            ),
+                            HorizontalRangeAnnotation(
+                              y1: 20,
+                              y2: 45,
+                              color: const Color(
+                                0xFFFFC107,
+                              ).withValues(alpha: 0.055),
+                            ),
+                            HorizontalRangeAnnotation(
+                              y1: 45,
+                              y2: 70,
+                              color: const Color(
+                                0xFFFF7043,
+                              ).withValues(alpha: 0.055),
+                            ),
+                            HorizontalRangeAnnotation(
+                              y1: 70,
+                              y2: 100,
+                              color: const Color(
+                                0xFFEF5350,
+                              ).withValues(alpha: 0.065),
+                            ),
+                          ],
+                        ),
+                        extraLinesData: ExtraLinesData(
+                          horizontalLines: [
+                            HorizontalLine(
+                              y: 20,
+                              color: const Color(
+                                0xFF4CAF50,
+                              ).withValues(alpha: 0.25),
+                              strokeWidth: 1.5,
+                              dashArray: [4, 4],
+                              label: HorizontalLineLabel(
+                                show: true,
+                                alignment: Alignment.topRight,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 8,
+                                  color: const Color(0xFF4CAF50),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                labelResolver: (line) => 'Low',
                               ),
                             ),
-                          );
-                        }
-                        if (value < minX || value > 10 || value % 2 != 0) {
-                          return const SizedBox.shrink();
-                        }
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 4.0),
-                          child: Text(
-                            value < 0
-                                ? '${value.abs().toInt()}m ago'
-                                : '+${value.toInt()}m',
-                            style: GoogleFonts.poppins(
-                              fontSize: 9.5,
-                              color: AppTheme.kTextLight,
-                              fontWeight: FontWeight.w500,
+                            HorizontalLine(
+                              y: 45,
+                              color: const Color(
+                                0xFFFFA726,
+                              ).withValues(alpha: 0.25),
+                              strokeWidth: 1.5,
+                              dashArray: [4, 4],
+                              label: HorizontalLineLabel(
+                                show: true,
+                                alignment: Alignment.topRight,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 8,
+                                  color: const Color(0xFFFFA726),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                labelResolver: (line) => 'Elevated',
+                              ),
+                            ),
+                            HorizontalLine(
+                              y: 70,
+                              color: const Color(
+                                0xFFEF5350,
+                              ).withValues(alpha: 0.25),
+                              strokeWidth: 1.5,
+                              dashArray: [4, 4],
+                              label: HorizontalLineLabel(
+                                show: true,
+                                alignment: Alignment.topRight,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 8,
+                                  color: const Color(0xFFEF5350),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                labelResolver: (line) => 'High',
+                              ),
+                            ),
+                          ],
+                        ),
+                        lineBarsData: [
+                          LineChartBarData(
+                            spots: visibleSpots,
+                            isCurved: true,
+                            color: lineColor,
+                            barWidth: 4,
+                            isStrokeCapRound: true,
+                            dotData: FlDotData(
+                              show: true,
+                              getDotPainter: (spot, percent, barData, index) {
+                                return FlDotCirclePainter(
+                                  radius: spot.x == 0 ? 5 : 3.5,
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                  strokeColor: lineColor,
+                                );
+                              },
+                            ),
+                            belowBarData: BarAreaData(
+                              show: true,
+                              gradient: LinearGradient(
+                                colors: [
+                                  lineColor.withValues(alpha: 0.18),
+                                  lineColor.withValues(alpha: 0.0),
+                                ],
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                              ),
                             ),
                           ),
-                        );
-                      },
-                    ),
-                  ),
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 32,
-                      interval: 25,
-                      getTitlesWidget: (value, meta) {
-                        if (value < 0 || value > 100)
-                          return const SizedBox.shrink();
-                        return Text(
-                          '${value.toInt()}%',
-                          style: GoogleFonts.poppins(
-                            fontSize: 9.5,
-                            color: AppTheme.kTextLight,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                borderData: FlBorderData(show: false),
-                rangeAnnotations: RangeAnnotations(
-                  horizontalRangeAnnotations: [
-                    HorizontalRangeAnnotation(
-                      y1: 0,
-                      y2: 20,
-                      color: const Color(0xFF4CAF50).withValues(alpha: 0.055),
-                    ),
-                    HorizontalRangeAnnotation(
-                      y1: 20,
-                      y2: 45,
-                      color: const Color(0xFFFFC107).withValues(alpha: 0.055),
-                    ),
-                    HorizontalRangeAnnotation(
-                      y1: 45,
-                      y2: 70,
-                      color: const Color(0xFFFF7043).withValues(alpha: 0.055),
-                    ),
-                    HorizontalRangeAnnotation(
-                      y1: 70,
-                      y2: 100,
-                      color: const Color(0xFFEF5350).withValues(alpha: 0.065),
-                    ),
-                  ],
-                ),
-                extraLinesData: ExtraLinesData(
-                  horizontalLines: [
-                    HorizontalLine(
-                      y: 20,
-                      color: const Color(0xFF4CAF50).withValues(alpha: 0.25),
-                      strokeWidth: 1.5,
-                      dashArray: [4, 4],
-                      label: HorizontalLineLabel(
-                        show: true,
-                        alignment: Alignment.topRight,
-                        style: GoogleFonts.poppins(
-                          fontSize: 8,
-                          color: const Color(0xFF4CAF50),
-                          fontWeight: FontWeight.w600,
-                        ),
-                        labelResolver: (line) => 'Low',
-                      ),
-                    ),
-                    HorizontalLine(
-                      y: 45,
-                      color: const Color(0xFFFFA726).withValues(alpha: 0.25),
-                      strokeWidth: 1.5,
-                      dashArray: [4, 4],
-                      label: HorizontalLineLabel(
-                        show: true,
-                        alignment: Alignment.topRight,
-                        style: GoogleFonts.poppins(
-                          fontSize: 8,
-                          color: const Color(0xFFFFA726),
-                          fontWeight: FontWeight.w600,
-                        ),
-                        labelResolver: (line) => 'Elevated',
-                      ),
-                    ),
-                    HorizontalLine(
-                      y: 70,
-                      color: const Color(0xFFEF5350).withValues(alpha: 0.25),
-                      strokeWidth: 1.5,
-                      dashArray: [4, 4],
-                      label: HorizontalLineLabel(
-                        show: true,
-                        alignment: Alignment.topRight,
-                        style: GoogleFonts.poppins(
-                          fontSize: 8,
-                          color: const Color(0xFFEF5350),
-                          fontWeight: FontWeight.w600,
-                        ),
-                        labelResolver: (line) => 'High',
-                      ),
-                    ),
-                  ],
-                ),
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: visibleSpots,
-                    isCurved: true,
-                    color: lineColor,
-                    barWidth: 4,
-                    isStrokeCapRound: true,
-                    dotData: FlDotData(
-                      show: true,
-                      getDotPainter: (spot, percent, barData, index) {
-                        return FlDotCirclePainter(
-                          radius: spot.x == 0 ? 5 : 3.5,
-                          color: Colors.white,
-                          strokeWidth: 2,
-                          strokeColor: lineColor,
-                        );
-                      },
-                    ),
-                    belowBarData: BarAreaData(
-                      show: true,
-                      gradient: LinearGradient(
-                        colors: [
-                          lineColor.withValues(alpha: 0.18),
-                          lineColor.withValues(alpha: 0.0),
                         ],
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
+                        lineTouchData: LineTouchData(
+                          touchTooltipData: LineTouchTooltipData(
+                            getTooltipItems: (touchedSpots) {
+                              return touchedSpots.map((spot) {
+                                String riskLabel = 'Low';
+                                if (spot.y > 70) {
+                                  riskLabel = 'High';
+                                } else if (spot.y > 45) {
+                                  riskLabel = 'Elevated';
+                                } else if (spot.y > 20) {
+                                  riskLabel = 'Moderate';
+                                }
+
+                                return LineTooltipItem(
+                                  '${spot.x.abs() < 0.05
+                                      ? 'Now'
+                                      : spot.x < 0
+                                      ? '${spot.x.abs().toStringAsFixed(0)} min ago'
+                                      : 'In ${spot.x.toInt()} min'}\n${spot.y.toStringAsFixed(0)}% ($riskLabel)',
+                                  GoogleFonts.poppins(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 10,
+                                  ),
+                                );
+                              }).toList();
+                            },
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ],
-                lineTouchData: LineTouchData(
-                  touchTooltipData: LineTouchTooltipData(
-                    getTooltipItems: (touchedSpots) {
-                      return touchedSpots.map((spot) {
-                        String riskLabel = 'Low';
-                        if (spot.y > 70) {
-                          riskLabel = 'High';
-                        } else if (spot.y > 45) {
-                          riskLabel = 'Elevated';
-                        } else if (spot.y > 20) {
-                          riskLabel = 'Moderate';
-                        }
-
-                        return LineTooltipItem(
-                          '${spot.x.abs() < 0.05 ? 'Now' : spot.x < 0 ? '${spot.x.abs().toStringAsFixed(0)} min ago' : 'In ${spot.x.toInt()} min'}\n${spot.y.toStringAsFixed(0)}% ($riskLabel)',
-                          GoogleFonts.poppins(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 10,
-                          ),
-                        );
-                      }).toList();
-                    },
-                  ),
-                ),
-              ),
-            ),
                   ),
                 ),
               );
@@ -2176,7 +2165,9 @@ class _DashboardPageState extends State<DashboardPage>
                   advice,
                   style: GoogleFonts.poppins(
                     fontSize: 12,
-                    color: AppTheme.kTextDark.withValues(alpha: 0.8),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.8),
                     height: 1.5,
                   ),
                 ),
@@ -2199,7 +2190,7 @@ class _DashboardPageState extends State<DashboardPage>
           style: GoogleFonts.poppins(
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: AppTheme.kTextDark,
+            color: Theme.of(context).colorScheme.onSurface,
           ),
         ),
         const SizedBox(height: 16),
@@ -2250,7 +2241,7 @@ class _DashboardPageState extends State<DashboardPage>
       return Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Row(
@@ -2267,7 +2258,7 @@ class _DashboardPageState extends State<DashboardPage>
                       _historyMessage,
                       style: GoogleFonts.poppins(
                         fontSize: 10.5,
-                        color: AppTheme.kTextLight,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -2302,7 +2293,7 @@ class _DashboardPageState extends State<DashboardPage>
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -2323,7 +2314,7 @@ class _DashboardPageState extends State<DashboardPage>
                   style: GoogleFonts.poppins(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: AppTheme.kTextDark,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
               ),
@@ -2404,7 +2395,7 @@ class _DashboardPageState extends State<DashboardPage>
                         ),
                         style: GoogleFonts.poppins(
                           fontSize: 8.5,
-                          color: AppTheme.kTextLight,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -2429,7 +2420,9 @@ class _DashboardPageState extends State<DashboardPage>
                           date.length >= 10 ? date.substring(5) : date,
                           style: GoogleFonts.poppins(
                             fontSize: 8,
-                            color: AppTheme.kTextLight,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                           ),
                         );
                       },
@@ -2458,7 +2451,7 @@ class _DashboardPageState extends State<DashboardPage>
             '${_historyMetricUnit.isEmpty ? '' : ' · $_historyMetricUnit'}',
             style: GoogleFonts.poppins(
               fontSize: 10,
-              color: AppTheme.kTextLight,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
         ],
@@ -2470,7 +2463,7 @@ class _DashboardPageState extends State<DashboardPage>
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -2489,7 +2482,7 @@ class _DashboardPageState extends State<DashboardPage>
             style: GoogleFonts.poppins(
               fontSize: 14,
               fontWeight: FontWeight.w500,
-              color: AppTheme.kTextLight,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 4),
@@ -2535,7 +2528,7 @@ class _KpiCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -2602,7 +2595,7 @@ class _KpiCard extends StatelessWidget {
                   style: GoogleFonts.poppins(
                     fontSize: 28,
                     fontWeight: FontWeight.w700,
-                    color: AppTheme.kTextDark,
+                    color: Theme.of(context).colorScheme.onSurface,
                     height: 1.0,
                   ),
                 ),
@@ -2614,7 +2607,7 @@ class _KpiCard extends StatelessWidget {
                   unit,
                   style: GoogleFonts.poppins(
                     fontSize: 12,
-                    color: AppTheme.kTextLight,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -2628,7 +2621,7 @@ class _KpiCard extends StatelessWidget {
             label,
             style: GoogleFonts.poppins(
               fontSize: 12,
-              color: AppTheme.kTextLight,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontWeight: FontWeight.w500,
             ),
           ),

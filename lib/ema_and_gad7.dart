@@ -1,7 +1,9 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
+
 import 'background_service_helper.dart';
 import 'theme/app_theme.dart';
 
@@ -31,7 +33,6 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
 
   static const _emojis = ['😌', '😐', '😟', '😰', '😱'];
 
-  
   static const _contexts = [
     'Studying / Working',
     'Socializing',
@@ -84,27 +85,42 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final periodTitle = {
-      'morning': '☀️ Morning Check-in',
-      'afternoon': '🌤️ Afternoon Check-in',
-      'evening': '🌙 Evening Check-in',
-    }[widget.timePeriod] ?? 'Check-in';
+    final periodTitle =
+        {
+          'morning': '☀️ Morning Check-in',
+          'afternoon': '🌤️ Afternoon Check-in',
+          'evening': '🌙 Evening Check-in',
+        }[widget.timePeriod] ??
+        'Check-in';
 
-    final allAnswered = _ratings.every((r) => r != null) && _selectedContext != null;
+    final allAnswered =
+        _ratings.every((r) => r != null) && _selectedContext != null;
 
     return Container(
-      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.9,
+      ),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
           const SizedBox(height: 16),
-          Text(periodTitle, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          Text(
+            periodTitle,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 16),
           Flexible(
             child: ListView(
@@ -112,17 +128,23 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
               children: [
                 ...List.generate(_questions.length, (qi) => _buildQuestion(qi)),
                 const SizedBox(height: 20),
-                const Text('What were you doing?', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                const Text(
+                  'What were you doing?',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                ),
                 const SizedBox(height: 12),
                 Wrap(
-                  spacing: 8, runSpacing: 8,
+                  spacing: 8,
+                  runSpacing: 8,
                   children: _contexts.map((ctx) {
                     final isSelected = _selectedContext == ctx;
                     return FilterChip(
                       label: Text(ctx, style: const TextStyle(fontSize: 13)),
                       selected: isSelected,
                       onSelected: (_) => setState(() => _selectedContext = ctx),
-                      selectedColor: AppTheme.kPrimaryDeep.withValues(alpha: 0.15),
+                      selectedColor: AppTheme.kPrimaryDeep.withValues(
+                        alpha: 0.15,
+                      ),
                       checkmarkColor: AppTheme.kPrimaryDeep,
                     );
                   }).toList(),
@@ -135,7 +157,16 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: allAnswered && !_saving ? _submit : null,
-              child: _saving ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Text('Submit Check-in'),
+              child: _saving
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Text('Submit Check-in'),
             ),
           ),
         ],
@@ -149,7 +180,14 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(_questions[index], style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.black87)),
+          Text(
+            _questions[index],
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -162,10 +200,22 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
                     AnimatedScale(
                       scale: isSelected ? 1.2 : 1.0,
                       duration: const Duration(milliseconds: 150),
-                      child: Text(_emojis[i], style: const TextStyle(fontSize: 26)),
+                      child: Text(
+                        _emojis[i],
+                        style: const TextStyle(fontSize: 26),
+                      ),
                     ),
                     const SizedBox(height: 4),
-                    Text('${i + 1}', style: TextStyle(fontSize: 10, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, color: isSelected ? AppTheme.kPrimaryDeep : Colors.grey)),
+                    Text(
+                      '${i + 1}',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: isSelected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                        color: isSelected ? AppTheme.kPrimaryDeep : Colors.grey,
+                      ),
+                    ),
                   ],
                 ),
               );
@@ -321,7 +371,7 @@ class _Gad7ScreenState extends State<Gad7Screen> {
     final allAnswered = _answers.every((a) => a != null);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Weekly Anxiety Check'),
         leading: const BackButton(),
@@ -351,7 +401,7 @@ class _Gad7ScreenState extends State<Gad7Screen> {
                 return Container(
                   margin: const EdgeInsets.only(bottom: 14),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.surface,
                     borderRadius: BorderRadius.circular(14),
                     border: _answers[qi] != null
                         ? Border.all(
@@ -394,10 +444,12 @@ class _Gad7ScreenState extends State<Gad7Screen> {
                             Expanded(
                               child: Text(
                                 _questions[qi],
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
-                                  color: Colors.black87,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
                                 ),
                               ),
                             ),
@@ -419,13 +471,19 @@ class _Gad7ScreenState extends State<Gad7Screen> {
                               ),
                               decoration: BoxDecoration(
                                 color: isSelected
-                                    ? AppTheme.kPrimaryDeep.withValues(alpha: 0.1)
-                                    : Colors.grey.shade50,
+                                    ? AppTheme.kPrimaryDeep.withValues(
+                                        alpha: 0.1,
+                                      )
+                                    : Theme.of(
+                                        context,
+                                      ).colorScheme.surfaceContainerHighest,
                                 borderRadius: BorderRadius.circular(10),
                                 border: Border.all(
                                   color: isSelected
                                       ? AppTheme.kPrimaryDeep
-                                      : Colors.grey.shade200,
+                                      : Theme.of(
+                                          context,
+                                        ).colorScheme.outlineVariant,
                                   width: isSelected ? 2 : 1,
                                 ),
                               ),
@@ -447,7 +505,9 @@ class _Gad7ScreenState extends State<Gad7Screen> {
                                       style: TextStyle(
                                         fontSize: 13,
                                         color: isSelected
-                                            ? Colors.black87
+                                            ? Theme.of(
+                                                context,
+                                              ).colorScheme.onSurface
                                             : Colors.grey.shade700,
                                         fontWeight: isSelected
                                             ? FontWeight.w600
@@ -477,7 +537,7 @@ class _Gad7ScreenState extends State<Gad7Screen> {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: Theme.of(context).colorScheme.surface,
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.06),
@@ -578,8 +638,14 @@ class _Pss10ScreenState extends State<Pss10Screen> {
     'In the last week, how often have you felt difficulties were piling up so high that you could not overcome them?',
   ];
 
-  static const _options = ['Never', 'Almost Never', 'Sometimes', 'Fairly Often', 'Very Often'];
-  
+  static const _options = [
+    'Never',
+    'Almost Never',
+    'Sometimes',
+    'Fairly Often',
+    'Very Often',
+  ];
+
   final List<int?> _answers = List.filled(10, null);
   bool _saving = false;
 
@@ -599,7 +665,12 @@ class _Pss10ScreenState extends State<Pss10Screen> {
   Future<void> _submit() async {
     if (_saving) return;
     if (_answers.any((a) => a == null)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please answer all 10 questions.'), backgroundColor: Colors.orange));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please answer all 10 questions.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
       return;
     }
 
@@ -612,10 +683,14 @@ class _Pss10ScreenState extends State<Pss10Screen> {
       'answers': _answers,
       'total_score': _total,
       'date': today,
-      'type': 'weekly'
+      'type': 'weekly',
     };
 
-    await BackgroundServiceHelper.sendToSheet(uid, 'PSS10_Weekly', jsonEncode(data));
+    await BackgroundServiceHelper.sendToSheet(
+      uid,
+      'PSS10_Weekly',
+      jsonEncode(data),
+    );
     await prefs.setString('last_pss10_submitted', today);
     await prefs.setString('last_pss10_week', _weekKey());
 
@@ -628,12 +703,30 @@ class _Pss10ScreenState extends State<Pss10Screen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Your Score: $_total / 40', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+              Text(
+                'Your Score: $_total / 40',
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               const SizedBox(height: 12),
-              const Text('Thank you. This weekly check helps track your stress over time.', textAlign: TextAlign.center, style: TextStyle(fontSize: 13)),
+              const Text(
+                'Thank you. This weekly check helps track your stress over time.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13),
+              ),
             ],
           ),
-          actions: [ElevatedButton(onPressed: () { Navigator.pop(ctx); Navigator.pop(context); }, child: const Text('Done'))],
+          actions: [
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.pop(context);
+              },
+              child: const Text('Done'),
+            ),
+          ],
         ),
       );
     }
@@ -651,7 +744,7 @@ class _Pss10ScreenState extends State<Pss10Screen> {
     final allAnswered = _answers.every((a) => a != null);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(title: const Text('Weekly Stress Check')),
       body: Column(
         children: [
@@ -664,16 +757,41 @@ class _Pss10ScreenState extends State<Pss10Screen> {
           ),
           Container(
             padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 12, offset: const Offset(0, -4))]),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 12,
+                  offset: const Offset(0, -4),
+                ),
+              ],
+            ),
             child: Column(
               children: [
-                if (allAnswered) Text('Total Stress Score: $_total', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                if (allAnswered)
+                  Text(
+                    'Total Stress Score: $_total',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: allAnswered && !_saving ? _submit : null,
-                    child: _saving ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Text('Submit Answers'),
+                    child: _saving
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text('Submit Answers'),
                   ),
                 ),
               ],
@@ -688,11 +806,20 @@ class _Pss10ScreenState extends State<Pss10Screen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: _answers[qi] != null ? Border.all(color: AppTheme.kPrimaryDeep.withValues(alpha: 0.3)) : null),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: _answers[qi] != null
+            ? Border.all(color: AppTheme.kPrimaryDeep.withValues(alpha: 0.3))
+            : null,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('${qi + 1}. ${_questions[qi]}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+          Text(
+            '${qi + 1}. ${_questions[qi]}',
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 16),
           ...List.generate(5, (si) {
             final isSelected = _answers[qi] == si;
@@ -700,19 +827,47 @@ class _Pss10ScreenState extends State<Pss10Screen> {
               onTap: () => setState(() => _answers[qi] = si),
               child: Container(
                 margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
-                  color: isSelected ? AppTheme.kPrimaryDeep.withValues(alpha: 0.1) : Colors.grey.shade50,
+                  color: isSelected
+                      ? AppTheme.kPrimaryDeep.withValues(alpha: 0.1)
+                      : Theme.of(context).colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: isSelected ? AppTheme.kPrimaryDeep : Colors.grey.shade200),
+                  border: Border.all(
+                    color: isSelected
+                        ? AppTheme.kPrimaryDeep
+                        : Theme.of(context).colorScheme.outlineVariant,
+                  ),
                 ),
                 child: Row(
                   children: [
-                    Text('$si', style: TextStyle(fontWeight: FontWeight.bold, color: isSelected ? AppTheme.kPrimaryDeep : Colors.grey)),
+                    Text(
+                      '$si',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: isSelected ? AppTheme.kPrimaryDeep : Colors.grey,
+                      ),
+                    ),
                     const SizedBox(width: 12),
-                    Text(_options[si], style: TextStyle(fontSize: 13, color: isSelected ? Colors.black87 : Colors.grey.shade700)),
+                    Text(
+                      _options[si],
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isSelected
+                            ? Theme.of(context).colorScheme.onSurface
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                     const Spacer(),
-                    if (isSelected) const Icon(Icons.check_circle, color: AppTheme.kPrimaryDeep, size: 16),
+                    if (isSelected)
+                      const Icon(
+                        Icons.check_circle,
+                        color: AppTheme.kPrimaryDeep,
+                        size: 16,
+                      ),
                   ],
                 ),
               ),
@@ -730,7 +885,7 @@ Future<bool> isPss10DueThisWeek() async {
   final dayOfYear = int.parse(DateFormat("D").format(now));
   final week = ((dayOfYear - now.weekday + 10) / 7).floor();
   final thisWeek = "${now.year}-$week";
-  
+
   final lastWeek = prefs.getString('last_pss10_week') ?? '';
   return lastWeek != thisWeek;
 }

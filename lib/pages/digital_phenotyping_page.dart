@@ -805,7 +805,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: _C.cardBase,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: _C.border),
         boxShadow: [

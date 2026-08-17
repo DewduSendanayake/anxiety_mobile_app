@@ -1,14 +1,19 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
+
 import 'background_service_helper.dart';
 import 'theme/app_theme.dart';
 import 'pages/data_rights_page.dart';
 import 'pages/baseline_calibration_page.dart';
+import 'pages/appearance_settings_page.dart';
 import 'services/background/service_config.dart';
+import 'services/participant_identity_service.dart';
+import 'theme/theme_controller.dart';
 
 class ProfilePage extends StatefulWidget {
   final bool isTab;
@@ -23,6 +28,7 @@ class _ProfilePageState extends State<ProfilePage> {
   String _displayName = '';
   String? _profileImagePath;
   final ImagePicker _picker = ImagePicker();
+  final TextEditingController _displayNameController = TextEditingController();
 
   @override
   void initState() {
@@ -35,11 +41,25 @@ class _ProfilePageState extends State<ProfilePage> {
   Future<void> _loadProfile() async {
     final prefs = await SharedPreferences.getInstance();
     final displayName = prefs.getString('display_name') ?? '';
+    final savedProfileImagePath = prefs.getString('profile_image_path');
+    final validProfileImagePath =
+        savedProfileImagePath != null &&
+            File(savedProfileImagePath).existsSync()
+        ? savedProfileImagePath
+        : null;
     final profileJson = prefs.getString('user_profile_data');
+    if (!mounted) return;
     if (profileJson != null) {
-      final data = jsonDecode(profileJson);
+      Map<String, dynamic> data;
+      try {
+        data = Map<String, dynamic>.from(jsonDecode(profileJson) as Map);
+      } catch (error) {
+        debugPrint('Could not read saved profile: $error');
+        data = <String, dynamic>{};
+      }
       setState(() {
         _displayName = displayName;
+        _displayNameController.text = displayName;
         _ageController.text = data['age'] ?? '';
         _gender = data['gender'];
         _maritalStatus = data['marital_status'];
@@ -64,19 +84,38 @@ class _ProfilePageState extends State<ProfilePage> {
           hour: prefs.getInt('ema_evening_hour') ?? 20,
           minute: prefs.getInt('ema_evening_minute') ?? 0,
         );
-        _profileImagePath = prefs.getString('profile_image_path');
+        _profileImagePath = validProfileImagePath;
       });
     } else {
       setState(() {
         _displayName = displayName;
-        _profileImagePath = prefs.getString('profile_image_path');
+        _displayNameController.text = displayName;
+        _profileImagePath = validProfileImagePath;
       });
     }
+
+    if (savedProfileImagePath != null && validProfileImagePath == null) {
+      await prefs.remove('profile_image_path');
+    }
+  }
+
+  @override
+  void dispose() {
+    _displayNameController.dispose();
+    _ageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void dispose() {
+    _ageController.dispose();
+    super.dispose();
   }
 
   Future<void> _pickProfileImage() async {
     try {
       final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+      if (!mounted) return;
       if (image != null) {
         setState(() {
           _profileImagePath = image.path;
@@ -89,8 +128,61 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  Future<void> _removeProfileImage() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('profile_image_path');
+    if (!mounted) return;
+    setState(() => _profileImagePath = null);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Profile picture removed from Aura.')),
+    );
+  }
+
+  Future<void> _showProfileImageOptions() async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: Text(
+                _profileImagePath == null
+                    ? 'Choose profile picture'
+                    : 'Change profile picture',
+              ),
+              onTap: () => Navigator.pop(context, 'choose'),
+            ),
+            if (_profileImagePath != null)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.red),
+                title: const Text(
+                  'Remove profile picture',
+                  style: TextStyle(color: Colors.red),
+                ),
+                subtitle: const Text(
+                  'This removes it from Aura, not from your phone gallery.',
+                ),
+                onTap: () => Navigator.pop(context, 'remove'),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+
+    if (action == 'choose') {
+      await _pickProfileImage();
+    } else if (action == 'remove') {
+      await _removeProfileImage();
+    }
+  }
+
   Future<void> _saveTime(String period, TimeOfDay time) async {
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     setState(() {
       if (period == 'morning') {
         _morningTime = time;
@@ -190,6 +282,9 @@ class _ProfilePageState extends State<ProfilePage> {
 
     final prefs = await SharedPreferences.getInstance();
     final uid = prefs.getString('user_id') ?? 'Unknown';
+    final displayName = _displayNameController.text.trim();
+
+    await ParticipantIdentityService.updateDisplayName(displayName);
 
     final profile = {
       'age': _ageController.text.trim(),
@@ -214,7 +309,10 @@ class _ProfilePageState extends State<ProfilePage> {
     await prefs.setString('user_profile_data', jsonEncode(profile));
 
     if (mounted) {
-      setState(() => _isSaving = false);
+      setState(() {
+        _displayName = displayName;
+        _isSaving = false;
+      });
       if (widget.isTab) {
         // In tab mode, go back to view mode after save
         setState(() => _isEditing = false);
@@ -265,7 +363,7 @@ class _ProfilePageState extends State<ProfilePage> {
     final sleepLabel = labels[(_sleepQuality.round() - 1).clamp(0, 4)];
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F3FF),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
         child: Column(
@@ -289,7 +387,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 children: [
                   // Avatar
                   GestureDetector(
-                    onTap: _pickProfileImage,
+                    onTap: _showProfileImageOptions,
                     child: Stack(
                       alignment: Alignment.bottomRight,
                       children: [
@@ -457,6 +555,10 @@ class _ProfilePageState extends State<ProfilePage> {
                     ),
                   ]),
                   const SizedBox(height: 14),
+                  _buildAppearanceCard(),
+                  const SizedBox(height: 14),
+                  _buildFaqSection(),
+                  const SizedBox(height: 14),
                   _buildPrivacyCard(),
                   const SizedBox(height: 30),
                 ],
@@ -473,7 +575,7 @@ class _ProfilePageState extends State<ProfilePage> {
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -502,7 +604,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 style: GoogleFonts.poppins(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
-                  color: AppTheme.kTextDark,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
             ],
@@ -519,14 +621,18 @@ class _ProfilePageState extends State<ProfilePage> {
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: AppTheme.kTextLight),
+          Icon(
+            icon,
+            size: 18,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               label,
               style: GoogleFonts.poppins(
                 fontSize: 13,
-                color: AppTheme.kTextLight,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -535,12 +641,103 @@ class _ProfilePageState extends State<ProfilePage> {
             style: GoogleFonts.poppins(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: AppTheme.kTextDark,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildAppearanceCard() {
+    final controller = ThemeController.instance;
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) => _infoCard('Appearance', Icons.palette_outlined, [
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(
+            controller.isDarkNow
+                ? Icons.dark_mode_rounded
+                : Icons.light_mode_rounded,
+            color: AppTheme.kPrimaryDeep,
+          ),
+          title: Text(
+            controller.mode.label,
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(
+            controller.mode == AppThemeMode.scheduled
+                ? '${controller.darkStart.format(context)} to ${controller.darkEnd.format(context)}'
+                : 'Tap to change light and dark theme settings',
+            style: GoogleFonts.poppins(fontSize: 12),
+          ),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AppearanceSettingsPage()),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _buildFaqSection() {
+    const faqs = [
+      (
+        'What does my anxiety score mean?',
+        'It is an estimate based on your recent body signals and personal baseline. It is not a medical diagnosis.',
+      ),
+      (
+        'How certain is the anxiety forecast?',
+        'The forecast shows a possible short-term change, not a guarantee. Movement, poor sensor contact, illness, caffeine, and other factors can affect it.',
+      ),
+      (
+        'Why are my body readings unavailable?',
+        'Check that the chest strap is worn correctly, Bluetooth is on, and Aura has Bluetooth permission. Then return to the Body tab and reconnect.',
+      ),
+      (
+        'What happens if I miss a check-in?',
+        'Nothing bad. You can continue with the next check-in. Regular answers simply help the research data make more sense.',
+      ),
+      (
+        'What data does Aura store?',
+        'Aura stores study responses and approved sensor or activity information under a random Participant ID, not your display name.',
+      ),
+      (
+        'Can I stop data collection?',
+        'Yes. Open Manage My Data and Privacy below to request deletion or withdraw from the study.',
+      ),
+      (
+        'Is Aura an emergency or treatment service?',
+        'No. Aura does not replace professional care or emergency help. If you may be in immediate danger, contact local emergency services or a trusted person now.',
+      ),
+    ];
+
+    return _infoCard('Help & FAQ', Icons.help_outline_rounded, [
+      ...faqs.map(
+        (faq) => ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(bottom: 12),
+          title: Text(
+            faq.$1,
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                faq.$2,
+                style: GoogleFonts.poppins(fontSize: 12, height: 1.5),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ]);
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -549,7 +746,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Widget _buildEditForm() {
     return Scaffold(
-      backgroundColor: AppTheme.kBgTop,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Form(
           key: _formKey,
@@ -581,22 +778,45 @@ class _ProfilePageState extends State<ProfilePage> {
                 color: AppTheme.kPrimaryDeep,
               ),
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 'User Profile',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 4),
               Text(
                 'This information is collected once and kept strictly confidential for research purposes.',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: 28),
+
+              _sectionLabel('Display Name'),
+              TextFormField(
+                controller: _displayNameController,
+                textCapitalization: TextCapitalization.words,
+                decoration: _inputDec('What should Aura call you?').copyWith(
+                  helperText:
+                      'You can change this later. It stays on this phone and does not change your Participant ID.',
+                  helperMaxLines: 3,
+                ),
+                validator: (v) {
+                  final name = v?.trim() ?? '';
+                  if (name.isEmpty) return 'Required';
+                  if (name.length > 80) {
+                    return 'Use 80 characters or fewer';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
 
               _sectionLabel('Age'),
               TextFormField(
@@ -606,8 +826,9 @@ class _ProfilePageState extends State<ProfilePage> {
                 validator: (v) {
                   if (v == null || v.isEmpty) return 'Required';
                   final n = int.tryParse(v);
-                  if (n == null || n < 16 || n > 60)
-                    return 'Enter a valid age (16–60)';
+                  if (n == null || n < 18 || n > 30) {
+                    return 'This study is for ages 18 to 30';
+                  }
                   return null;
                 },
               ),
@@ -723,10 +944,10 @@ class _ProfilePageState extends State<ProfilePage> {
       padding: const EdgeInsets.only(bottom: 8),
       child: Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w600,
-          color: Colors.black87,
+          color: Theme.of(context).colorScheme.onSurface,
         ),
       ),
     );
@@ -736,14 +957,16 @@ class _ProfilePageState extends State<ProfilePage> {
     return InputDecoration(
       hintText: hint,
       filled: true,
-      fillColor: Colors.white,
+      fillColor: Theme.of(context).colorScheme.surface,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.grey.shade300),
+        borderSide: BorderSide(
+          color: Theme.of(context).colorScheme.outlineVariant,
+        ),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -761,9 +984,9 @@ class _ProfilePageState extends State<ProfilePage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
@@ -789,9 +1012,9 @@ class _ProfilePageState extends State<ProfilePage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: RadioGroup<String>(
         groupValue: groupValue,
@@ -817,9 +1040,9 @@ class _ProfilePageState extends State<ProfilePage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: Column(
         children: [
@@ -838,7 +1061,10 @@ class _ProfilePageState extends State<ProfilePage> {
                 .map(
                   (l) => Text(
                     l,
-                    style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 )
                 .toList(),
@@ -859,7 +1085,7 @@ class _ProfilePageState extends State<ProfilePage> {
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey.shade300),
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: ListTile(
         leading: Icon(icon, color: AppTheme.kPrimaryDeep),
@@ -893,9 +1119,9 @@ class _ProfilePageState extends State<ProfilePage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade300),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -917,7 +1143,10 @@ class _ProfilePageState extends State<ProfilePage> {
           Text(
             "Your data is stored under a Participant ID instead of your name. "
             "Anything that could identify you is kept separate from your health information.",
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            style: TextStyle(
+              fontSize: 12,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 16),
           SizedBox(

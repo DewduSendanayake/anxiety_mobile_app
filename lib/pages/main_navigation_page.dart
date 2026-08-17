@@ -33,13 +33,10 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _pages,
-      ),
+      body: IndexedStack(index: _currentIndex, children: _pages),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).colorScheme.surface,
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.08),
@@ -54,10 +51,30 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildNavItem(0, Icons.home_rounded, Icons.home_outlined, 'Home'),
-                _buildNavItem(1, Icons.monitor_heart_rounded, Icons.monitor_heart_outlined, 'Body'),
-                _buildNavItem(2, Icons.psychology_rounded, Icons.psychology_outlined, 'Activity'),
-                _buildNavItem(3, Icons.person_rounded, Icons.person_outline_rounded, 'Profile'),
+                _buildNavItem(
+                  0,
+                  Icons.home_rounded,
+                  Icons.home_outlined,
+                  'Home',
+                ),
+                _buildNavItem(
+                  1,
+                  Icons.monitor_heart_rounded,
+                  Icons.monitor_heart_outlined,
+                  'Body',
+                ),
+                _buildNavItem(
+                  2,
+                  Icons.psychology_rounded,
+                  Icons.psychology_outlined,
+                  'Activity',
+                ),
+                _buildNavItem(
+                  3,
+                  Icons.person_rounded,
+                  Icons.person_outline_rounded,
+                  'Profile',
+                ),
               ],
             ),
           ),

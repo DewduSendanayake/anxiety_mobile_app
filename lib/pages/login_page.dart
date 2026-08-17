@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -22,6 +23,12 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController _idController = TextEditingController();
   bool _permissionsGranted = false;
   bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _idController.dispose();
+    super.dispose();
+  }
 
   Future<void> _requestPermissions() async {
     setState(() => _isLoading = true);
@@ -81,7 +88,7 @@ class _LoginPageState extends State<LoginPage> {
     UserManager().login(participantId);
 
     try {
-      await initializeService();
+      await startBackgroundServiceIfPermitted();
     } catch (e) {
       debugPrint('Background service init error: $e');
     }
@@ -103,11 +110,13 @@ class _LoginPageState extends State<LoginPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [AppTheme.kBgTop, AppTheme.kBgBottom],
+            colors: Theme.of(context).brightness == Brightness.dark
+                ? const [Color(0xFF111218), Color(0xFF1A1B24)]
+                : const [AppTheme.kBgTop, AppTheme.kBgBottom],
           ),
         ),
         child: SafeArea(
@@ -123,7 +132,7 @@ class _LoginPageState extends State<LoginPage> {
                   style: GoogleFonts.poppins(
                     fontSize: 28,
                     fontWeight: FontWeight.w600,
-                    color: AppTheme.kTextDark,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -132,7 +141,7 @@ class _LoginPageState extends State<LoginPage> {
                   textAlign: TextAlign.center,
                   style: GoogleFonts.poppins(
                     fontSize: 16,
-                    color: AppTheme.kTextLight,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 50),
@@ -145,6 +154,16 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 if (_permissionsGranted) ...[
                   _buildInputField(),
+                  const SizedBox(height: 10),
+                  Text(
+                    'You can change this name later. Aura creates a separate random Participant ID for research records.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.4,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                   const SizedBox(height: 20),
                   _buildGlassButton(
                     text: "Enter",
@@ -159,14 +178,15 @@ class _LoginPageState extends State<LoginPage> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const InformedConsentPage(),
+                        builder: (_) =>
+                            const InformedConsentPage(readOnly: true),
                       ),
                     );
                   },
                   child: Text(
                     "Review Informed Consent & Privacy",
                     style: TextStyle(
-                      color: AppTheme.kTextLight,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: 12,
                       decoration: TextDecoration.underline,
                     ),
@@ -184,7 +204,7 @@ class _LoginPageState extends State<LoginPage> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
@@ -208,7 +228,7 @@ class _LoginPageState extends State<LoginPage> {
       duration: const Duration(milliseconds: 500),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
@@ -221,7 +241,11 @@ class _LoginPageState extends State<LoginPage> {
         child: TextField(
           controller: _idController,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 18, letterSpacing: 2),
+          style: TextStyle(
+            fontSize: 18,
+            letterSpacing: 2,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
           decoration: InputDecoration(
             hintText: "What should Aura call you?",
             hintStyle: TextStyle(color: Colors.grey.shade400),
@@ -250,7 +274,7 @@ class _LoginPageState extends State<LoginPage> {
                   colors: [AppTheme.kAccentBlue, AppTheme.kPrimaryDeep],
                 )
               : null,
-          color: isPrimary ? null : Colors.white,
+          color: isPrimary ? null : Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
@@ -275,14 +299,21 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               )
             else ...[
-              Icon(icon, color: isPrimary ? Colors.white : AppTheme.kTextDark),
+              Icon(
+                icon,
+                color: isPrimary
+                    ? Colors.white
+                    : Theme.of(context).colorScheme.onSurface,
+              ),
               const SizedBox(width: 12),
               Text(
                 text,
                 style: GoogleFonts.poppins(
                   fontSize: 16,
                   fontWeight: FontWeight.w500,
-                  color: isPrimary ? Colors.white : AppTheme.kTextDark,
+                  color: isPrimary
+                      ? Colors.white
+                      : Theme.of(context).colorScheme.onSurface,
                 ),
               ),
             ],
