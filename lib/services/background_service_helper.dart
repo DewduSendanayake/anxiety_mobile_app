@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart';
+
 import 'background/service_config.dart';
-import 'package:flutter_background_service/flutter_background_service.dart';
+
 class BackgroundServiceHelper {
   // _isSyncing is per-isolate — each isolate has its own copy, which is correct.
   static bool _isSyncing = false;
@@ -45,12 +48,10 @@ class BackgroundServiceHelper {
     await _saveToOfflineQueue([dataMap]);
 
     if (immediate) {
-      // Cancel any pending debounce timer and upload right now.
       _timer?.cancel();
       _timer = null;
       await retryOfflineQueue();
     } else {
-      // Debounce: only start a new timer if one is not already running.
       _timer ??= Timer(
         const Duration(seconds: _batchIntervalSeconds),
         retryOfflineQueue,
@@ -66,7 +67,6 @@ class BackgroundServiceHelper {
     List<Map<String, dynamic>> items,
   ) async {
     final prefs = await SharedPreferences.getInstance();
-    // Always reload so we see any writes from the other isolate.
     await prefs.reload();
 
     List<String> queue = prefs.getStringList(_queueKey) ?? [];
@@ -101,7 +101,6 @@ class BackgroundServiceHelper {
 
       List<String> queue = prefs.getStringList(_queueKey) ?? [];
 
-      // ── One-time migration of the old single-key queue ──
       final List<String> oldQueue =
           prefs.getStringList('offline_queue') ?? [];
       if (oldQueue.isNotEmpty) {
@@ -115,7 +114,7 @@ class BackgroundServiceHelper {
       debugPrint("🔄 Syncing queue [$_queueKey]: ${queue.length} items");
 
       const chunkSize = 50;
-      int failedFrom = -1; // index of the first chunk that failed
+      int failedFrom = -1;
 
       for (int i = 0; i < queue.length; i += chunkSize) {
         final int end =
@@ -143,7 +142,8 @@ class BackgroundServiceHelper {
             debugPrint("✅ Chunk [$i–${end - 1}] sent (${batch.length} items)");
           } else {
             debugPrint(
-                "⚠️ Server error on chunk [$i–${end - 1}]: ${response.statusCode}");
+              "⚠️ Server error on chunk [$i–${end - 1}]: ${response.statusCode}",
+            );
             failedFrom = i;
             break;
           }
@@ -154,8 +154,6 @@ class BackgroundServiceHelper {
         }
       }
 
-      // ── Build the remaining list ──
-      // Reload to pick up any new items written while we were uploading.
       await prefs.reload();
       final List<String> freshQueue =
           prefs.getStringList(_queueKey) ?? [];
@@ -163,11 +161,9 @@ class BackgroundServiceHelper {
       List<String> remaining = [];
 
       if (failedFrom >= 0) {
-        // Keep everything from the failed chunk onward.
         remaining = queue.sublist(failedFrom);
       }
 
-      // Append any newly queued items (written after we started this sync).
       if (freshQueue.length > queue.length) {
         remaining.addAll(freshQueue.sublist(queue.length));
       }
@@ -202,8 +198,16 @@ class BackgroundServiceHelper {
     return prefs.getString('user_id') ?? "No_User_ID";
   }
 
+  /// flutter_background_service has no web implementation. Treat Chrome as
+  /// "service not running" instead of invoking the plugin and throwing.
   static Future<bool> isServiceRunning() async {
-    return await FlutterBackgroundService().isRunning();
+    if (kIsWeb) return false;
+    try {
+      return await FlutterBackgroundService().isRunning();
+    } catch (e) {
+      debugPrint('Background service status unavailable: $e');
+      return false;
+    }
   }
 
   /// Returns total count of items pending in offline queues.
