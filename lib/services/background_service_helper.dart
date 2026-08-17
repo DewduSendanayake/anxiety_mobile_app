@@ -9,7 +9,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'background/service_config.dart';
 
 class BackgroundServiceHelper {
-  // _isSyncing is per-isolate — each isolate has its own copy, which is correct.
   static bool _isSyncing = false;
   static const int _batchIntervalSeconds = 10;
   static Timer? _timer;
@@ -21,28 +20,24 @@ class BackgroundServiceHelper {
   static String get _queueKey =>
       isMainIsolate ? 'offline_queue_main' : 'offline_queue_bg';
 
-  // ─────────────────────────────────────────────────────────────
-  // PUBLIC API
-  // ─────────────────────────────────────────────────────────────
-
-  /// Enqueue [value] for [userId]/[type] and schedule (or immediately trigger)
-  /// a sync to Google Sheets.
+  /// Storage-neutral research event entry point.
   ///
-  /// [immediate] = true forces an instant upload — used for sensor events
-  /// (screen on/off, high-motion) that must not wait for the 10-second batch
-  /// window, because the process may be killed before the timer fires.
-  static Future<void> sendToSheet(
+  /// Today the queue is flushed to the existing Google Apps Script endpoint.
+  /// Later the uploader can be switched to Supabase/another API without
+  /// changing sensor collectors or event producers.
+  static Future<void> enqueueResearchEvent(
     String userId,
     String type,
-    String value, {
+    dynamic value, {
     bool immediate = false,
+    DateTime? eventTime,
   }) async {
-    final dataMap = {
-      "userId": userId,
-      "dataType": type,
-      "value": value,
-      "timestamp": DateTime.now().toIso8601String(),
-      "token": ServiceConfig.authToken,
+    final dataMap = <String, dynamic>{
+      'userId': userId,
+      'dataType': type,
+      'value': value is String ? value : jsonEncode(value),
+      'timestamp': (eventTime ?? DateTime.now()).toIso8601String(),
+      'token': ServiceConfig.authToken,
     };
 
     await _saveToOfflineQueue([dataMap]);
@@ -59,9 +54,20 @@ class BackgroundServiceHelper {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // QUEUE PERSISTENCE
-  // ─────────────────────────────────────────────────────────────
+  /// Backwards-compatible alias while the rest of the app migrates away from
+  /// storage-specific naming.
+  static Future<void> sendToSheet(
+    String userId,
+    String type,
+    String value, {
+    bool immediate = false,
+  }) =>
+      enqueueResearchEvent(
+        userId,
+        type,
+        value,
+        immediate: immediate,
+      );
 
   static Future<void> _saveToOfflineQueue(
     List<Map<String, dynamic>> items,
@@ -71,9 +77,9 @@ class BackgroundServiceHelper {
 
     List<String> queue = prefs.getStringList(_queueKey) ?? [];
 
-    for (var item in items) {
+    for (final item in items) {
       if (queue.length >= 10000) {
-        debugPrint("⚠️ Offline queue full — oldest item dropped.");
+        debugPrint('⚠️ Offline queue full — oldest item dropped.');
         queue.removeAt(0);
       }
       queue.add(jsonEncode(item));
@@ -82,12 +88,11 @@ class BackgroundServiceHelper {
     await prefs.setStringList(_queueKey, queue);
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // SYNC
-  // ─────────────────────────────────────────────────────────────
-
-  /// Upload every queued item from *this isolate's* queue to Google Sheets.
-  /// Also migrates the legacy 'offline_queue' key on first run.
+  /// Uploads every queued item from this isolate's queue.
+  ///
+  /// The current transport is the legacy Google Apps Script endpoint. Keeping
+  /// transport here means collectors remain unchanged when the destination is
+  /// later switched to Supabase.
   static Future<void> retryOfflineQueue() async {
     _timer?.cancel();
     _timer = null;
@@ -101,27 +106,24 @@ class BackgroundServiceHelper {
 
       List<String> queue = prefs.getStringList(_queueKey) ?? [];
 
-      final List<String> oldQueue =
-          prefs.getStringList('offline_queue') ?? [];
+      final oldQueue = prefs.getStringList('offline_queue') ?? <String>[];
       if (oldQueue.isNotEmpty) {
         queue.insertAll(0, oldQueue);
         await prefs.remove('offline_queue');
-        debugPrint("📦 Migrated ${oldQueue.length} items from legacy queue.");
+        debugPrint('📦 Migrated ${oldQueue.length} items from legacy queue.');
       }
 
       if (queue.isEmpty) return;
 
-      debugPrint("🔄 Syncing queue [$_queueKey]: ${queue.length} items");
+      debugPrint('🔄 Syncing queue [$_queueKey]: ${queue.length} items');
 
       const chunkSize = 50;
       int failedFrom = -1;
 
       for (int i = 0; i < queue.length; i += chunkSize) {
-        final int end =
-            (i + chunkSize < queue.length) ? i + chunkSize : queue.length;
-        final List<String> chunkStrings = queue.sublist(i, end);
-
-        final List<Map<String, dynamic>> batch = chunkStrings
+        final end = i + chunkSize < queue.length ? i + chunkSize : queue.length;
+        final chunkStrings = queue.sublist(i, end);
+        final batch = chunkStrings
             .map((s) => jsonDecode(s) as Map<String, dynamic>)
             .toList();
 
@@ -129,41 +131,38 @@ class BackgroundServiceHelper {
           final response = await http
               .post(
                 Uri.parse(ServiceConfig.googleScriptUrl),
-                headers: {"Content-Type": "application/json"},
+                headers: const {'Content-Type': 'application/json'},
                 body: jsonEncode(batch),
               )
               .timeout(const Duration(seconds: 30));
 
-          final bool ok = response.statusCode == 200 ||
+          final ok = response.statusCode == 200 ||
               response.statusCode == 302 ||
               _isSuccessBody(response.body);
 
           if (ok) {
-            debugPrint("✅ Chunk [$i–${end - 1}] sent (${batch.length} items)");
+            debugPrint('✅ Chunk [$i–${end - 1}] sent (${batch.length} items)');
           } else {
             debugPrint(
-              "⚠️ Server error on chunk [$i–${end - 1}]: ${response.statusCode}",
+              '⚠️ Server error on chunk [$i–${end - 1}]: ${response.statusCode}',
             );
             failedFrom = i;
             break;
           }
         } catch (e) {
-          debugPrint("❌ Chunk [$i–${end - 1}] failed: $e");
+          debugPrint('❌ Chunk [$i–${end - 1}] failed: $e');
           failedFrom = i;
           break;
         }
       }
 
       await prefs.reload();
-      final List<String> freshQueue =
-          prefs.getStringList(_queueKey) ?? [];
-
-      List<String> remaining = [];
+      final freshQueue = prefs.getStringList(_queueKey) ?? <String>[];
+      final remaining = <String>[];
 
       if (failedFrom >= 0) {
-        remaining = queue.sublist(failedFrom);
+        remaining.addAll(queue.sublist(failedFrom));
       }
-
       if (freshQueue.length > queue.length) {
         remaining.addAll(freshQueue.sublist(queue.length));
       }
@@ -171,23 +170,19 @@ class BackgroundServiceHelper {
       await prefs.setStringList(_queueKey, remaining);
 
       if (remaining.isEmpty) {
-        debugPrint("✅ Queue [$_queueKey] fully cleared.");
+        debugPrint('✅ Queue [$_queueKey] fully cleared.');
       } else {
-        debugPrint("⚠️ ${remaining.length} items still pending in [$_queueKey].");
+        debugPrint('⚠️ ${remaining.length} items still pending in [$_queueKey].');
       }
     } finally {
       _isSyncing = false;
     }
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // HELPERS
-  // ─────────────────────────────────────────────────────────────
-
   static bool _isSuccessBody(String body) {
     try {
       final decoded = jsonDecode(body);
-      return decoded['status'] == 'success';
+      return decoded['status'] == 'success' || decoded['status'] == 'partial';
     } catch (_) {
       return body.contains('success');
     }
@@ -195,11 +190,9 @@ class BackgroundServiceHelper {
 
   static Future<String> getCachedId() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('user_id') ?? "No_User_ID";
+    return prefs.getString('user_id') ?? 'No_User_ID';
   }
 
-  /// flutter_background_service has no web implementation. Treat Chrome as
-  /// "service not running" instead of invoking the plugin and throwing.
   static Future<bool> isServiceRunning() async {
     if (kIsWeb) return false;
     try {
@@ -210,13 +203,12 @@ class BackgroundServiceHelper {
     }
   }
 
-  /// Returns total count of items pending in offline queues.
   static Future<int> getOfflineQueueSize() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
-    final mainQ = prefs.getStringList('offline_queue_main') ?? [];
-    final bgQ = prefs.getStringList('offline_queue_bg') ?? [];
-    final legacyQ = prefs.getStringList('offline_queue') ?? [];
+    final mainQ = prefs.getStringList('offline_queue_main') ?? <String>[];
+    final bgQ = prefs.getStringList('offline_queue_bg') ?? <String>[];
+    final legacyQ = prefs.getStringList('offline_queue') ?? <String>[];
     return mainQ.length + bgQ.length + legacyQ.length;
   }
 }
