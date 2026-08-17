@@ -38,7 +38,8 @@ class _DataRightsPageState extends State<DataRightsPage> {
     setState(() {
       _participantId = prefs.getString('user_id') ?? 'Not set';
       _consentTimestamp = prefs.getString('consent_timestamp') ?? 'Unknown';
-      _consentVersion = prefs.getString('consent_version') ?? '1.0';
+      _consentVersion =
+          prefs.getString('consent_version') ?? ServiceConfig.consentVersion;
       _isWithdrawn = prefs.getBool('consent_withdrawn') ?? false;
     });
   }
@@ -50,7 +51,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
       content:
           'This will send a request to the research team to provide you with '
           'a copy of all data collected about you.\n\n'
-          'The research team will contact you using the email you gave when you joined the study.',
+          'Aura does not collect your email address. After sending the request, email the research team with your Participant ID so they can verify the request and arrange secure delivery.',
       confirmText: 'Send Request',
       confirmColor: AppTheme.kPrimaryDeep,
     );
@@ -74,7 +75,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Request sent. The research team will prepare a copy of your data.',
+            'Request logged. Email the research team with your Participant ID to arrange secure delivery.',
           ),
           backgroundColor: Colors.green,
           duration: Duration(seconds: 4),
@@ -91,7 +92,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
           'This will ask the research team to permanently '
           'delete all data associated with your Participant ID.\n\n'
           'Once the data is deleted, it cannot be restored. The research team will '
-          'handle your request within 21 business days, as required by Sri Lanka\'s data protection law.',
+          'handle your request within the period required by applicable data protection law.',
       confirmText: 'Send Delete Request',
       confirmColor: Colors.red,
     );
@@ -115,7 +116,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Delete request sent. The research team will handle it within 21 business days.',
+            'Delete request sent. The research team will handle it within the legally required period.',
           ),
           backgroundColor: Colors.orange,
           duration: Duration(seconds: 4),
@@ -195,6 +196,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
     await prefs.remove('calibration_complete');
     await prefs.remove('chest_strap_last_reading');
     await prefs.remove('user_profile_data');
+    await prefs.remove('profile_image_path');
     await prefs.remove('offline_queue');
     await prefs.remove('offline_queue_main');
     await prefs.remove('offline_queue_bg');
@@ -320,7 +322,9 @@ class _DataRightsPageState extends State<DataRightsPage> {
             subtitle: 'Review the form you agreed to',
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const InformedConsentPage()),
+              MaterialPageRoute(
+                builder: (_) => const InformedConsentPage(readOnly: true),
+              ),
             ),
           ),
 

@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 
 import '../theme/app_theme.dart';
+import '../services/background/service_config.dart';
 import 'login_page.dart';
 
 /// InformedConsentPage
@@ -12,7 +13,7 @@ import 'login_page.dart';
 ///
 ///   readOnly = false  (default)
 ///   ── First-run consent flow.
-///      Patient must scroll to bottom AND tick all 6 boxes.
+///      Participant must scroll to bottom AND confirm all declarations.
 ///      "I Consent & Continue" button unlocks only when both are done.
 ///      On confirmation, all state is persisted to SharedPreferences.
 ///
@@ -29,7 +30,15 @@ import 'login_page.dart';
 ///   ));
 class InformedConsentPage extends StatefulWidget {
   final bool readOnly;
-  const InformedConsentPage({super.key, this.readOnly = false});
+  final Widget? nextPage;
+  final Future<void> Function()? onAccepted;
+
+  const InformedConsentPage({
+    super.key,
+    this.readOnly = false,
+    this.nextPage,
+    this.onAccepted,
+  });
 
   @override
   State<InformedConsentPage> createState() => _InformedConsentPageState();
@@ -41,7 +50,7 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
   bool _hasScrolledToBottom = false;
   String _consentTimestamp = '';
 
-  // Seven declarations — loaded from prefs in readOnly mode.
+  // Eight declarations — loaded from prefs in readOnly mode.
   bool _cbAge = false;
   bool _cbPurpose = false;
   bool _cbData = false;
@@ -113,6 +122,7 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
     final String ts = DateTime.now().toIso8601String();
     await prefs.setBool('consent_accepted', true);
     await prefs.setString('consent_timestamp', ts);
+    await prefs.setString('consent_version', ServiceConfig.consentVersion);
     await prefs.setBool('consent_cb_age', _cbAge);
     await prefs.setBool('consent_cb_purpose', _cbPurpose);
     await prefs.setBool('consent_cb_data', _cbData);
@@ -122,12 +132,40 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
     await prefs.setBool('consent_cb_voluntary', _cbVoluntary);
     await prefs.setBool('consent_cb_liability', _cbLiability);
 
+    if (widget.onAccepted != null) {
+      try {
+        await widget.onAccepted!();
+      } catch (error) {
+        debugPrint('Could not resume services after consent: $error');
+      }
+    }
+
     if (mounted) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const LoginPage()),
+        MaterialPageRoute(builder: (_) => widget.nextPage ?? const LoginPage()),
       );
     }
+  }
+
+  void _agreeToAllStatements() {
+    if (widget.readOnly) return;
+    setState(() {
+      _cbAge = true;
+      _cbPurpose = true;
+      _cbData = true;
+      _cbPhysio = true;
+      _cbStorage = true;
+      _cbRights = true;
+      _cbVoluntary = true;
+      _cbLiability = true;
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -182,26 +220,27 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
                           if (widget.readOnly) _readOnlyBanner(),
 
                           // ── Section 1 ─────────────────────────────────
-                          _sectionTitle("1. Why This Study Is Being Done"),
+                          _sectionTitle("1. About Aura and This Study"),
                           _paragraph(
-                            "You are invited to join an approved research study run by the "
-                            "Sri Lanka Institute of Information Technology (SLIIT). Joining is your choice. "
-                            "Please read this form carefully before deciding.",
+                            "You are invited to consider joining research project R26-DS-012 at the "
+                            "Sri Lanka Institute of Information Technology (SLIIT). Joining is voluntary. "
+                            "Please read this information carefully before deciding.",
                           ),
                           _paragraph(
-                            "This study looks at whether information collected by a phone in the background can "
-                            "help show changes in anxiety among young adults over 12 months. This includes movement, "
-                            "screen time, call and message totals, and answers about mood.",
+                            "The study examines whether wearable body signals, smartphone activity patterns, "
+                            "and questionnaire answers can help estimate changes in anxiety "
+                            "vulnerability among young adults aged 18 to 30. Aura may show short-term risk estimates "
+                            "and reminders, but it is a research prototype, not a medical device or treatment service.",
                           ),
                           _divider(),
 
                           // ── Section 2 ─────────────────────────────────
-                          _sectionTitle("2. How Long It Lasts and What You Do"),
+                          _sectionTitle("2. Who Can Join and What You Do"),
                           _bulletItem(
-                            "The study lasts 12 months from the day you join.",
+                            "You must be 18 to 30 years old, able to give informed consent, and meet the recruitment criteria confirmed by the research team.",
                           ),
                           _bulletItem(
-                            "You keep this application installed and running on your Android device throughout the study.",
+                            "You keep Aura installed on a compatible Android phone during your participation period. The final duration must match the ethics-approved research protocol.",
                           ),
                           _bulletItem(
                             "Three short mood check-ins each day, in the morning, afternoon, and evening. Each takes about 1 to 2 minutes.",
@@ -221,43 +260,46 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
                           _sectionTitle("3. What Data Will Be Collected?"),
                           _paragraph(
                             "The table below lists every type of data collected. This includes "
-                            "phone activity, such as movement and screen use, and body readings "
-                            "from a wearable chest strap, such as heart rate, breathing rate, body "
-                            "temperature, and motion). The application does NOT read the content "
-                            "of any SMS or phone call.",
+                            "phone activity, such as movement and screen use, questionnaire answers, "
+                            "and body readings from a wearable chest strap. Aura does not upload the "
+                            "content of SMS messages or calls, contact names, phone numbers, your display "
+                            "name, or your profile picture. App usage records do include individual app "
+                            "package names and the foreground time recorded for each app.",
                           ),
                           _dataTable(),
                           _divider(),
 
                           // ── Section 4 ─────────────────────────────────
                           _sectionTitle(
-                            "4. How Your Data Is Protected and Stored Outside Sri Lanka",
+                            "4. How Your Data Is Stored and Protected",
                           ),
                           _paragraph(
-                            "All data is sent through a protected internet connection and stored in Google Cloud, "
-                            "which is run by Google LLC. The storage systems are outside Sri Lanka.",
+                            "Research data is sent using HTTPS and may be processed by the study's current "
+                            "cloud services, including Google Sheets and Apps Script, Hugging Face Spaces, "
+                            "and InfluxDB Cloud. These services may process or store data outside Sri Lanka.",
                           ),
                           _paragraph(
-                            "This transfer uses the rule for scientific research in Section 24 of "
-                            "Sri Lanka's PDPA No. 9 of 2022.",
+                            "Any processing outside Sri Lanka must follow the Sri Lanka Personal Data "
+                            "Protection Act, No. 9 of 2022, as amended, including applicable requirements "
+                            "for cross-border processing and the safeguards approved for the study.",
                           ),
                           _bulletItem(
-                            "Your real name and phone number are NEVER stored with the research data.",
+                            "Aura does not upload your display name, phone number, or profile picture as research profile or sensor data. Contact details obtained separately for recruitment or a data-rights request must be kept separately with restricted access.",
                           ),
                           _bulletItem(
                             "All records are linked only to a randomly assigned Participant ID.",
                           ),
                           _bulletItem(
-                            "Saved locations are made less exact by about 1 km.",
+                            "Location records include precise GPS latitude and longitude, movement speed, and the phone's reported accuracy. These records must have restricted access because they can reveal sensitive movement patterns.",
                           ),
                           _bulletItem(
-                            "App names are grouped into general categories before they are saved.",
+                            "App usage records include individual app package names and the foreground duration recorded for each app during the collection window.",
                           ),
                           _bulletItem(
-                            "Access is restricted to the named research team at SLIIT.",
+                            "Access must be restricted to authorized researchers and service providers needed to run the study.",
                           ),
                           _bulletItem(
-                            "Data will be kept for no more than 5 years after the study ends, then permanently deleted.",
+                            "Identifiable or pseudonymous data will be kept only for the retention period approved in the final research protocol, then deleted or irreversibly anonymized.",
                           ),
                           _divider(),
 
@@ -294,7 +336,7 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
                             "Leave the study at any time without any negative consequences.",
                           ),
                           _paragraph(
-                            "To exercise any right: email it22130648@my.sliit.lk with your Participant ID.",
+                            "To exercise a right, use Your Data and Privacy inside Aura or email the research team at ${ServiceConfig.researchTeamEmail} with your Participant ID. Some requests may require identity verification.",
                           ),
                           _divider(),
 
@@ -302,7 +344,7 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
                           _sectionTitle("6. Possible Risks and Benefits"),
                           _subTitle("Possible risks"),
                           _bulletItem(
-                            "The risk is expected to be low. The app runs quietly in the background.",
+                            "Privacy or security incidents are possible whenever sensitive research data is collected or stored, although safeguards are used to reduce the risk.",
                           ),
                           _bulletItem(
                             "The app may use a little more battery, estimated at less than 5% per day.",
@@ -310,15 +352,21 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
                           _bulletItem(
                             "Some questions about mood or anxiety may feel upsetting. You do not have to answer any question that makes you uncomfortable.",
                           ),
+                          _bulletItem(
+                            "Sensor contact may feel uncomfortable, and movement, poor contact, illness, caffeine, or model error may cause false or missed anxiety estimates.",
+                          ),
                           _subTitle("Possible benefits"),
                           _bulletItem(
-                            "You help research how phones may support mental health in South Asia.",
+                            "Your participation may help researchers understand how digital signals could support future anxiety monitoring.",
                           ),
                           _bulletItem(
                             "The findings may help create future anxiety checks that are carefully tested for health care use.",
                           ),
                           _bulletItem(
                             "You will not receive payment for joining.",
+                          ),
+                          _bulletItem(
+                            "There is no guaranteed direct medical benefit to you.",
                           ),
                           _divider(),
 
@@ -334,42 +382,79 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
                           _divider(),
 
                           // ── Section 8 ─────────────────────────────────
-                          _sectionTitle("8. Study Approval"),
+                          _sectionTitle("8. Research Status and Governance"),
                           _paragraph(
-                            "This study is designed in accordance with the Declaration of Helsinki (2013), "
-                            "ICH Good Clinical Practice guidelines, and Sri Lanka PDPA No. 9 of 2022. "
-                            "Ethics Ref: SLIIT/IT/RES/2024  |  Study ID: ANXIETY-DIGITAL-2024",
+                            "Project ID: R26-DS-012. The study should follow the 2024 Declaration of Helsinki, "
+                            "applicable research-ethics requirements, and the Sri Lanka PDPA No. 9 of 2022, as amended. "
+                            "An ethics approval number must be confirmed and added before participant recruitment. "
+                            "This screen does not itself prove ethics approval.",
                           ),
                           _divider(),
 
-                          // ── Section 9 — Declarations ──────────────────
-                          _sectionTitle("9. Your Agreement"),
+                          _sectionTitle("9. App Terms and Safety"),
+                          _bulletItem(
+                            "Aura is supplied for supervised research and testing. It is not an emergency, diagnosis, prevention, or treatment service.",
+                          ),
+                          _bulletItem(
+                            "Do not delay professional or emergency help because of an Aura score, forecast, alert, or missing alert.",
+                          ),
+                          _bulletItem(
+                            "Forecasts can change as new 60-second sensor windows arrive and may be unavailable when the phone, chest strap, network, or cloud service is offline.",
+                          ),
+                          _bulletItem(
+                            "Use Aura lawfully, do not interfere with the service, and do not share another participant's identifier.",
+                          ),
+                          _bulletItem(
+                            "The research team may update, suspend, or stop the prototype. Material changes to research data use require updated information and, where required, new consent.",
+                          ),
+                          _bulletItem(
+                            "Nothing in these terms removes legal rights that cannot be excluded, including rights relating to privacy, data protection, or research-related harm.",
+                          ),
+                          _bulletItem(
+                            "You may use Aura only for your own participation and as instructed by the research team. Do not copy, disrupt, probe, reverse engineer, or gain unauthorized access to the app or study systems except where applicable law expressly permits it.",
+                          ),
+                          _bulletItem(
+                            "Aura software, content, and branding remain the property of their respective owners. You keep the rights and protections that apply to your personal data and research participation.",
+                          ),
+                          _bulletItem(
+                            "The research team may restrict access where needed for safety, security, study completion, or misuse. This does not remove your right to withdraw or make a data-rights request.",
+                          ),
+                          _bulletItem(
+                            "These terms are governed by applicable Sri Lankan law without limiting mandatory privacy, consumer, or research-participant protections.",
+                          ),
+                          _divider(),
+
+                          // ── Section 10 — Declarations ─────────────────
+                          _sectionTitle("10. Your Agreement"),
                           _paragraph(
                             widget.readOnly
                                 ? "The following statements were confirmed when you agreed to join. "
-                                      "They are permanently locked and cannot be changed."
+                                      "The original record cannot be edited, but you can withdraw through Your Data and Privacy."
                                 : "Please read each statement carefully and tick the box. "
-                                      "All statements are required before you can continue.",
+                                      "Use Agree to all to select every statement at once, or select them individually.",
                           ),
                           const SizedBox(height: 6),
+
+                          if (!widget.readOnly) _agreeToAllButton(),
+                          if (!widget.readOnly) const SizedBox(height: 10),
 
                           _consentCheck(
                             value: _cbAge,
                             key: 'age',
                             label:
-                                "I confirm that I am 18 years of age or older and allowed by law to agree to join this study.",
+                                "I confirm that I am 18 to 30 years old and able to give informed consent to join this study.",
                           ),
                           _consentCheck(
                             value: _cbPurpose,
                             key: 'purpose',
                             label:
-                                "I understand why this study is being done, what I need to do, and that it lasts 12 months (Sections 1 & 2).",
+                                "I understand why this study is being done, what I need to do, and that I may stop participating at any time (Sections 1 & 2).",
                           ),
                           _consentCheck(
                             value: _cbData,
                             key: 'data',
                             label:
-                                "I understand what data is collected from my phone, including location, movement, call and message totals, and my check-in answers, and I consent to this collection (Section 3).",
+                                "I understand what data is collected from my phone, including precise GPS location, movement, individual app package names and usage duration, call and message totals, and my check-in answers, and I consent to this collection (Section 3).",
                           ),
                           _consentCheck(
                             value: _cbPhysio,
@@ -381,7 +466,7 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
                             value: _cbStorage,
                             key: 'storage',
                             label:
-                                "I understand that my data will be stored in Google Cloud systems outside Sri Lanka, and I agree to this transfer under PDPA No. 9 of 2022, Section 24 (Section 4).",
+                                "I understand that pseudonymous research data may be processed by Google, Hugging Face, and InfluxDB services outside Sri Lanka, subject to applicable safeguards (Section 4).",
                           ),
                           _consentCheck(
                             value: _cbRights,
@@ -399,7 +484,7 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
                             value: _cbLiability,
                             key: 'liability',
                             label:
-                                "I understand that this app is only for research and does not replace advice from a health professional. If I use it, I accept the risks and will not hold the developers responsible if something goes wrong.",
+                                "I understand that Aura is a research prototype, not medical care, and that I must not rely on a score, alert, or forecast in an emergency (Section 9).",
                           ),
 
                           const SizedBox(height: 14),
@@ -455,7 +540,9 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              widget.readOnly ? "View Informed Consent" : "Informed Consent",
+              widget.readOnly
+                  ? "View Consent, Privacy & Terms"
+                  : "Consent, Privacy & Terms",
               style: GoogleFonts.poppins(
                 fontSize: 19,
                 fontWeight: FontWeight.w700,
@@ -471,7 +558,7 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
               border: Border.all(color: Colors.green.shade300),
             ),
             child: Text(
-              "NHSL Review",
+              "R26-DS-012",
               style: TextStyle(
                 fontSize: 11,
                 color: Colors.green.shade700,
@@ -569,6 +656,31 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
   // ─────────────────────────────────────────────────────────────────────────
   // CHECKBOX — interactive (first run) or locked (read-only)
   // ─────────────────────────────────────────────────────────────────────────
+
+  Widget _agreeToAllButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: _allChecked ? null : _agreeToAllStatements,
+        icon: Icon(
+          _allChecked ? Icons.check_circle_rounded : Icons.done_all_rounded,
+        ),
+        label: Text(
+          _allChecked ? 'All statements selected' : 'Agree to all statements',
+        ),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppTheme.kPrimaryDeep,
+          side: BorderSide(
+            color: _allChecked ? Colors.green.shade400 : AppTheme.kPrimaryDeep,
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 13),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _consentCheck({
     required bool value,
@@ -714,7 +826,7 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
           Expanded(
             child: Text(
               "You are viewing the consent form you agreed to when joining the study. "
-              "Your answers are permanently recorded and cannot be changed.",
+              "The original agreement is recorded, and you may withdraw through Your Data and Privacy.",
               style: TextStyle(
                 fontSize: 12,
                 color: Colors.blue.shade800,
@@ -805,7 +917,7 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
 
   Widget _checkboxHint() {
     final pending = [
-      if (!_cbAge) "Confirm age ≥ 18",
+      if (!_cbAge) "Confirm age 18 to 30",
       if (!_cbPurpose) "Why the study is being done and what you need to do",
       if (!_cbData) "Information the app collects",
       if (!_cbPhysio) "Body readings from the chest strap",
@@ -882,9 +994,10 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  "Faculty of Computing  |  Dept. of Information Technology\n"
-                  "Ethics Ref: SLIIT/IT/RES/2024  |  Study ID: ANXIETY-DIGITAL-2024\n"
-                  "Contact: it22130648@my.sliit.lk",
+                  "Faculty of Computing  |  Research Group R26-DS-012\n"
+                  "Supervisor: ${ServiceConfig.supervisorName}\n"
+                  "Research contact: ${ServiceConfig.researchTeamEmail}\n"
+                  "Ethics approval details must be confirmed before participant recruitment.",
                   style: TextStyle(
                     fontSize: 11,
                     color: Colors.grey.shade700,
@@ -903,7 +1016,7 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
     const rows = [
       [
         "General Location",
-        "Approximate location, movement speed, and how accurate the location is. Saved locations are made less exact by about 1 km.",
+        "Precise GPS latitude and longitude, movement speed, and the phone's reported location accuracy.",
         "Every 15 min",
       ],
       [
@@ -913,12 +1026,12 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
       ],
       [
         "Phone Movement",
-        "Times when the phone detects a large movement. Detailed movement is not saved.",
+        "The event time and movement magnitude when the phone crosses the high-movement threshold.",
         "As it happens",
       ],
       [
         "Call Totals",
-        "Numbers of incoming, outgoing, and missed calls. No phone numbers or call content.",
+        "Numbers of incoming, outgoing, missed, and rejected calls. No phone numbers or call content.",
         "Every 15 min",
       ],
       [
@@ -928,7 +1041,7 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
       ],
       [
         "App Use",
-        "Time spent in groups such as social or browser apps. Individual app names are not stored.",
+        "Individual app package names and the foreground duration recorded for each app.",
         "Every 15 min",
       ],
       [
@@ -937,9 +1050,9 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
         "Every 15 min",
       ],
       [
-        "Screen Tap Pressure",
-        "How firmly the screen is pressed during a selected activity.",
-        "When used",
+        "Service Status",
+        "Heartbeat, restart, battery-warning, sync-request, and error records used to check whether collection is working.",
+        "When generated",
       ],
       [
         "Daily Check-ins",
@@ -963,23 +1076,33 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
       ],
       [
         "Heart Rate",
-        "Heartbeats per minute from the wearable chest strap.",
-        "As it happens",
+        "Heart rate and heart-rate-variability summaries from the wearable chest strap.",
+        "About every 60 sec",
       ],
       [
         "Breathing Rate",
-        "Breaths per minute from the chest strap.",
-        "As it happens",
+        "Breathing-rate summaries from the chest strap.",
+        "About every 60 sec",
       ],
       [
         "Body Temperature",
-        "Temperature reading where the chest strap touches your skin.",
-        "As it happens",
+        "Skin-temperature summaries where the chest strap touches your body.",
+        "About every 60 sec",
       ],
       [
         "Chest Strap Movement",
-        "How much the chest strap moves.",
-        "As it happens",
+        "Movement summaries from the chest strap.",
+        "About every 60 sec",
+      ],
+      [
+        "Forecasts and Feedback",
+        "Model risk values, forecast trajectories, alerts, your ratings, and follow-up answers.",
+        "When generated",
+      ],
+      [
+        "Local Personalization",
+        "Your display name and optional profile picture stay on this phone and are not uploaded as research data.",
+        "When changed",
       ],
     ];
 

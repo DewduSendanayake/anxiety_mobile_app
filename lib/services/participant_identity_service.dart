@@ -40,6 +40,20 @@ class ParticipantIdentityService {
     return participantId;
   }
 
+  /// Changes only the friendly name shown inside Aura.
+  ///
+  /// The research participant ID is intentionally left untouched so changing
+  /// a display name cannot split calibration, sensor, or feedback records.
+  static Future<void> updateDisplayName(String displayName) async {
+    final trimmedName = displayName.trim();
+    if (trimmedName.isEmpty || trimmedName.length > 80) {
+      throw ArgumentError('Display name must contain 1 to 80 characters.');
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(displayNameKey, trimmedName);
+  }
+
   /// One-time migration for installations created by the old login flow.
   ///
   /// The old app stored `{entered_name}_{four_digits}` as `user_id`, which is
