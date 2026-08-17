@@ -155,8 +155,9 @@ class Component2DataService {
         payload.containsKey('reportable');
   }
 
-  /// Allow-list only the fields the participant-facing page is permitted to
-  /// consume. Research-only model probabilities and risk labels are dropped.
+  /// Allow-list only fields the participant-facing page may consume.
+  /// Research-only model probabilities, risk bands, phenotype labels and
+  /// attention explanations are intentionally excluded.
   static Map<String, dynamic> _displaySafeObservationPayload(
     Map<String, dynamic> source,
     String participantId,
@@ -167,6 +168,8 @@ class Component2DataService {
       'baseline_ready': source['baseline_ready'] ?? false,
       'reportable': source['reportable'] ?? false,
       if (source['observations'] is Map) 'observations': source['observations'],
+      if (source['change_detection'] is Map)
+        'change_detection': source['change_detection'],
       if (source['data_quality'] is Map) 'data_quality': source['data_quality'],
       if (source['blocking_issues'] is List)
         'blocking_issues': source['blocking_issues'],
