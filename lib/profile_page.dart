@@ -106,6 +106,12 @@ class _ProfilePageState extends State<ProfilePage> {
     super.dispose();
   }
 
+  @override
+  void dispose() {
+    _ageController.dispose();
+    super.dispose();
+  }
+
   Future<void> _pickProfileImage() async {
     try {
       final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
