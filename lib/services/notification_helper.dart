@@ -108,7 +108,7 @@ class NotificationHelper {
       android: AndroidNotificationDetails(
         'anxiety_alerts',
         'Anxiety check-ins',
-        channelDescription: 'Check-ins when your anxiety level may be rising',
+        channelDescription: 'Gentle check-ins based on recent readings',
         importance: Importance.max,
         priority: Priority.max,
         category: AndroidNotificationCategory.reminder,
@@ -132,12 +132,10 @@ class NotificationHelper {
     try {
       await plugin.show(
         eventId.hashCode & 0x7fffffff,
+        'A gentle check-in from Aura',
         leadMinutes <= 0
-            ? 'Your anxiety level may be high right now'
-            : 'Your anxiety level may rise soon',
-        leadMinutes <= 0
-            ? 'Aura noticed a high reading. Do you feel anxious right now?'
-            : 'It may rise in about $leadMinutes minutes. Do you notice anxiety building?',
+            ? 'Aura noticed a change in your readings. Do you notice any anxiety right now?'
+            : 'Aura noticed a possible change in your readings. Do you notice any anxiety right now?',
         details,
         payload: 'anxiety_checkin:$eventId',
       );
@@ -157,7 +155,7 @@ class NotificationHelper {
       android: AndroidNotificationDetails(
         'anxiety_alerts',
         'Anxiety check-ins',
-        channelDescription: 'Check-ins when your anxiety level may be rising',
+        channelDescription: 'Gentle check-ins based on recent readings',
         importance: Importance.high,
         priority: Priority.high,
         category: AndroidNotificationCategory.reminder,
@@ -167,7 +165,7 @@ class NotificationHelper {
       (eventId.hashCode + 1) & 0x7fffffff,
       'How are you feeling now?',
       signalsImproved
-          ? 'Your readings went down. Tap to tell us what helped.'
+          ? 'Your recent readings have settled. Tap to tell us what helped.'
           : 'Tap for a quick follow-up and tell us what you tried.',
       details,
       payload: 'anxiety_checkin:$eventId',

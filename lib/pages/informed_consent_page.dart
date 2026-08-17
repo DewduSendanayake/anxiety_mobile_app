@@ -489,14 +489,6 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
 
                           const SizedBox(height: 14),
 
-                          // In first-run mode, show hint banners here too.
-                          if (!widget.readOnly && !_hasScrolledToBottom)
-                            _scrollHint(),
-                          if (!widget.readOnly &&
-                              _hasScrolledToBottom &&
-                              !_allChecked)
-                            _checkboxHint(),
-
                           // Consent timestamp (readOnly only).
                           if (widget.readOnly && _consentTimestamp.isNotEmpty)
                             _timestampBadge(),
@@ -897,7 +889,7 @@ class _InformedConsentPageState extends State<InformedConsentPage> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            Icons.keyboard_arrow_down_rounded,
+            Icons.touch_app_rounded,
             color: Colors.amber.shade700,
             size: 17,
           ),

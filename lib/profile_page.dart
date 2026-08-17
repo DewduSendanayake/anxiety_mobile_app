@@ -685,12 +685,12 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget _buildFaqSection() {
     const faqs = [
       (
-        'What does my anxiety score mean?',
+        'What do my readings mean?',
         'It is an estimate based on your recent body signals and personal baseline. It is not a medical diagnosis.',
       ),
       (
-        'How certain is the anxiety forecast?',
-        'The forecast shows a possible short-term change, not a guarantee. Movement, poor sensor contact, illness, caffeine, and other factors can affect it.',
+        'How certain is the 10-minute outlook?',
+        'The outlook is a model estimate, not a guarantee. Movement, poor sensor contact, illness, caffeine, and other factors can affect it.',
       ),
       (
         'Why are my body readings unavailable?',
@@ -757,10 +757,9 @@ class _ProfilePageState extends State<ProfilePage> {
               if (widget.isTab) ...[
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
+                  child: TextButton(
                     onPressed: () => setState(() => _isEditing = false),
-                    icon: const Icon(Icons.arrow_back_ios_rounded, size: 16),
-                    label: Text(
+                    child: Text(
                       'Back to Profile',
                       style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
                     ),

@@ -58,7 +58,7 @@ Future<void> initializeService() async {
       const AndroidNotificationChannel(
         'anxiety_alerts',
         'Anxiety check-ins',
-        description: 'Check-ins when your anxiety level may be rising',
+        description: 'Gentle check-ins based on recent readings',
         importance: Importance.max,
       ),
     );

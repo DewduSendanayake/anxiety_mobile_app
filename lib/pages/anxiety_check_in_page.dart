@@ -139,7 +139,7 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
     final event = _event;
     if (event == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Anxiety check-in')),
+        appBar: AppBar(title: const Text('Aura check-in')),
         body: const Center(
           child: Text('This check-in is no longer available.'),
         ),
@@ -168,27 +168,16 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
             : [
                 _infoCard(
                   icon: Icons.monitor_heart_outlined,
-                  title: event.predictedLeadMinutes == null
-                      ? 'Aura noticed a change'
-                      : event.predictedLeadMinutes == 0
-                      ? 'Your anxiety level may be high right now'
-                      : 'Your anxiety level may rise in about ${event.predictedLeadMinutes} minutes',
+                  title: event.predictedRiskScore == null
+                      ? 'Aura noticed a change in your readings'
+                      : 'Aura noticed a possible change in your readings',
                   body: event.predictedRiskScore == null
-                      ? 'Your current anxiety score is '
-                            '${event.initialRiskScore.toStringAsFixed(0)} out of 100. '
-                            'Aura cannot tell you whether you have anxiety.'
-                      : event.predictedLeadMinutes == 0
-                      ? 'Your current anxiety score is '
-                            '${event.initialRiskScore.toStringAsFixed(0)} out of 100. '
-                            'Aura cannot tell you whether you have anxiety.'
-                      : 'Your anxiety score may rise from '
-                            '${event.initialRiskScore.toStringAsFixed(0)} to about '
-                            '${event.predictedRiskScore!.toStringAsFixed(0)}. '
-                            'This is only an early check-in. Aura cannot tell you whether you have anxiety.',
+                      ? 'Aura uses recent body readings to offer a check-in. It cannot tell you whether you have anxiety.'
+                      : 'This is a model estimate based on recent body readings, not a diagnosis. Take a moment to notice how you feel.',
                 ),
                 const SizedBox(height: 16),
                 _questionCard(
-                  title: 'Do you feel anxious or notice it building?',
+                  title: 'Do you notice any anxiety right now?',
                   selected: event.confirmedAnxious,
                   onYes: () => _saveConfirmation(true),
                   onNo: () => _saveConfirmation(false),
@@ -340,13 +329,12 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
             event.predictedRiskScore != null &&
                     event.followupRiskScore != null &&
                     event.followupRiskScore! <= event.predictedRiskScore! - 10
-                ? 'Your anxiety score is '
-                      '${(event.predictedRiskScore! - event.followupRiskScore!).toStringAsFixed(0)} points lower than the highest level Aura expected.'
+                ? 'Your recent readings are lower than Aura\'s earlier estimate.'
                 : change == null
                 ? 'Aura could not get a current reading, but your answer still helps.'
                 : change <= -10
-                ? 'Your anxiety score went down by ${change.abs().toStringAsFixed(0)} points.'
-                : 'Your anxiety score changed by ${change.abs().toStringAsFixed(0)} points.',
+                ? 'Your recent readings have moved lower.'
+                : 'Your recent readings have changed since the first check-in.',
           ),
           const SizedBox(height: 12),
           _questionCard(
@@ -380,10 +368,9 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
           const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
-            child: OutlinedButton.icon(
+            child: OutlinedButton(
               onPressed: () => Navigator.of(context).maybePop(),
-              icon: const Icon(Icons.arrow_back_rounded),
-              label: const Text('Go back'),
+              child: const Text('Done for now'),
             ),
           ),
         ],

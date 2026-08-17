@@ -108,6 +108,8 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isChoosingName = _permissionsGranted;
+
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(
@@ -128,7 +130,8 @@ class _LoginPageState extends State<LoginPage> {
                 _buildLogo(),
                 const SizedBox(height: 30),
                 Text(
-                  "Welcome",
+                  isChoosingName ? "What should Aura call you?" : "Welcome to Aura",
+                  textAlign: TextAlign.center,
                   style: GoogleFonts.poppins(
                     fontSize: 28,
                     fontWeight: FontWeight.w600,
@@ -137,7 +140,9 @@ class _LoginPageState extends State<LoginPage> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  "Let's set up your safe space.",
+                  isChoosingName
+                      ? "Choose the name you'd like to see in the app."
+                      : "A quiet place to check in, understand your patterns, and take things one moment at a time.",
                   textAlign: TextAlign.center,
                   style: GoogleFonts.poppins(
                     fontSize: 16,
@@ -147,8 +152,8 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 50),
                 if (!_permissionsGranted)
                   _buildGlassButton(
-                    text: "Next",
-                    icon: Icons.arrow_forward_rounded,
+                    text: "Make this space yours",
+                    icon: Icons.spa_rounded,
                     isLoading: _isLoading,
                     onTap: _requestPermissions,
                   ),
@@ -166,8 +171,8 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   const SizedBox(height: 20),
                   _buildGlassButton(
-                    text: "Enter",
-                    icon: Icons.arrow_forward_rounded,
+                    text: "Continue",
+                    icon: Icons.check_rounded,
                     isPrimary: true,
                     onTap: _login,
                   ),
@@ -240,17 +245,22 @@ class _LoginPageState extends State<LoginPage> {
         ),
         child: TextField(
           controller: _idController,
-          textAlign: TextAlign.center,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _login(),
           style: TextStyle(
-            fontSize: 18,
-            letterSpacing: 2,
+            fontSize: 16,
             color: Theme.of(context).colorScheme.onSurface,
           ),
           decoration: InputDecoration(
-            hintText: "What should Aura call you?",
+            labelText: "Display name",
+            hintText: "Enter a name",
             hintStyle: TextStyle(color: Colors.grey.shade400),
+            prefixIcon: const Icon(Icons.person_outline_rounded),
             border: InputBorder.none,
-            contentPadding: const EdgeInsets.all(20),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 18,
+            ),
           ),
         ),
       ),
