@@ -1,7 +1,9 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+
 import '../theme/app_theme.dart';
 import '../services/background/service_config.dart';
 import '../services/background_service_helper.dart';
@@ -247,7 +249,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.kBgTop,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(title: const Text('Your Data and Privacy')),
       body: ListView(
         padding: const EdgeInsets.all(20),
@@ -286,7 +288,8 @@ class _DataRightsPageState extends State<DataRightsPage> {
             icon: Icons.exit_to_app_rounded,
             iconColor: Colors.red,
             title: 'Withdraw from Study',
-            subtitle: 'Stop new data collection and delete data saved on this phone',
+            subtitle:
+                'Stop new data collection and delete data saved on this phone',
             onTap: _isWithdrawn ? null : _withdrawFromStudy,
           ),
 
@@ -327,9 +330,11 @@ class _DataRightsPageState extends State<DataRightsPage> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.grey.shade50,
+              color: Theme.of(context).colorScheme.surface,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.grey.shade200),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -346,7 +351,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
                   '${ServiceConfig.ercSecretaryEmail}',
                   style: TextStyle(
                     fontSize: 13,
-                    color: Colors.grey.shade700,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                     height: 1.5,
                   ),
                 ),
@@ -363,13 +368,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: _isWithdrawn
-              ? [Colors.red.shade50, Colors.red.shade100]
-              : [Colors.green.shade50, Colors.green.shade100],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: _isWithdrawn ? Colors.red.shade300 : Colors.green.shade300,
@@ -421,13 +420,20 @@ class _DataRightsPageState extends State<DataRightsPage> {
             width: 120,
             child: Text(
               label,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
             ),
           ),
         ],
@@ -447,7 +453,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
       margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: Colors.grey.shade200),
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: ListTile(
         leading: CircleAvatar(
@@ -460,7 +466,10 @@ class _DataRightsPageState extends State<DataRightsPage> {
         ),
         subtitle: Text(
           subtitle,
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
         trailing: Icon(
           Icons.chevron_right,
