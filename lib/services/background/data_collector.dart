@@ -16,7 +16,7 @@ class DataCollector {
     await prefs.reload();
     await _collectHourlyHeartbeat(userId, prefs);
     await _collectLocation(userId);
-    await _collectDailyCommunication(userId, prefs);
+    await _collectPreviousDayCommunication(userId, prefs);
     await _collectAppUsage(userId);
     await _collectHourlyBattery(userId, prefs);
     await BackgroundServiceHelper.retryOfflineQueue();
@@ -49,18 +49,38 @@ class DataCollector {
     }
   }
 
-  static Future<void> _collectDailyCommunication(String userId, SharedPreferences prefs) async {
-    final today = _dateKey(DateTime.now());
-    if (prefs.getString('c2_last_communication_day') == today) return;
+  /// Stores one complete communication aggregate for the previous local day.
+  /// This avoids 96 near-duplicate rolling records/day and avoids incomplete
+  /// "today so far" counts. Data before the recorded enrollment date is skipped.
+  static Future<void> _collectPreviousDayCommunication(
+    String userId,
+    SharedPreferences prefs,
+  ) async {
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final targetStart = todayStart.subtract(const Duration(days: 1));
+    final targetEnd = todayStart;
+    final targetKey = _dateKey(targetStart);
+
+    if (prefs.getString('c2_last_communication_day') == targetKey) return;
+
+    final enrolledRaw = prefs.getString('enrolled_date');
+    final enrolled = enrolledRaw == null ? null : DateTime.tryParse(enrolledRaw);
+    if (enrolled != null) {
+      final enrolledStart = DateTime(enrolled.year, enrolled.month, enrolled.day);
+      if (targetStart.isBefore(enrolledStart)) {
+        await prefs.setString('c2_last_communication_day', targetKey);
+        return;
+      }
+    }
+
     try {
-      final now = DateTime.now();
-      final start = DateTime(now.year, now.month, now.day);
       final entries = await CallLog.query(
-        dateFrom: start.millisecondsSinceEpoch,
-        dateTo: now.millisecondsSinceEpoch,
+        dateFrom: targetStart.millisecondsSinceEpoch,
+        dateTo: targetEnd.millisecondsSinceEpoch - 1,
       ).timeout(const Duration(seconds: 10));
       await _send(userId, 'Call_Stats_Daily', {
-        'date': today,
+        'date': targetKey,
         'incoming': entries.where((c) => c.callType == CallType.incoming).length,
         'outgoing': entries.where((c) => c.callType == CallType.outgoing).length,
         'missed': entries.where((c) => c.callType == CallType.missed).length,
@@ -69,14 +89,15 @@ class DataCollector {
     } catch (e) {
       debugPrint('Call Log Error or Timeout: $e');
     }
+
     try {
       final query = SmsQuery();
       final inbox = await query.querySms(kinds: [SmsQueryKind.inbox]).timeout(const Duration(seconds: 10));
       final sent = await query.querySms(kinds: [SmsQueryKind.sent]).timeout(const Duration(seconds: 10));
-      final received = inbox.where((m) => _isToday(m.date)).length;
-      final sentCount = sent.where((m) => _isToday(m.date)).length;
+      final received = inbox.where((m) => _isSameLocalDay(m.date, targetStart)).length;
+      final sentCount = sent.where((m) => _isSameLocalDay(m.date, targetStart)).length;
       await _send(userId, 'SMS_Activity_Daily', {
-        'date': today,
+        'date': targetKey,
         'received': received,
         'sent': sentCount,
         'total': received + sentCount,
@@ -84,7 +105,8 @@ class DataCollector {
     } catch (e) {
       debugPrint('SMS Error or Timeout: $e');
     }
-    await prefs.setString('c2_last_communication_day', today);
+
+    await prefs.setString('c2_last_communication_day', targetKey);
   }
 
   static Future<void> _collectAppUsage(String userId) async {
@@ -138,10 +160,9 @@ class DataCollector {
     }
   }
 
-  static bool _isToday(DateTime? date) {
-    if (date == null) return false;
-    final now = DateTime.now();
-    return date.year == now.year && date.month == now.month && date.day == now.day;
+  static bool _isSameLocalDay(DateTime? value, DateTime day) {
+    if (value == null) return false;
+    return value.year == day.year && value.month == day.month && value.day == day.day;
   }
 
   static String _dateKey(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
