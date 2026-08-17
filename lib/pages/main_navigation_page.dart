@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../profile_page.dart';
 import 'home_page.dart';
 import 'dashboard_page.dart';
-import 'digital_phenotyping_page.dart';
+import 'component2_bootstrap_page.dart';
 
 class MainNavigationPage extends StatefulWidget {
   final String? userId;
@@ -25,7 +25,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     _pages = [
       HomePage(userId: widget.userId),
       DashboardPage(userId: widget.userId),
-      DigitalPhenotypingPage(userId: widget.userId),
+      Component2BootstrapPage(userId: widget.userId),
       ProfilePage(isTab: true),
     ];
   }
@@ -66,9 +66,14 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     );
   }
 
-  Widget _buildNavItem(int index, IconData activeIcon, IconData inactiveIcon, String label) {
+  Widget _buildNavItem(
+    int index,
+    IconData activeIcon,
+    IconData inactiveIcon,
+    String label,
+  ) {
     final bool isActive = _currentIndex == index;
-    
+
     // Define gradient colors for each tab
     final List<Color> gradients = [
       const Color(0xFF667eea), // Home
