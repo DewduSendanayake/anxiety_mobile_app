@@ -5,7 +5,22 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 
 import 'background_service_helper.dart';
+import 'services/notification_helper.dart';
 import 'theme/app_theme.dart';
+
+String weeklyCheckInWeekKey([DateTime? value]) {
+  final date = value ?? DateTime.now();
+  final localDate = DateTime(date.year, date.month, date.day);
+  final monday = localDate.subtract(Duration(days: localDate.weekday - 1));
+  return DateFormat('yyyy-MM-dd').format(monday);
+}
+
+bool _wasSubmittedThisWeek(String? submittedDate, DateTime now) {
+  if (submittedDate == null || submittedDate.isEmpty) return false;
+  final parsed = DateTime.tryParse(submittedDate);
+  return parsed != null &&
+      weeklyCheckInWeekKey(parsed) == weeklyCheckInWeekKey(now);
+}
 
 // ─────────────────────────────────────────────────────────
 // EMA Rating Bottom Sheet (called 3x daily)
@@ -31,7 +46,8 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
     'How socially connected do you feel right now?',
   ];
 
-  static const _emojis = ['😌', '😐', '😟', '😰', '😱'];
+  static const _distressEmojis = ['😌', '🙂', '😐', '😟', '😭'];
+  static const _connectionEmojis = ['😢', '😟', '😐', '🙂', '😊'];
 
   static const _contexts = [
     'Studying / Working',
@@ -53,15 +69,7 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
     final uid = prefs.getString('user_id') ?? 'Unknown';
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-    final currentHour = DateTime.now().hour;
-    final String submissionPeriod;
-    if (currentHour >= 5 && currentHour < 12) {
-      submissionPeriod = 'morning';
-    } else if (currentHour >= 12 && currentHour < 17) {
-      submissionPeriod = 'afternoon';
-    } else {
-      submissionPeriod = 'evening';
-    }
+    final submissionPeriod = widget.timePeriod;
 
     final data = {
       'stress': _ratings[0]! - 1,
@@ -80,6 +88,7 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
     );
 
     await prefs.setString('ema_submitted_${widget.timePeriod}', today);
+    await NotificationHelper.cancelDailyCheckIn(widget.timePeriod);
     if (mounted) Navigator.pop(context, true);
   }
 
@@ -175,6 +184,20 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
   }
 
   Widget _buildQuestion(int index) {
+    final emojis = index == 3 ? _connectionEmojis : _distressEmojis;
+    final lowLabel = [
+      '1 = Not at all stressed',
+      '1 = Not at all anxious',
+      '1 = Not at all exhausted',
+      '1 = Not connected',
+    ][index];
+    final highLabel = [
+      '5 = Very stressed',
+      '5 = Very anxious',
+      '5 = Very exhausted',
+      '5 = Very connected',
+    ][index];
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 24),
       child: Column(
@@ -201,7 +224,7 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
                       scale: isSelected ? 1.2 : 1.0,
                       duration: const Duration(milliseconds: 150),
                       child: Text(
-                        _emojis[i],
+                        emojis[i],
                         style: const TextStyle(fontSize: 26),
                       ),
                     ),
@@ -220,6 +243,32 @@ class _EmaRatingSheetState extends State<EmaRatingSheet> {
                 ),
               );
             }),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  lowLabel,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  highLabel,
+                  textAlign: TextAlign.end,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -307,7 +356,8 @@ class _Gad7ScreenState extends State<Gad7Screen> {
     );
 
     await prefs.setString('last_gad7_submitted', today);
-    await prefs.setString('last_gad7_week', _weekKey());
+    await prefs.setString('last_gad7_week', weeklyCheckInWeekKey());
+    await NotificationHelper.cancelWeeklyCheckIn('anxiety');
 
     if (mounted) {
       showDialog(
@@ -354,16 +404,6 @@ class _Gad7ScreenState extends State<Gad7Screen> {
         ),
       );
     }
-  }
-
-  String _weekKey() {
-    final now = DateTime.now();
-    final weekNum =
-        ((now.difference(DateTime(now.year, 1, 1)).inDays +
-                    DateTime(now.year, 1, 1).weekday) /
-                7)
-            .ceil();
-    return '${now.year}-W${weekNum.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -603,12 +643,10 @@ class _Gad7ScreenState extends State<Gad7Screen> {
 Future<bool> isGad7DueThisWeek() async {
   final prefs = await SharedPreferences.getInstance();
   final now = DateTime.now();
-  final weekNum =
-      ((now.difference(DateTime(now.year, 1, 1)).inDays +
-                  DateTime(now.year, 1, 1).weekday) /
-              7)
-          .ceil();
-  final thisWeek = '${now.year}-W${weekNum.toString().padLeft(2, '0')}';
+  if (_wasSubmittedThisWeek(prefs.getString('last_gad7_submitted'), now)) {
+    return false;
+  }
+  final thisWeek = weeklyCheckInWeekKey(now);
   final lastWeek = prefs.getString('last_gad7_week') ?? '';
   return lastWeek != thisWeek;
 }
@@ -692,7 +730,8 @@ class _Pss10ScreenState extends State<Pss10Screen> {
       jsonEncode(data),
     );
     await prefs.setString('last_pss10_submitted', today);
-    await prefs.setString('last_pss10_week', _weekKey());
+    await prefs.setString('last_pss10_week', weeklyCheckInWeekKey());
+    await NotificationHelper.cancelWeeklyCheckIn('stress');
 
     if (mounted) {
       showDialog(
@@ -730,13 +769,6 @@ class _Pss10ScreenState extends State<Pss10Screen> {
         ),
       );
     }
-  }
-
-  String _weekKey() {
-    final now = DateTime.now();
-    final dayOfYear = int.parse(DateFormat("D").format(now));
-    final week = ((dayOfYear - now.weekday + 10) / 7).floor();
-    return "${now.year}-$week";
   }
 
   @override
@@ -882,9 +914,10 @@ class _Pss10ScreenState extends State<Pss10Screen> {
 Future<bool> isPss10DueThisWeek() async {
   final prefs = await SharedPreferences.getInstance();
   final now = DateTime.now();
-  final dayOfYear = int.parse(DateFormat("D").format(now));
-  final week = ((dayOfYear - now.weekday + 10) / 7).floor();
-  final thisWeek = "${now.year}-$week";
+  if (_wasSubmittedThisWeek(prefs.getString('last_pss10_submitted'), now)) {
+    return false;
+  }
+  final thisWeek = weeklyCheckInWeekKey(now);
 
   final lastWeek = prefs.getString('last_pss10_week') ?? '';
   return lastWeek != thisWeek;

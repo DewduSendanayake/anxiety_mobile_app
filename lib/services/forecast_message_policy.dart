@@ -62,7 +62,7 @@ ForecastMessageSummary describeForecast({
 
   if (currentHigh) {
     return ForecastMessageSummary(
-      title: 'Your anxiety level is high right now',
+      title: 'Take a gentle moment to check in',
       tone: ForecastMessageTone.high,
       predictedPeak: predictedPeak,
       forecastIncrease: increase,
@@ -71,7 +71,7 @@ ForecastMessageSummary describeForecast({
 
   if (escalationPredicted) {
     return ForecastMessageSummary(
-      title: 'Your anxiety level may rise in about ${leadMinutes ?? 1} minutes',
+      title: 'Aura noticed a possible change in your readings',
       tone: ForecastMessageTone.warning,
       predictedPeak: predictedPeak,
       forecastIncrease: increase,
@@ -81,7 +81,7 @@ ForecastMessageSummary describeForecast({
 
   if (current < 45 && predictedPeak < 45) {
     return ForecastMessageSummary(
-      title: 'Your anxiety level is expected to stay in the lower range',
+      title: 'Your recent readings look steady',
       tone: ForecastMessageTone.calm,
       predictedPeak: predictedPeak,
       forecastIncrease: increase,
@@ -90,7 +90,7 @@ ForecastMessageSummary describeForecast({
 
   if (increase <= -10 && current > 20) {
     return ForecastMessageSummary(
-      title: 'Your anxiety level may ease',
+      title: 'Your recent readings may be settling',
       tone: ForecastMessageTone.easing,
       predictedPeak: predictedPeak,
       forecastIncrease: increase,
@@ -99,7 +99,7 @@ ForecastMessageSummary describeForecast({
 
   if (currentElevated) {
     return ForecastMessageSummary(
-      title: 'Your anxiety level is elevated right now',
+      title: 'A gentle pause may feel helpful',
       tone: ForecastMessageTone.elevated,
       predictedPeak: predictedPeak,
       forecastIncrease: increase,
@@ -107,7 +107,7 @@ ForecastMessageSummary describeForecast({
   }
 
   return ForecastMessageSummary(
-    title: 'No major change is expected',
+    title: 'Your recent readings look steady',
     tone: ForecastMessageTone.calm,
     predictedPeak: predictedPeak,
     forecastIncrease: increase,

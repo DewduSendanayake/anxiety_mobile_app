@@ -12,7 +12,9 @@ import 'pages/data_rights_page.dart';
 import 'pages/baseline_calibration_page.dart';
 import 'pages/appearance_settings_page.dart';
 import 'services/background/service_config.dart';
+import 'services/background/daily_reminder.dart';
 import 'services/participant_identity_service.dart';
+import 'services/rating_settings.dart';
 import 'theme/theme_controller.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -106,12 +108,6 @@ class _ProfilePageState extends State<ProfilePage> {
     super.dispose();
   }
 
-  @override
-  void dispose() {
-    _ageController.dispose();
-    super.dispose();
-  }
-
   Future<void> _pickProfileImage() async {
     try {
       final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
@@ -186,18 +182,22 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() {
       if (period == 'morning') {
         _morningTime = time;
-        prefs.setInt('ema_morning_hour', time.hour);
-        prefs.setInt('ema_morning_minute', time.minute);
       } else if (period == 'afternoon') {
         _afternoonTime = time;
-        prefs.setInt('ema_afternoon_hour', time.hour);
-        prefs.setInt('ema_afternoon_minute', time.minute);
       } else if (period == 'evening') {
         _eveningTime = time;
-        prefs.setInt('ema_evening_hour', time.hour);
-        prefs.setInt('ema_evening_minute', time.minute);
       }
     });
+    await prefs.setInt('ema_${period}_hour', time.hour);
+    await prefs.setInt('ema_${period}_minute', time.minute);
+    await DailyReminder.clearThrottleTimestamps();
+  }
+
+  Future<void> _openCheckInSettings() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const RatingSettingsPage()));
+    await _loadProfile();
   }
 
   final _formKey = GlobalKey<FormState>();
@@ -553,6 +553,16 @@ class _ProfilePageState extends State<ProfilePage> {
                       (t) => _saveTime('evening', t),
                       Icons.nightlight_round,
                     ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _openCheckInSettings,
+                        icon: const Icon(Icons.tune_rounded),
+                        label: const Text(
+                          'Manage or turn off check-in reminders',
+                        ),
+                      ),
+                    ),
                   ]),
                   const SizedBox(height: 14),
                   _buildAppearanceCard(),
@@ -685,12 +695,12 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget _buildFaqSection() {
     const faqs = [
       (
-        'What does my anxiety score mean?',
+        'What do my readings mean?',
         'It is an estimate based on your recent body signals and personal baseline. It is not a medical diagnosis.',
       ),
       (
-        'How certain is the anxiety forecast?',
-        'The forecast shows a possible short-term change, not a guarantee. Movement, poor sensor contact, illness, caffeine, and other factors can affect it.',
+        'How certain is the 10-minute outlook?',
+        'The outlook is a model estimate, not a guarantee. Movement, poor sensor contact, illness, caffeine, and other factors can affect it.',
       ),
       (
         'Why are my body readings unavailable?',
@@ -757,10 +767,9 @@ class _ProfilePageState extends State<ProfilePage> {
               if (widget.isTab) ...[
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
+                  child: TextButton(
                     onPressed: () => setState(() => _isEditing = false),
-                    icon: const Icon(Icons.arrow_back_ios_rounded, size: 16),
-                    label: Text(
+                    child: Text(
                       'Back to Profile',
                       style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
                     ),
