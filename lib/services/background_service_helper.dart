@@ -1,17 +1,19 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'background/service_config.dart';
+import 'supabase_research_service.dart';
 
 class BackgroundServiceHelper {
   static bool _isSyncing = false;
+  static const int _batchSize = 50;
   static const int _batchIntervalSeconds = 10;
   static Timer? _timer;
+  static final Random _random = Random.secure();
 
   /// true  → main UI isolate  → writes to 'offline_queue_main'
   /// false → background isolate → writes to 'offline_queue_bg'
@@ -22,9 +24,9 @@ class BackgroundServiceHelper {
 
   /// Storage-neutral research event entry point.
   ///
-  /// Today the queue is flushed to the existing Google Apps Script endpoint.
-  /// Later the uploader can be switched to Supabase/another API without
-  /// changing sensor collectors or event producers.
+  /// Events are first persisted locally. Supabase upload is intentionally
+  /// performed only by the main isolate; Android's background isolate keeps
+  /// collecting safely even when no authenticated Supabase client is active.
   static Future<void> enqueueResearchEvent(
     String userId,
     String type,
@@ -33,14 +35,19 @@ class BackgroundServiceHelper {
     DateTime? eventTime,
   }) async {
     final dataMap = <String, dynamic>{
+      'eventId': _newEventId(),
       'userId': userId,
       'dataType': type,
       'value': value is String ? value : jsonEncode(value),
-      'timestamp': (eventTime ?? DateTime.now()).toIso8601String(),
-      'token': ServiceConfig.authToken,
+      'timestamp': (eventTime ?? DateTime.now()).toUtc().toIso8601String(),
+      'source': kIsWeb ? 'web' : 'android',
     };
 
     await _saveToOfflineQueue([dataMap]);
+
+    if (!isMainIsolate) {
+      return;
+    }
 
     if (immediate) {
       _timer?.cancel();
@@ -54,8 +61,8 @@ class BackgroundServiceHelper {
     }
   }
 
-  /// Backwards-compatible alias while the rest of the app migrates away from
-  /// storage-specific naming.
+  /// Backwards-compatible alias while older app features are migrated away
+  /// from the Google-Sheets-specific method name.
   static Future<void> sendToSheet(
     String userId,
     String type,
@@ -75,7 +82,7 @@ class BackgroundServiceHelper {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
 
-    List<String> queue = prefs.getStringList(_queueKey) ?? [];
+    final queue = prefs.getStringList(_queueKey) ?? <String>[];
 
     for (final item in items) {
       if (queue.length >= 10000) {
@@ -88,15 +95,19 @@ class BackgroundServiceHelper {
     await prefs.setStringList(_queueKey, queue);
   }
 
-  /// Uploads every queued item from this isolate's queue.
+  /// Flushes main/background/legacy queues to Supabase.
   ///
-  /// The current transport is the legacy Google Apps Script endpoint. Keeping
-  /// transport here means collectors remain unchanged when the destination is
-  /// later switched to Supabase.
+  /// This method is a no-op in the background isolate. The next foreground app
+  /// start or connectivity restoration uploads both queues using the persisted
+  /// authenticated Supabase session.
   static Future<void> retryOfflineQueue() async {
     _timer?.cancel();
     _timer = null;
 
+    if (!isMainIsolate) {
+      debugPrint('Supabase sync deferred: background isolate is collection-only.');
+      return;
+    }
     if (_isSyncing) return;
     _isSyncing = true;
 
@@ -104,88 +115,113 @@ class BackgroundServiceHelper {
       final prefs = await SharedPreferences.getInstance();
       await prefs.reload();
 
-      List<String> queue = prefs.getStringList(_queueKey) ?? [];
-
-      final oldQueue = prefs.getStringList('offline_queue') ?? <String>[];
-      if (oldQueue.isNotEmpty) {
-        queue.insertAll(0, oldQueue);
+      final legacy = prefs.getStringList('offline_queue') ?? <String>[];
+      if (legacy.isNotEmpty) {
+        final mainQueue =
+            prefs.getStringList('offline_queue_main') ?? <String>[];
+        mainQueue.insertAll(0, legacy);
+        await prefs.setStringList('offline_queue_main', mainQueue);
         await prefs.remove('offline_queue');
-        debugPrint('📦 Migrated ${oldQueue.length} items from legacy queue.');
+        debugPrint('📦 Migrated ${legacy.length} legacy queued events.');
       }
 
-      if (queue.isEmpty) return;
-
-      debugPrint('🔄 Syncing queue [$_queueKey]: ${queue.length} items');
-
-      const chunkSize = 50;
-      int failedFrom = -1;
-
-      for (int i = 0; i < queue.length; i += chunkSize) {
-        final end = i + chunkSize < queue.length ? i + chunkSize : queue.length;
-        final chunkStrings = queue.sublist(i, end);
-        final batch = chunkStrings
-            .map((s) => jsonDecode(s) as Map<String, dynamic>)
-            .toList();
-
-        try {
-          final response = await http
-              .post(
-                Uri.parse(ServiceConfig.googleScriptUrl),
-                headers: const {'Content-Type': 'application/json'},
-                body: jsonEncode(batch),
-              )
-              .timeout(const Duration(seconds: 30));
-
-          final ok = response.statusCode == 200 ||
-              response.statusCode == 302 ||
-              _isSuccessBody(response.body);
-
-          if (ok) {
-            debugPrint('✅ Chunk [$i–${end - 1}] sent (${batch.length} items)');
-          } else {
-            debugPrint(
-              '⚠️ Server error on chunk [$i–${end - 1}]: ${response.statusCode}',
-            );
-            failedFrom = i;
-            break;
-          }
-        } catch (e) {
-          debugPrint('❌ Chunk [$i–${end - 1}] failed: $e');
-          failedFrom = i;
-          break;
-        }
-      }
-
-      await prefs.reload();
-      final freshQueue = prefs.getStringList(_queueKey) ?? <String>[];
-      final remaining = <String>[];
-
-      if (failedFrom >= 0) {
-        remaining.addAll(queue.sublist(failedFrom));
-      }
-      if (freshQueue.length > queue.length) {
-        remaining.addAll(freshQueue.sublist(queue.length));
-      }
-
-      await prefs.setStringList(_queueKey, remaining);
-
-      if (remaining.isEmpty) {
-        debugPrint('✅ Queue [$_queueKey] fully cleared.');
-      } else {
-        debugPrint('⚠️ ${remaining.length} items still pending in [$_queueKey].');
-      }
+      await _syncQueueKey(prefs, 'offline_queue_main');
+      await _syncQueueKey(prefs, 'offline_queue_bg');
     } finally {
       _isSyncing = false;
     }
   }
 
-  static bool _isSuccessBody(String body) {
-    try {
-      final decoded = jsonDecode(body);
-      return decoded['status'] == 'success' || decoded['status'] == 'partial';
-    } catch (_) {
-      return body.contains('success');
+  static Future<void> _syncQueueKey(
+    SharedPreferences prefs,
+    String queueKey,
+  ) async {
+    await prefs.reload();
+    var queue = prefs.getStringList(queueKey) ?? <String>[];
+    if (queue.isEmpty) return;
+
+    // Normalize legacy rows once and persist generated event IDs before any
+    // network call. Retries then remain idempotent.
+    queue = queue.map(_normalizeQueuedString).toList();
+    await prefs.setStringList(queueKey, queue);
+
+    debugPrint('🔄 Supabase sync [$queueKey]: ${queue.length} events');
+    var completed = 0;
+
+    while (completed < queue.length) {
+      final end = min(completed + _batchSize, queue.length);
+      final chunkStrings = queue.sublist(completed, end);
+      final chunk = chunkStrings
+          .map((s) => Map<String, dynamic>.from(jsonDecode(s) as Map))
+          .toList();
+
+      try {
+        final byParticipant = <String, List<Map<String, dynamic>>>{};
+        for (final event in chunk) {
+          final participant = (event['userId'] ?? '').toString();
+          if (participant.isEmpty || participant == 'No_User_ID') {
+            throw StateError('Queued event has no valid participant ID.');
+          }
+          byParticipant.putIfAbsent(participant, () => []).add(event);
+        }
+
+        for (final entry in byParticipant.entries) {
+          await SupabaseResearchService.insertSensorEvents(
+            entry.key,
+            entry.value,
+          );
+        }
+
+        completed = end;
+        debugPrint('✅ Supabase chunk uploaded: ${chunk.length} events');
+      } catch (e, st) {
+        debugPrint('❌ Supabase queue upload failed: $e');
+        debugPrint('$st');
+        break;
+      }
     }
+
+    await prefs.reload();
+    final latest = prefs.getStringList(queueKey) ?? <String>[];
+
+    // Preserve items appended while the upload was in flight. The prefix we
+    // processed corresponds to the normalized snapshot stored above.
+    final remaining = <String>[];
+    if (completed < queue.length) {
+      remaining.addAll(queue.sublist(completed));
+    }
+    if (latest.length > queue.length) {
+      remaining.addAll(latest.sublist(queue.length));
+    }
+
+    await prefs.setStringList(queueKey, remaining);
+    if (remaining.isEmpty) {
+      debugPrint('✅ Queue [$queueKey] fully cleared.');
+    } else {
+      debugPrint('⚠️ ${remaining.length} events remain in [$queueKey].');
+    }
+  }
+
+  static String _normalizeQueuedString(String encoded) {
+    final event = Map<String, dynamic>.from(jsonDecode(encoded) as Map);
+    event['eventId'] ??= _newEventId();
+    event['source'] ??= kIsWeb ? 'web' : 'android';
+    event.remove('token');
+
+    final timestamp = DateTime.tryParse((event['timestamp'] ?? '').toString());
+    if (timestamp != null) {
+      event['timestamp'] = timestamp.toUtc().toIso8601String();
+    }
+
+    return jsonEncode(event);
+  }
+
+  static String _newEventId() {
+    final micros = DateTime.now().toUtc().microsecondsSinceEpoch;
+    final randomHex = List<int>.generate(8, (_) => _random.nextInt(256))
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join();
+    return 'evt_${micros}_$randomHex';
   }
 
   static Future<String> getCachedId() async {
