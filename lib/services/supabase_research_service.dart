@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -108,7 +110,7 @@ class SupabaseResearchService {
       dynamic valueJson = rawValue;
       if (rawValue is String) {
         try {
-          valueJson = _decodeJsonObject(rawValue);
+          valueJson = jsonDecode(rawValue);
         } catch (_) {
           valueJson = {'value': rawValue};
         }
@@ -135,21 +137,5 @@ class SupabaseResearchService {
       onConflict: 'event_id',
       ignoreDuplicates: true,
     );
-  }
-
-  static dynamic _decodeJsonObject(String value) {
-    // jsonDecode kept behind a helper to keep event normalization in one place.
-    // ignore: avoid_dynamic_calls
-    return const _JsonDecoder().decode(value);
-  }
-}
-
-/// Tiny wrapper lets this file avoid exporting dart:convert implementation
-/// details throughout the service API.
-class _JsonDecoder {
-  const _JsonDecoder();
-
-  dynamic decode(String source) {
-    return jsonDecode(source);
   }
 }
