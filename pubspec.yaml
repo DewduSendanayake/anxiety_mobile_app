@@ -15,8 +15,9 @@ dependencies:
 
   google_fonts: ^6.1.0
 
-  # Networking
+  # Networking / backend
   http: ^1.2.0
+  supabase_flutter: ^2.16.0
 
   # Data Storage
   shared_preferences: ^2.2.0
