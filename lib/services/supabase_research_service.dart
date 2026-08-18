@@ -137,12 +137,25 @@ class SupabaseResearchService {
       };
     }).toList();
 
-    // event_id is generated once when an event enters the local queue. Upsert
-    // makes network retries idempotent instead of creating duplicate rows.
-    await client!.from('sensor_events').upsert(
-      rows,
-      onConflict: 'event_id',
-      ignoreDuplicates: true,
-    );
+    // Raw sensor rows intentionally have INSERT-only RLS access for the mobile
+    // participant. Using upsert/onConflict can require additional row access
+    // during conflict handling and is rejected by that policy. Use plain INSERT
+    // and keep retries idempotent with the unique event_id constraint instead.
+    try {
+      await client!.from('sensor_events').insert(rows);
+    } on PostgrestException catch (e) {
+      if (e.code != '23505') rethrow;
+
+      // A duplicate makes a multi-row INSERT fail atomically. Retry each row so
+      // already-uploaded event IDs are ignored while genuinely new events in
+      // the same local batch can still be stored.
+      for (final row in rows) {
+        try {
+          await client!.from('sensor_events').insert(row);
+        } on PostgrestException catch (rowError) {
+          if (rowError.code != '23505') rethrow;
+        }
+      }
+    }
   }
 }
