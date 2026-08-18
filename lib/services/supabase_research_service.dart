@@ -17,6 +17,7 @@ class SupabaseResearchService {
     'SUPABASE_URL',
     defaultValue: String.fromEnvironment('NEXT_PUBLIC_SUPABASE_URL'),
   );
+
   static const String _publishableKey = String.fromEnvironment(
     'SUPABASE_PUBLISHABLE_KEY',
     defaultValue: String.fromEnvironment(
@@ -33,6 +34,7 @@ class SupabaseResearchService {
 
   static Future<bool> initialize() async {
     if (_initialized) return true;
+
     if (!isConfigured) {
       debugPrint(
         'Supabase: not configured. Provide SUPABASE_URL / '
@@ -47,6 +49,7 @@ class SupabaseResearchService {
         url: _url,
         publishableKey: _publishableKey,
       );
+
       _initialized = true;
       debugPrint('Supabase: initialized.');
       return true;
@@ -65,10 +68,14 @@ class SupabaseResearchService {
   /// Ensures this installation has an authenticated Supabase identity and a
   /// row mapping that identity to the pseudonymous research participant code.
   static Future<String?> ensureParticipant(String participantCode) async {
-    if (participantCode.isEmpty || participantCode == 'No_User_ID') return null;
+    if (participantCode.isEmpty || participantCode == 'No_User_ID') {
+      return null;
+    }
+
     if (!await initialize()) return null;
 
     final supabase = client!;
+
     try {
       if (supabase.auth.currentSession == null) {
         await supabase.auth.signInAnonymously(
@@ -77,6 +84,7 @@ class SupabaseResearchService {
       }
 
       final authUser = supabase.auth.currentUser;
+
       if (authUser == null) {
         debugPrint('Supabase: anonymous authentication returned no user.');
         return null;
@@ -99,8 +107,10 @@ class SupabaseResearchService {
     }
   }
 
-  /// Inserts a batch of already-normalized research events. RLS verifies that
-  /// every row belongs to the currently authenticated Supabase user.
+  /// Inserts a batch of already-normalized research events.
+  ///
+  /// RLS verifies that every row belongs to the currently authenticated
+  /// Supabase user.
   static Future<void> insertSensorEvents(
     String participantCode,
     List<Map<String, dynamic>> queuedEvents,
@@ -108,13 +118,16 @@ class SupabaseResearchService {
     if (queuedEvents.isEmpty) return;
 
     final authUserId = await ensureParticipant(participantCode);
+
     if (authUserId == null) {
       throw StateError('Supabase participant is not available.');
     }
 
     final rows = queuedEvents.map((event) {
       final rawValue = event['value'];
+
       dynamic valueJson = rawValue;
+
       if (rawValue is String) {
         try {
           valueJson = jsonDecode(rawValue);
@@ -122,6 +135,7 @@ class SupabaseResearchService {
           valueJson = {'value': rawValue};
         }
       }
+
       if (valueJson is! Map && valueJson is! List) {
         valueJson = {'value': valueJson};
       }
@@ -137,12 +151,31 @@ class SupabaseResearchService {
       };
     }).toList();
 
-    // event_id is generated once when an event enters the local queue. Upsert
-    // makes network retries idempotent instead of creating duplicate rows.
-    await client!.from('sensor_events').upsert(
-      rows,
-      onConflict: 'event_id',
-      ignoreDuplicates: true,
-    );
+    // Raw sensor rows intentionally have INSERT-only RLS access for the mobile
+    // participant. Using upsert/onConflict can require additional row access
+    // during conflict handling and is rejected by that policy.
+    //
+    // Use plain INSERT and keep retries idempotent with the unique event_id
+    // constraint instead.
+    try {
+      await client!.from('sensor_events').insert(rows);
+    } on PostgrestException catch (e) {
+      if (e.code != '23505') {
+        rethrow;
+      }
+
+      // A duplicate makes a multi-row INSERT fail atomically.
+      // Retry each row separately so previously uploaded event IDs are ignored
+      // while genuinely new events in the same batch are still stored.
+      for (final row in rows) {
+        try {
+          await client!.from('sensor_events').insert(row);
+        } on PostgrestException catch (rowError) {
+          if (rowError.code != '23505') {
+            rethrow;
+          }
+        }
+      }
+    }
   }
 }
