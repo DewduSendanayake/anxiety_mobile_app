@@ -5,17 +5,23 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Main-isolate Supabase integration for research data.
 ///
-/// Credentials are supplied at build/run time:
-/// --dart-define=SUPABASE_URL=...
-/// --dart-define=SUPABASE_PUBLISHABLE_KEY=...
+/// Credentials are supplied at build/run time. The preferred Flutter names are
+/// SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY; NEXT_PUBLIC_* aliases are also
+/// accepted so the same values can be reused from web-oriented env files.
 ///
 /// Never place a service-role/secret key in the mobile app.
 class SupabaseResearchService {
   SupabaseResearchService._();
 
-  static const String _url = String.fromEnvironment('SUPABASE_URL');
+  static const String _url = String.fromEnvironment(
+    'SUPABASE_URL',
+    defaultValue: String.fromEnvironment('NEXT_PUBLIC_SUPABASE_URL'),
+  );
   static const String _publishableKey = String.fromEnvironment(
     'SUPABASE_PUBLISHABLE_KEY',
+    defaultValue: String.fromEnvironment(
+      'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+    ),
   );
 
   static bool _initialized = false;
@@ -29,8 +35,9 @@ class SupabaseResearchService {
     if (_initialized) return true;
     if (!isConfigured) {
       debugPrint(
-        'Supabase: not configured. Provide SUPABASE_URL and '
-        'SUPABASE_PUBLISHABLE_KEY with --dart-define.',
+        'Supabase: not configured. Provide SUPABASE_URL / '
+        'SUPABASE_PUBLISHABLE_KEY (or NEXT_PUBLIC_* aliases) with '
+        '--dart-define.',
       );
       return false;
     }
