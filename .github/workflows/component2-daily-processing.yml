@@ -2,8 +2,13 @@ name: Component 2 Daily Processing
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feature/phenotyping
   schedule:
-    # 00:35 UTC = 06:05 Asia/Colombo. Processes completed local days only.
+    # 00:35 UTC = 06:05 Asia/Colombo. Note: GitHub scheduled workflows run
+    # from the repository default branch, so this schedule becomes active only
+    # if/when this workflow is intentionally added to the default branch.
     - cron: '35 0 * * *'
 
 jobs:
