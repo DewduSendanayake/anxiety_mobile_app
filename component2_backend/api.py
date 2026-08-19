@@ -5,9 +5,9 @@ import os
 from fastapi import Depends, FastAPI, Header, HTTPException
 
 try:
-    from .processor import Component2Processor
+    from .reporting_processor import Component2Processor
 except ImportError:
-    from processor import Component2Processor
+    from reporting_processor import Component2Processor
 
 
 app = FastAPI(title="Aura Component 2 API", version="1.0.0")
