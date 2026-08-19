@@ -3,7 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 
-from processor import Component2Processor
+try:
+    from .reporting_processor import Component2Processor
+except ImportError:
+    from reporting_processor import Component2Processor
 
 
 async def main() -> None:
