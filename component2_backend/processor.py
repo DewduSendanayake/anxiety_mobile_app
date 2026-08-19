@@ -92,6 +92,41 @@ def _weighted_average(items: list[tuple[float, int]]) -> float | None:
     return sum(value * max(0, weight) for value, weight in items) / total_weight
 
 
+def _aggregate_app_usage_windows(
+    windows: list[tuple[datetime, float, dict[str, float]]],
+) -> dict[str, float]:
+    """Sum category usage from independent app-usage windows.
+
+    The Android collector queries UsageStats over the previous 15 minutes, so
+    every App_Usage_Category_15m event is already a window total. It must not be
+    differenced against the previous event. If Android reports overlapping app
+    totals whose combined duration exceeds the window length, scale that single
+    window proportionally so it cannot contribute more time than was observed.
+    """
+    category_seconds: dict[str, float] = defaultdict(float)
+
+    for _, window_seconds, categories in sorted(windows, key=lambda item: item[0]):
+        clean = {
+            category: max(0.0, seconds)
+            for category, seconds in categories.items()
+            if seconds > 0.0
+        }
+        total_seconds = sum(clean.values())
+        if total_seconds <= 0.0:
+            continue
+
+        bounded_window_seconds = max(0.0, window_seconds)
+        scale = (
+            min(1.0, bounded_window_seconds / total_seconds)
+            if bounded_window_seconds > 0.0
+            else 0.0
+        )
+        for category, seconds in clean.items():
+            category_seconds[category] += seconds * scale
+
+    return dict(category_seconds)
+
+
 class SupabaseRest:
     def __init__(self, url: str, service_role_key: str) -> None:
         self.url = url.rstrip("/")
@@ -252,7 +287,7 @@ class Component2Processor:
         screen_events: list[tuple[datetime, str]] = []
         locations: list[tuple[datetime, float, float]] = []
         movements: list[dict[str, Any]] = []
-        app_snapshots: list[tuple[datetime, dict[str, float]]] = []
+        app_windows: list[tuple[datetime, float, dict[str, float]]] = []
         heartbeats = 0
         calls: dict[str, int] = {}
         sms: dict[str, int] = {}
@@ -273,9 +308,14 @@ class Component2Processor:
             elif event_type == "App_Usage_Category_15m":
                 raw_categories = value.get("categories_sec")
                 if isinstance(raw_categories, dict):
-                    app_snapshots.append(
+                    window_minutes = min(
+                        60.0,
+                        max(1.0, _as_float(value.get("window_minutes"), 15.0)),
+                    )
+                    app_windows.append(
                         (
                             event_dt,
+                            window_minutes * 60.0,
                             {str(k): max(0.0, _as_float(v)) for k, v in raw_categories.items()},
                         )
                     )
@@ -351,23 +391,10 @@ class Component2Processor:
             [(_as_float(v.get("high_motion_fraction")), _as_int(v.get("sample_count"))) for v in movements]
         )
 
-        app_snapshots.sort(key=lambda item: item[0])
-        category_seconds: dict[str, float] = defaultdict(float)
-        previous_time: datetime | None = None
-        previous_categories: dict[str, float] | None = None
-        for snapshot_time, categories in app_snapshots:
-            if previous_time is not None and previous_categories is not None:
-                elapsed = max(0.0, (snapshot_time - previous_time).total_seconds())
-                deltas = {
-                    category: max(0.0, seconds - previous_categories.get(category, 0.0))
-                    for category, seconds in categories.items()
-                }
-                total_delta = sum(deltas.values())
-                scale = min(1.0, elapsed / total_delta) if total_delta > 0 and elapsed > 0 else 0.0
-                for category, delta in deltas.items():
-                    category_seconds[category] += delta * scale
-            previous_time = snapshot_time
-            previous_categories = categories
+        # Every App_Usage_Category_15m row is already the total for its own
+        # previous-15-minute interval. Sum those independent intervals directly;
+        # do not subtract consecutive snapshots as if they were cumulative.
+        category_seconds = _aggregate_app_usage_windows(app_windows)
 
         location_coverage = min(1.0, len(locations) / 96.0)
         movement_coverage = min(1.0, len(movements) / 288.0)
