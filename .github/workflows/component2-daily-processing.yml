@@ -3,6 +3,10 @@ name: Component 2 Daily Processing
 on:
   workflow_dispatch:
 
+  schedule:
+    # 00:35 UTC = 06:05 Asia/Colombo (Sri Lanka)
+    - cron: '35 0 * * *'
+
 jobs:
   process:
     runs-on: ubuntu-latest
