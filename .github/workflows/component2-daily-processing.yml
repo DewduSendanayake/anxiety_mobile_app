@@ -1,0 +1,37 @@
+name: Component 2 Daily Processing
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/phenotyping
+  schedule:
+    # 00:35 UTC = 06:05 Asia/Colombo. Note: GitHub scheduled workflows run
+    # from the repository default branch, so this schedule becomes active only
+    # if/when this workflow is intentionally added to the default branch.
+    - cron: '35 0 * * *'
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature/phenotyping
+        uses: actions/checkout@v4
+        with:
+          ref: feature/phenotyping
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Component 2 dependencies
+        run: pip install -r component2_backend/requirements.txt
+
+      - name: Process completed behavioural days
+        env:
+          SUPABASE_URL: ${{ secrets.COMPONENT2_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.COMPONENT2_SUPABASE_SERVICE_ROLE_KEY }}
+          COMPONENT2_TIMEZONE: Asia/Colombo
+        run: python component2_backend/run_daily.py

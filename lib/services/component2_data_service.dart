@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'supabase_research_service.dart';
+
 /// Fetches validated Component 2 behavioural outputs and stores only
 /// display-safe, descriptive data for the Flutter UI.
 ///
@@ -62,12 +64,30 @@ class Component2DataService {
     }
 
     try {
+      final authUserId = await SupabaseResearchService.ensureParticipant(id);
+      final accessToken =
+          SupabaseResearchService.client?.auth.currentSession?.accessToken;
+
+      if (authUserId == null || accessToken == null || accessToken.isEmpty) {
+        debugPrint('[Component2] No authenticated Supabase session available.');
+        return const Component2SyncResult(
+          success: false,
+          status: 'missing_auth_session',
+        );
+      }
+
       final base = _baseUrl.endsWith('/')
           ? _baseUrl.substring(0, _baseUrl.length - 1)
           : _baseUrl;
       final uri = Uri.parse('$base/behavioral/${Uri.encodeComponent(id)}');
       final response = await http
-          .get(uri, headers: const {'Accept': 'application/json'})
+          .get(
+            uri,
+            headers: {
+              'Accept': 'application/json',
+              'Authorization': 'Bearer $accessToken',
+            },
+          )
           .timeout(_timeout);
 
       if (response.statusCode != 200) {
