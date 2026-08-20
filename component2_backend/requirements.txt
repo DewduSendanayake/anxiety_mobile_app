@@ -1,3 +1,8 @@
-fastapi==0.116.1
-uvicorn[standard]==0.35.0
-httpx==0.28.1
+fastapi
+uvicorn[standard]
+python-dotenv
+supabase
+pandas
+numpy
+scikit-learn==1.6.1
+joblib
