@@ -5,6 +5,7 @@ on:
 
   schedule:
     # 00:35 UTC = 06:05 Asia/Colombo (Sri Lanka)
+    # Scheduled workflows run from the repository default branch.
     - cron: '35 0 * * *'
 
 jobs:
