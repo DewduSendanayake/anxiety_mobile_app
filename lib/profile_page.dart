@@ -702,7 +702,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     context,
                     MaterialPageRoute(
                       builder: (_) => ShareParticipantIdPage(
-                        participantId: participantId,
+                        participantId: participantId!,
                       ),
                     ),
                   )
