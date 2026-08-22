@@ -2,24 +2,19 @@ name: Component 2 Daily Processing
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - feature/phenotyping
+
   schedule:
-    # 00:35 UTC = 06:05 Asia/Colombo. Note: GitHub scheduled workflows run
-    # from the repository default branch, so this schedule becomes active only
-    # if/when this workflow is intentionally added to the default branch.
+    # 00:35 UTC = 06:05 Asia/Colombo (Sri Lanka)
+    # Scheduled workflows run from the repository default branch.
     - cron: '35 0 * * *'
 
 jobs:
   process:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout feature/phenotyping
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: feature/phenotyping
-          fetch-depth: 1
 
       - name: Set up Python
         uses: actions/setup-python@v5
