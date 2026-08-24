@@ -7,9 +7,10 @@ class ApiService {
       'https://dewdu-physiological-anxiety-escalation.hf.space';
 
   // The shared R26-DS-012 central backend used by both patient and clinician
-  // apps. Supply it at build time with --dart-define=BACKEND_BASE=https://...
+  // apps. BACKEND_BASE can override this default when the deployment changes.
   static const String centralBackendBaseUrl = String.fromEnvironment(
     'BACKEND_BASE',
+    defaultValue: 'https://finalize-humbly-monastery.ngrok-free.dev',
   );
 
   // INGEST ENDPOINT: Sends averaged features directly to the server
