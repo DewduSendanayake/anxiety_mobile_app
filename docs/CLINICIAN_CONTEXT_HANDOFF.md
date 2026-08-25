@@ -1,72 +1,201 @@
-# Clinician Context Handoff
+# Clinician Longitudinal Context Handoff v2
 
-This document defines the privacy-safe context the Aura mobile application can
-prepare for the central clinician backend. It is intentionally separate from
-multimodal risk fusion.
+This document defines the privacy-safe longitudinal context that the Aura mobile
+application can prepare for a clinician-facing backend. It is intentionally
+separate from multimodal risk fusion.
 
-## Why this exists
+## Purpose
 
-A single model score is less useful to a clinician than the surrounding context:
-what the participant reported, what they were doing, whether they tried an
-intervention, whether they felt better at follow-up, whether a behavioural
-pattern changed relative to their own baseline, and whether the sensing data had
-enough coverage.
+The clinician view should not depend on one numerical score alone. A more useful
+review combines four different streams while keeping their meanings separate:
 
-The mobile app therefore prepares a descriptive clinician-context payload while
-preserving the existing safety decision for Component 2.
+```text
+Self-report trend
+        +
+Physiological event confirmations
+        +
+Intervention response
+        +
+Component 2 behavioural changes
+        ↓
+Clinician longitudinal context
+```
+
+This context is intended to support clinical conversation and longitudinal
+review. It is not a new risk score and must not silently change the multimodal
+composite.
 
 ## Current transport status
 
-The mobile app **builds and caches** this payload under
-`clinician_insight_handoff_v1`. It is not automatically transmitted yet because
-the central backend does not currently expose a dedicated participant check-in
-context endpoint.
+The mobile app currently **builds and caches** the combined payload under:
 
-The team should agree and implement that endpoint before enabling network
-transport. Do not overload a fusion endpoint with this payload.
+`clinician_longitudinal_context_v2`
 
-## Payload shape
+The older check-in/C2-only summary is still available internally as
+`clinician_insight_handoff_v1` and is used as an input to the v2 builder.
+
+The combined payload is **not automatically transmitted yet**. The central
+backend does not currently expose a dedicated participant longitudinal-context
+ingestion endpoint. The integration team should add a specific authenticated
+endpoint before enabling transport. Do not overload the fusion endpoint with
+this contextual payload.
+
+## 1. Self-report trend
+
+New EMA, GAD-7 and PSS-10 submissions are retained locally in a privacy-safe
+summary history in addition to following their existing research-event upload
+path.
+
+### EMA
+
+The trend may contain:
+
+- number of EMA responses in the last 7 and 30 days;
+- average reported anxiety/worry;
+- average reported stress;
+- average fatigue;
+- average social connection;
+- most common participant-selected context.
+
+### GAD-7
+
+The trend may contain:
+
+- latest total score;
+- latest severity label already produced by the questionnaire screen;
+- previous total score, when available;
+- numerical delta and descriptive direction compared with the previous result.
+
+### PSS-10
+
+The trend may contain:
+
+- latest total score;
+- previous total score, when available;
+- numerical delta and descriptive direction compared with the previous result.
+
+Only summary fields required for longitudinal review are copied into this local
+history. Full questionnaire item responses are not duplicated into the
+clinician-context cache.
+
+**History limitation:** the local trend starts with submissions recorded after
+this feature is installed. There is currently no historical Supabase backfill
+into the patient app.
+
+## 2. Physiological event confirmations
+
+Aura's physiological alert/check-in workflow can be summarized over 7-day and
+30-day windows using:
+
+- number of alert-triggered check-ins;
+- number answered by the participant;
+- number where the participant reported feeling anxious;
+- number where the participant did not report feeling anxious;
+- response rate;
+- confirmation rate among answered check-ins;
+- common participant-reported context;
+- recent event summaries.
+
+A participant confirmation means only that the participant reported anxiety at
+that check-in. It does **not** establish that every physiological alert was a
+clinical anxiety episode or validate the forecasting model by itself.
+
+## 3. Intervention response
+
+For check-ins where an action was attempted, the context may summarize:
+
+- number of intervention/action attempts;
+- number of five-minute follow-ups answered;
+- number reporting that they felt better;
+- participant-reported improvement rate;
+- the most frequently occurring action among follow-ups where the participant
+  reported feeling better.
+
+These outcomes are observational self-reports. They must not be described as
+proof that an intervention caused improvement or as treatment-effect estimates.
+
+## 4. Component 2 behavioural changes
+
+The Component 2 section may include only descriptive within-person context:
+
+- whether a personal baseline is ready;
+- reportable/data-quality state;
+- behavioural pattern direction relative to the participant's own baseline;
+- sustained Day-57+ EWMA change detection when the backend actually detects it;
+- recent usable sensing days and baseline coverage metadata.
+
+The final Component 2 deployment decision remains explicit:
 
 ```json
 {
-  "schema_version": "clinician_context_v1",
+  "status": "not_validated",
+  "fusion_eligible": false,
+  "score": null
+}
+```
+
+The experimental Component 2 probability is not included in this clinician
+context and does not enter the multimodal composite.
+
+## Combined payload shape
+
+Illustrative structure:
+
+```json
+{
+  "schema_version": "clinician_longitudinal_context_v2",
   "app_user_id": "P_...",
-  "generated_at": "2026-08-25T09:00:00Z",
-  "check_ins": {
+  "generated_at": "2026-08-25T10:00:00Z",
+  "self_report_trend": {
     "seven_day": {
-      "events": 4,
-      "answered": 4,
-      "confirmed_anxiety": 3,
-      "not_confirmed": 1,
-      "response_rate": 1.0,
-      "confirmation_rate": 0.75,
-      "common_context": "Studying or working",
-      "intervention_attempts": 2,
-      "followups_answered": 2,
-      "felt_better_count": 1,
-      "felt_better_rate": 0.5,
-      "most_helpful_action": "2-minute paced breathing"
-    },
-    "thirty_day": {},
-    "recent_events": [
-      {
-        "detected_at": "...",
-        "source": "physiological_forecast",
-        "participant_confirmed_anxiety": true,
-        "context": "Studying or working",
-        "action_taken": "2-minute paced breathing",
-        "guided_intervention_completed": true,
-        "followup_at": "...",
-        "felt_better_at_followup": true
+      "ema": {
+        "count": 12,
+        "mean_stress": 2.1,
+        "mean_anxiety": 2.8,
+        "mean_fatigue": 2.4,
+        "mean_social_connection": 3.2,
+        "common_context": "Studying / Working"
       }
-    ]
+    },
+    "gad7": {
+      "available": true,
+      "latest_score": 9,
+      "previous_score": 7,
+      "delta": 2,
+      "direction": "higher_than_previous"
+    },
+    "pss10": {
+      "available": true,
+      "latest_score": 19,
+      "previous_score": 16,
+      "delta": 3,
+      "direction": "higher_than_previous"
+    }
   },
-  "behavioral_context": {
+  "physiological_event_confirmations": {
+    "thirty_day": {
+      "events": 8,
+      "answered": 7,
+      "confirmed_anxiety": 5,
+      "not_confirmed": 2,
+      "confirmation_rate": 0.714,
+      "common_context": "Studying or working"
+    }
+  },
+  "intervention_response": {
+    "thirty_day": {
+      "intervention_attempts": 4,
+      "followups_answered": 3,
+      "felt_better_count": 2,
+      "felt_better_rate": 0.667,
+      "most_helpful_action": "2-minute paced breathing"
+    }
+  },
+  "c2_behavioral_changes": {
     "status": "not_validated",
     "fusion_eligible": false,
     "score": null,
     "baseline_ready": true,
-    "reportable": true,
     "patterns": [
       {
         "label": "Screen activity",
@@ -81,44 +210,66 @@ transport. Do not overload a fusion endpoint with this payload.
       "ewma_z": 2.1
     },
     "data_quality": {
-      "days_enrolled": 60,
       "baseline_days_required": 28,
       "baseline_usable_days": 26,
       "recent_usable_days": 7
     }
+  },
+  "fusion_policy": {
+    "c2_status": "not_validated",
+    "c2_fusion_eligible": false,
+    "c2_score": null,
+    "context_payload_affects_composite": false
   }
 }
 ```
 
-## Clinician interpretation
+Values above are illustrative schema examples only and are not participant or
+research-result values.
 
-Useful context includes:
+## Clinician presentation principles
 
-- participant response to each Aura check-in (`felt anxious`, `did not feel anxious`, or unanswered);
-- activity/context at the time of the check-in;
-- intervention/action attempted;
-- five-minute participant-reported outcome;
-- 7-day and 30-day response/confirmation patterns;
-- common context and most frequently helpful action;
-- descriptive within-person behavioural directions;
-- sustained behavioural change detection when the Day-57+ backend rule is met;
-- baseline/data-quality coverage.
+The clinician interface should present the four streams as distinct sections or
+aligned timelines rather than collapsing them into a new score. Useful questions
+include:
 
-These fields should support clinical conversation, not replace assessment.
+- Did self-reported anxiety/stress change over time?
+- Were physiological alert check-ins usually confirmed by the participant?
+- In what situations were confirmed events commonly reported?
+- What actions were attempted, and what did the participant report five minutes
+  later?
+- Did passive behavioural patterns show a sustained within-person change around
+  the same period?
+- Was sensing coverage adequate enough to interpret the behavioural context?
+
+Temporal co-occurrence can be highlighted descriptively, but the system must not
+claim causation from these observational streams.
 
 ## Explicit exclusions
 
 The handoff must not contain:
 
-- exact GPS coordinates;
-- raw location trails;
+- exact GPS coordinates or raw location trails;
 - individual app/package names;
-- SMS/call content or contact identifiers;
+- SMS/call content, phone numbers or contact identifiers;
 - a Component 2 clinical risk probability;
 - a fabricated zero score for Component 2;
-- synthetic PP2 fixture values in production.
+- synthetic PP2 fixture values in production;
+- a new combined 'clinician risk score' calculated from this context payload.
 
-Component 2 remains `status = not_validated`, `fusion_eligible = false`, and
-`score = null`. The central backend may display its descriptive behavioural
-context, but it must not use that context as a numerical contribution to the
-composite unless future validation supports a new deployment decision.
+## Recommended central-backend integration
+
+Add a dedicated authenticated endpoint such as:
+
+```text
+POST /v1/subjects/{subject_id}/longitudinal-context
+```
+
+The backend should resolve/pair the participant identity, validate the payload
+schema, persist the latest context and/or append time-stamped summaries, and
+return it only through the clinician-authorized egress path.
+
+This endpoint should remain separate from fusion ingestion. The contextual
+payload may support clinician interpretation but should not alter fusion weights
+or the composite unless a future validated protocol explicitly changes that
+decision.
