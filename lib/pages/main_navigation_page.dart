@@ -5,7 +5,7 @@ import '../profile_page.dart';
 import 'home_page.dart';
 import 'dashboard_page.dart';
 import 'component2_bootstrap_page.dart';
-import 'check_in_records_page.dart';
+import 'longitudinal_context_page.dart';
 
 class MainNavigationPage extends StatefulWidget {
   final String? userId;
@@ -28,7 +28,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       HomePage(userId: widget.userId),
       DashboardPage(userId: widget.userId),
       Component2BootstrapPage(userId: widget.userId),
-      CheckInRecordsPage(userId: userId),
+      LongitudinalContextPage(userId: userId),
       ProfilePage(isTab: true),
     ];
   }
