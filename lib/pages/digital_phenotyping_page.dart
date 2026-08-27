@@ -542,7 +542,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
         elevation: 0,
         leading: Navigator.canPop(context)
             ? IconButton(
-                icon: const Icon(
+                icon: Icon(
                   Icons.arrow_back_ios_new_rounded,
                   color: _C.textPrimary,
                   size: 20,
@@ -560,7 +560,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(
+            icon: Icon(
               Icons.ios_share_rounded,
               color: _C.textMuted,
               size: 19,
@@ -569,7 +569,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
             onPressed: _exportForClinician,
           ),
           IconButton(
-            icon: const Icon(
+            icon: Icon(
               Icons.refresh_rounded,
               color: _C.textMuted,
               size: 20,
@@ -994,8 +994,8 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Padding(
-                      padding: EdgeInsets.only(top: 2),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
                       child: Icon(
                         Icons.info_outline_rounded,
                         size: 14,
@@ -1044,7 +1044,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
         children: [
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.notifications_active_outlined,
                 size: 17,
                 color: _C.amber,
@@ -1079,7 +1079,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
+              Icon(
                 Icons.info_outline_rounded,
                 size: 13,
                 color: _C.textMuted,
@@ -1659,7 +1659,7 @@ class CheckInHistoryPage extends StatelessWidget {
         backgroundColor: _C.scaffold,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(
+          icon: Icon(
             Icons.arrow_back_ios_new_rounded,
             color: _C.textPrimary,
             size: 20,
