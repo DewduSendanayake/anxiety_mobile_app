@@ -80,7 +80,7 @@ class PredictiveEscalationGate {
       futurePoints = List.generate(
         riskForecast.length,
         (index) => MapEntry(
-          forecastHorizonsMinutes[index],
+          forecastHorizonsMinutes![index],
           riskForecast[index].clamp(0.0, 100.0).toDouble(),
         ),
       );
