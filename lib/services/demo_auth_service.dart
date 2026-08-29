@@ -34,6 +34,11 @@ class DemoAuthService {
         'An account with this email already exists on this device.',
       );
     }
+    if (accounts.isNotEmpty) {
+      return const DemoAuthResult.failure(
+        'This demo keeps one local account per device. Log in with the existing account.',
+      );
+    }
 
     final participantId =
         await ParticipantIdentityService.createForDisplayName(displayName);
