@@ -555,9 +555,6 @@ class _DashboardPageState extends State<DashboardPage>
         });
       }
 
-      _bufferingTimer?.cancel();
-      _bufferingTimer = null;
-
       // ── Send physio features to the central backend (fire-and-forget) ──
       // Compute one physiological risk score from the higher of the direct
       // +5 and +10 minute forecasts, send it for C1 scoring, then refresh the
