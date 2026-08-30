@@ -12,7 +12,6 @@ import '../profile_page.dart';
 import '../services/user_manager.dart';
 import '../services/participant_identity_service.dart';
 import 'informed_consent_page.dart';
-import '../services/api_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -83,14 +82,6 @@ class _LoginPageState extends State<LoginPage> {
     final participantId = await ParticipantIdentityService.createForDisplayName(
       displayName,
     );
-
-    // Register this participant on the central backend so fusion can
-    // accumulate scores before a clinician scans their QR. Idempotent
-    // server-side, so a retry after a dropped response is safe.
-    final subjectId = await ApiService.selfEnrol(participantId);
-    if (subjectId != null && subjectId.isNotEmpty) {
-      await ParticipantIdentityService.saveCentralSubjectId(subjectId);
-    }
 
     // A new login happens after main() has already run, so initialise the
     // physiological upload session here as well as in the cold-start path.
