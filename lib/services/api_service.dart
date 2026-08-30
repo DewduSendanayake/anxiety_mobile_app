@@ -249,11 +249,11 @@ class ApiService {
   );
 
   static String get _backendRoot =>
-      centralBackendBaseUrl.trim().replaceFirst(RegExp(r'/\$'), '');
+      centralBackendBaseUrl.trim().replaceFirst(RegExp(r'/$'), '');
 
   static Map<String, String> get _backendHeaders => {
         'Content-Type': 'application/json',
-        if (_backendToken.isNotEmpty) 'Authorization': 'Bearer \$_backendToken',
+        if (_backendToken.isNotEmpty) 'Authorization': 'Bearer $_backendToken',
       };
 
   /// Claims a subject for this AURA installation on the central backend.
@@ -262,7 +262,7 @@ class ApiService {
     try {
       final res = await http
           .post(
-            Uri.parse('\$_backendRoot/v1/subjects/self'),
+            Uri.parse('$_backendRoot/v1/subjects/self'),
             headers: _backendHeaders,
             body: jsonEncode({'app_user_id': participantId}),
           )
@@ -289,7 +289,7 @@ class ApiService {
     try {
       final res = await http
           .post(
-            Uri.parse('\$_backendRoot/v1/ingest/contextual'),
+            Uri.parse('$_backendRoot/v1/ingest/contextual'),
             headers: _backendHeaders,
             body: jsonEncode({
               'app_user_id': participantId,
@@ -315,7 +315,7 @@ class ApiService {
     try {
       final res = await http
           .post(
-            Uri.parse('\$_backendRoot/v1/ingest/physiological'),
+            Uri.parse('$_backendRoot/v1/ingest/physiological'),
             headers: _backendHeaders,
             body: jsonEncode({
               'app_user_id': participantId,
@@ -338,7 +338,7 @@ class ApiService {
     try {
       final res = await http
           .get(
-            Uri.parse('\$_backendRoot/v1/patients/\$subjectId/risk'),
+            Uri.parse('$_backendRoot/v1/patients/$subjectId/risk'),
             headers: _backendHeaders,
           )
           .timeout(const Duration(seconds: 15));
