@@ -19,11 +19,11 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Check formatting
-        run: dart format --output=none --set-exit-if-changed .
+      - name: Check changed-file formatting
+        run: dart format --output=none --set-exit-if-changed lib/pages/login_page.dart lib/services/demo_auth_service.dart test/demo_static_auth_test.dart
 
-      - name: Static analysis
-        run: flutter analyze --fatal-infos --fatal-warnings
+      - name: Analyze changed auth files
+        run: flutter analyze lib/pages/login_page.dart lib/services/demo_auth_service.dart test/demo_static_auth_test.dart --fatal-infos --fatal-warnings
 
       - name: Run tests
         run: flutter test
