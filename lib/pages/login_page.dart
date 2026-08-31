@@ -75,9 +75,9 @@ class _LoginPageState extends State<LoginPage> {
         destination = MainNavigationPage(userId: account.participantId);
       }
 
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => destination),
-      );
+      Navigator.of(
+        context,
+      ).pushReplacement(MaterialPageRoute(builder: (_) => destination));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -159,10 +159,9 @@ class _LoginPageState extends State<LoginPage> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surface
-                            .withValues(alpha: 0.72),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surface.withValues(alpha: 0.72),
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Row(
@@ -251,22 +250,23 @@ class _LoginPageState extends State<LoginPage> {
             obscureText: !_passwordVisible,
             onSubmitted: (_) => _submitLogin(),
             style: GoogleFonts.poppins(fontSize: 13.5),
-            decoration: _inputDecoration(
-              'Password',
-              DemoAuthService.staticPassword,
-              Icons.lock_outline_rounded,
-            ).copyWith(
-              suffixIcon: IconButton(
-                onPressed: () {
-                  setState(() => _passwordVisible = !_passwordVisible);
-                },
-                icon: Icon(
-                  _passwordVisible
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
+            decoration:
+                _inputDecoration(
+                  'Password',
+                  DemoAuthService.staticPassword,
+                  Icons.lock_outline_rounded,
+                ).copyWith(
+                  suffixIcon: IconButton(
+                    onPressed: () {
+                      setState(() => _passwordVisible = !_passwordVisible);
+                    },
+                    icon: Icon(
+                      _passwordVisible
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                    ),
+                  ),
                 ),
-              ),
-            ),
           ),
           const SizedBox(height: 18),
           SizedBox(
@@ -302,20 +302,15 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  InputDecoration _inputDecoration(
-    String label,
-    String hint,
-    IconData icon,
-  ) {
+  InputDecoration _inputDecoration(String label, String hint, IconData icon) {
     return InputDecoration(
       labelText: label,
       hintText: hint,
       prefixIcon: Icon(icon),
       filled: true,
-      fillColor: Theme.of(context)
-          .colorScheme
-          .surfaceContainerHighest
-          .withValues(alpha: 0.52),
+      fillColor: Theme.of(
+        context,
+      ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.52),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide.none,
@@ -328,10 +323,7 @@ class _LoginPageState extends State<LoginPage> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(
-          color: AppTheme.kPrimaryDeep,
-          width: 1.5,
-        ),
+        borderSide: const BorderSide(color: AppTheme.kPrimaryDeep, width: 1.5),
       ),
     );
   }
