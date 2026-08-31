@@ -113,23 +113,19 @@ jobs:
       - name: Build Production APK & AAB
         run: |
           flutter build apk --release --obfuscate --split-debug-info=./debug-info \
+            --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
+            --dart-define=SUPABASE_PUBLISHABLE_KEY="${{ secrets.SUPABASE_PUBLISHABLE_KEY }}" \
+            --dart-define=COMPONENT2_API_URL="${{ secrets.COMPONENT2_API_URL }}" \
             --dart-define=SCRIPT_URL="${{ secrets.SCRIPT_URL }}" \
-            --dart-define=AUTH_TOKEN="${{ secrets.AUTH_TOKEN }}"
+            --dart-define=AUTH_TOKEN="${{ secrets.AUTH_TOKEN }}" \
+            --dart-define=BACKEND_BASE="${{ secrets.BACKEND_BASE }}" \
+            --dart-define=BACKEND_TOKEN="${{ secrets.BACKEND_TOKEN }}"
             
           flutter build appbundle --release --obfuscate --split-debug-info=./debug-info \
+            --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
+            --dart-define=SUPABASE_PUBLISHABLE_KEY="${{ secrets.SUPABASE_PUBLISHABLE_KEY }}" \
+            --dart-define=COMPONENT2_API_URL="${{ secrets.COMPONENT2_API_URL }}" \
             --dart-define=SCRIPT_URL="${{ secrets.SCRIPT_URL }}" \
-            --dart-define=AUTH_TOKEN="${{ secrets.AUTH_TOKEN }}"
-
-      - name: Upload Production APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 14
-
-      - name: Upload Production AAB
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-aab
-          path: build/app/outputs/bundle/release/app-release.aab
-          retention-days: 14
+            --dart-define=AUTH_TOKEN="${{ secrets.AUTH_TOKEN }}" \
+            --dart-define=BACKEND_BASE="${{ secrets.BACKEND_BASE }}" \
+            --dart-define=BACKEND_TOKEN="${{ secrets.BACKEND_TOKEN }}"
