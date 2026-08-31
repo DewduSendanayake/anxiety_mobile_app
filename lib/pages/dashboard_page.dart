@@ -555,21 +555,11 @@ class _DashboardPageState extends State<DashboardPage>
         });
       }
 
-      // ── Send physio features to the central backend (fire-and-forget) ──
-      // Compute one physiological risk score from the higher of the direct
-      // +5 and +10 minute forecasts, send it for C1 scoring, then refresh the
-      // fusion result so the home page does not wait for its polling interval.
+      // Notify the central backend to fetch C1's latest prediction, then
+      // refresh fusion so the home page does not wait for its polling interval.
       if (parsedForecast.isNotEmpty && _cachedId.isNotEmpty) {
-        final double peakRisk = parsedForecast
-            .map(_scaleForecastValue)
-            .reduce((a, b) => a > b ? a : b);
         ApiService.submitPhysiologicalWindow(
           participantId: _cachedId,
-          features: {
-            'mean_hr': peakRisk,
-            'sdnn': 0.0,
-            'rmssd': 0.0,
-          },
         ).then((sent) {
           if (sent) FusionRiskService.instance.fetch();
         });
