@@ -12,7 +12,7 @@ void main() {
 
     expect(risk.fusionResultId, 123);
     expect(risk.hasScore, isTrue);
-    expect(risk.scoreOutOf100, 58.0);
+    expect(risk.scoreOutOf100, closeTo(58.0, 1e-9));
   });
 
   test('older response without fusion identity remains readable', () {
