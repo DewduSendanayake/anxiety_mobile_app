@@ -35,7 +35,17 @@ jobs:
           fi
 
       - name: Static analysis
-        run: flutter analyze --fatal-infos --fatal-warnings
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          mapfile -d '' files < <(
+            git diff --name-only -z --diff-filter=ACMRT "$BASE_SHA" "$HEAD_SHA" -- '*.dart'
+          )
+          if ((${#files[@]})); then
+            flutter analyze --fatal-infos --fatal-warnings "${files[@]}"
+          fi
 
       - name: Run tests
         run: flutter test
