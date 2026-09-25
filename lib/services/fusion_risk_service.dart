@@ -118,6 +118,7 @@ class FusionRiskService {
           .timeout(_timeout);
 
       if (response.statusCode != 200) {
+        latest.value = null;
         debugPrint(
           'FusionRiskService: backend returned ${response.statusCode}.',
         );
@@ -125,12 +126,16 @@ class FusionRiskService {
       }
 
       final decoded = jsonDecode(response.body);
-      if (decoded is! Map<String, dynamic>) return null;
+      if (decoded is! Map<String, dynamic>) {
+        latest.value = null;
+        return null;
+      }
 
       final risk = FusionRisk.fromJson(decoded);
       latest.value = risk;
       return risk;
     } catch (error) {
+      latest.value = null;
       debugPrint('FusionRiskService: fetch failed: $error');
       return null;
     }
