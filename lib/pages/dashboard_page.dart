@@ -1487,7 +1487,7 @@ class _DashboardPageState extends State<DashboardPage>
         : Icons.check_circle_outline_rounded;
     final trendTitle = forecastSummary.title;
     final trendDetail = forecastSummary.isUrgent
-        ? 'This is a model estimate, not a diagnosis. Take a slow breath and notice how you feel.'
+        ? 'Potential escalation predicted within the near-term forecast horizon. This is a model estimate, not a diagnosis.'
         : 'This model estimate updates as new body readings arrive.';
     final lineColor = _riskColor(max(currentRisk, predictedPeak));
 
