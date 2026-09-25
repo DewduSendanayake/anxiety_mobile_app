@@ -15,6 +15,9 @@ import 'participant_identity_service.dart';
 /// a plain-language message. We do not ask for more than that here, and we
 /// must not display anything the backend did not send.
 class FusionRisk {
+  /// Authoritative assessment identity shared with the clinician view.
+  final int? fusionResultId;
+
   /// Backend composite, on its native 0..1 scale.
   final double? composite;
 
@@ -33,6 +36,7 @@ class FusionRisk {
   final DateTime? updatedAt;
 
   const FusionRisk({
+    this.fusionResultId,
     required this.composite,
     required this.band,
     this.message,
@@ -41,13 +45,13 @@ class FusionRisk {
   });
 
   /// True only when the backend actually produced a usable score.
-  bool get hasScore => composite != null && band != 'GREY';
+  bool get hasScore => composite != null && band.toUpperCase() != 'GREY';
 
   /// The gauge on the home page works on a 0..100 scale, but the backend
   /// composite is 0..1. Converting here, once, keeps the mistake from being
   /// repeated at each call site.
   double? get scoreOutOf100 =>
-      composite == null ? null : (composite! * 100).clamp(0.0, 100.0);
+      !hasScore ? null : (composite! * 100).clamp(0.0, 100.0);
 
   factory FusionRisk.fromJson(Map<String, dynamic> json) {
     final rawComposite = json['composite'];
@@ -57,8 +61,11 @@ class FusionRisk {
       parsedUpdatedAt = DateTime.tryParse(rawUpdatedAt);
     }
     return FusionRisk(
+      fusionResultId: json['fusion_result_id'] is num
+          ? (json['fusion_result_id'] as num).toInt()
+          : null,
       composite: rawComposite is num ? rawComposite.toDouble() : null,
-      band: json['band']?.toString() ?? 'GREY',
+      band: json['band']?.toString().toUpperCase() ?? 'GREY',
       message: json['message']?.toString(),
       updatedAt: parsedUpdatedAt,
       fusionResultId: json['fusion_result_id'],
