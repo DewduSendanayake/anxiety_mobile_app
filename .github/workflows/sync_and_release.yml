@@ -86,7 +86,7 @@ jobs:
           fi
 
   build:
-    name: Build Production Artifacts
+    name: Validate and Build Artifacts
     runs-on: ubuntu-latest
     needs: sync
     steps:
@@ -98,29 +98,65 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Decode Android Keystore
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
-          
-          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" > android/key.properties
-          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/key.properties
-          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/key.properties
-          echo "storeFile=upload-keystore.jks" >> android/key.properties
-
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build Production APK & AAB
+      - name: Run Flutter tests
+        run: flutter test
+
+      - name: Check Android release signing
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          set +e
+          mkdir -p android/app
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks 2>/dev/null
+          decode_status=$?
+          if [ "$decode_status" -eq 0 ] && [ -s android/app/upload-keystore.jks ] && \
+             [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ] && [ -n "$KEY_ALIAS" ]; then
+            {
+              echo "storePassword=$KEYSTORE_PASSWORD"
+              echo "keyPassword=$KEY_PASSWORD"
+              echo "keyAlias=$KEY_ALIAS"
+              echo "storeFile=upload-keystore.jks"
+            } > android/key.properties
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            rm -f android/app/upload-keystore.jks android/key.properties
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Release signing secrets are absent or invalid; signed release artifacts will be skipped."
+          fi
+
+      - name: Build validation APK
+        run: |
+          flutter build apk --debug \
+            --dart-define=SCRIPT_URL="${{ secrets.SCRIPT_URL }}" \
+            --dart-define=AUTH_TOKEN="${{ secrets.AUTH_TOKEN }}"
+
+      - name: Upload validation APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 14
+
+      - name: Build signed production APK and AAB
+        if: steps.signing.outputs.ready == 'true'
         run: |
           flutter build apk --release --obfuscate --split-debug-info=./debug-info \
             --dart-define=SCRIPT_URL="${{ secrets.SCRIPT_URL }}" \
             --dart-define=AUTH_TOKEN="${{ secrets.AUTH_TOKEN }}"
-            
+          
           flutter build appbundle --release --obfuscate --split-debug-info=./debug-info \
             --dart-define=SCRIPT_URL="${{ secrets.SCRIPT_URL }}" \
             --dart-define=AUTH_TOKEN="${{ secrets.AUTH_TOKEN }}"
 
       - name: Upload Production APK
+        if: steps.signing.outputs.ready == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: release-apk
@@ -128,8 +164,18 @@ jobs:
           retention-days: 14
 
       - name: Upload Production AAB
+        if: steps.signing.outputs.ready == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: release-aab
           path: build/app/outputs/bundle/release/app-release.aab
           retention-days: 14
+
+      - name: Report signing gate
+        if: always()
+        run: |
+          if [ "${{ steps.signing.outputs.ready }}" = "true" ]; then
+            echo "Signed release artifacts were built." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Flutter tests and the unsigned validation APK passed, but signed production artifacts were skipped because Android signing secrets are not valid." >> "$GITHUB_STEP_SUMMARY"
+          fi
