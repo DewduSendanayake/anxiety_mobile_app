@@ -256,13 +256,6 @@ class ApiService {
     try {
       final installationSecret = await PatientSessionService.instance
           .getOrCreateInstallationSecret();
-      final payload = <String, dynamic>{
-        'app_user_id': participantId,
-        'gad7_items': gad7Items,
-      };
-      if (gender != null) payload['gender'] = gender.toLowerCase();
-      if (age != null) payload['age'] = age;
-      if (edu != null) payload['edu'] = edu;
       final res = await http
           .post(
             Uri.parse('$_backendRoot/v1/subjects/self'),
@@ -313,6 +306,13 @@ class ApiService {
       final headers = await PatientSessionService.instance
           .authenticatedHeaders();
       if (headers == null) return false;
+      final payload = <String, dynamic>{
+        'app_user_id': participantId,
+        'gad7_items': gad7Items,
+      };
+      if (gender != null) payload['gender'] = gender.toLowerCase();
+      if (age != null) payload['age'] = age;
+      if (edu != null) payload['edu'] = edu;
       final res = await http
           .post(
             Uri.parse('$_backendRoot/v1/ingest/contextual'),
