@@ -6,8 +6,9 @@ void main() {
   test(
     'patient app consumes server events and embeds no backend service token',
     () {
-      final feedback = File('lib/services/anxiety_feedback_service.dart')
-          .readAsStringSync();
+      final feedback = File(
+        'lib/services/anxiety_feedback_service.dart',
+      ).readAsStringSync();
       final api = File('lib/services/api_service.dart').readAsStringSync();
 
       expect(feedback, contains('ingestServerAttentionEvent'));

@@ -108,8 +108,9 @@ class ShareParticipantIdPage extends StatelessWidget {
               Text(
                 'Ask your doctor to scan this code',
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w700),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               const SizedBox(height: 10),
               Text(
@@ -181,8 +182,9 @@ class ShareParticipantIdPage extends StatelessWidget {
               const SizedBox(height: 20),
               Text(
                 'Have a pairing code?',
-                style: Theme.of(context).textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w700),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 8),
               Text(
