@@ -271,8 +271,7 @@ class AnxietyAlertEvent {
     if (initialBr != null) 'initial_br': initialBr,
     if (initialMotion != null) 'initial_motion': initialMotion,
     'risk_source': riskSource,
-    if (predictedRiskScore != null)
-      'predicted_risk_score': predictedRiskScore,
+    if (predictedRiskScore != null) 'predicted_risk_score': predictedRiskScore,
     if (predictedLeadMinutes != null)
       'predicted_lead_minutes': predictedLeadMinutes,
     if (forecastIncrease != null) 'forecast_increase': forecastIncrease,
@@ -597,7 +596,9 @@ class AnxietyFeedbackService {
       'status': 'success',
       'alerts': events.length,
       'answered_alerts': answered.length,
-      'confirmation_rate': answered.isEmpty ? null : confirmed / answered.length,
+      'confirmation_rate': answered.isEmpty
+          ? null
+          : confirmed / answered.length,
       'common_activity': mostCommon(events.map((event) => event.activity)),
       'most_effective_action': mostCommon(
         helpfulActions.map(
@@ -687,8 +688,7 @@ class AnxietyFeedbackService {
           (event.predictedRiskScore == null
               ? event.initialRiskScore != null &&
                     event.followupRiskScore! <= event.initialRiskScore! - 10.0
-              : event.followupRiskScore! <=
-                    event.predictedRiskScore! - 10.0),
+              : event.followupRiskScore! <= event.predictedRiskScore! - 10.0),
     );
   }
 

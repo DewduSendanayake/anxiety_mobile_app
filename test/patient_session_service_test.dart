@@ -15,18 +15,21 @@ class MemoryPatientSecretStore implements PatientSecretStore {
 }
 
 void main() {
-  test('installation proof is generated once and kept separate from session', () async {
-    final store = MemoryPatientSecretStore();
-    final service = PatientSessionService(store: store);
+  test(
+    'installation proof is generated once and kept separate from session',
+    () async {
+      final store = MemoryPatientSecretStore();
+      final service = PatientSessionService(store: store);
 
-    final first = await service.getOrCreateInstallationSecret();
-    final second = await service.getOrCreateInstallationSecret();
+      final first = await service.getOrCreateInstallationSecret();
+      final second = await service.getOrCreateInstallationSecret();
 
-    expect(first, second);
-    expect(first.length, 64);
-    expect(first, matches(RegExp(r'^[a-f0-9]{64}$')));
-    expect(store.values.values, isNot(contains('')));
-  });
+      expect(first, second);
+      expect(first.length, 64);
+      expect(first, matches(RegExp(r'^[a-f0-9]{64}$')));
+      expect(store.values.values, isNot(contains('')));
+    },
+  );
 
   test('valid session produces a subject-bound bearer header', () async {
     final now = DateTime.utc(2026, 9, 27, 12);
@@ -48,19 +51,22 @@ void main() {
     expect(headers?['Content-Type'], 'application/json');
   });
 
-  test('expired session is unavailable and never emits an auth header', () async {
-    final now = DateTime.utc(2026, 9, 27, 12);
-    final service = PatientSessionService(
-      store: MemoryPatientSecretStore(),
-      clock: () => now,
-    );
-    await service.saveSession(
-      subjectId: 'subject-1',
-      accessToken: 'expired.jwt',
-      expiresAt: now.subtract(const Duration(seconds: 1)),
-    );
+  test(
+    'expired session is unavailable and never emits an auth header',
+    () async {
+      final now = DateTime.utc(2026, 9, 27, 12);
+      final service = PatientSessionService(
+        store: MemoryPatientSecretStore(),
+        clock: () => now,
+      );
+      await service.saveSession(
+        subjectId: 'subject-1',
+        accessToken: 'expired.jwt',
+        expiresAt: now.subtract(const Duration(seconds: 1)),
+      );
 
-    expect(await service.currentSession(), isNull);
-    expect(await service.authenticatedHeaders(), isNull);
-  });
+      expect(await service.currentSession(), isNull);
+      expect(await service.authenticatedHeaders(), isNull);
+    },
+  );
 }

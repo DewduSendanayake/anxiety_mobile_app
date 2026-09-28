@@ -63,9 +63,10 @@ class PatientSessionService {
     if (existing != null && existing.length >= 32) return existing;
 
     final random = Random.secure();
-    final secret = List<int>.generate(32, (_) => random.nextInt(256))
-        .map((value) => value.toRadixString(16).padLeft(2, '0'))
-        .join();
+    final secret = List<int>.generate(
+      32,
+      (_) => random.nextInt(256),
+    ).map((value) => value.toRadixString(16).padLeft(2, '0')).join();
     await _store.write(installationSecretKey, secret);
     return secret;
   }

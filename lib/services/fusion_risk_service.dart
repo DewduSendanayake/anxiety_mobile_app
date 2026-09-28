@@ -100,9 +100,8 @@ class FusionRiskService {
     }
 
     try {
-      final decoded = await ApiService.getPatientRisk(subjectId).timeout(
-        _timeout,
-      );
+      final decoded = await ApiService.getPatientRisk(subjectId)
+          .timeout(_timeout);
       if (decoded == null) {
         latest.value = null;
         debugPrint('FusionRiskService: authenticated risk is unavailable.');

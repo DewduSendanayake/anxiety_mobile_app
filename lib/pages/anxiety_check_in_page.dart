@@ -316,8 +316,8 @@ class _AnxietyCheckInPageState extends State<AnxietyCheckInPage> {
   }
 
   Widget _followupCard(AnxietyAlertEvent event) {
-    final change = event.followupRiskScore == null
-        || event.initialRiskScore == null
+    final change =
+        event.followupRiskScore == null || event.initialRiskScore == null
         ? null
         : event.followupRiskScore! - event.initialRiskScore!;
     return _card(

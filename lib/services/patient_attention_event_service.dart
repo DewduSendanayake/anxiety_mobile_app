@@ -70,10 +70,7 @@ class PatientAttentionEventService {
   void startPolling() {
     _timer?.cancel();
     unawaited(fetchOpenEvents());
-    _timer = Timer.periodic(
-      _pollInterval,
-      (_) => unawaited(fetchOpenEvents()),
-    );
+    _timer = Timer.periodic(_pollInterval, (_) => unawaited(fetchOpenEvents()));
   }
 
   void stopPolling() {

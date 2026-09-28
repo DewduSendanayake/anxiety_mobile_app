@@ -195,7 +195,8 @@ void main() async {
           await NotificationHelper.init(
             backgroundCallback: notificationTapBackground,
           );
-          NotificationHelper.onNotificationResponse = _handleNotificationResponse;
+          NotificationHelper.onNotificationResponse =
+              _handleNotificationResponse;
         } catch (e, st) {
           debugPrint('Notification init error: $e');
           debugPrint('$st');

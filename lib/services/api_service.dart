@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:http/http.dart' as http;
 
 import 'patient_session_service.dart';
@@ -372,8 +373,9 @@ class ApiService {
   /// Reads the patient-safe projection of server-created OPEN events.
   static Future<List<Map<String, dynamic>>?> getOpenAttentionEvents() async {
     try {
-      final headers = await PatientSessionService.instance
-          .authenticatedHeaders(includeJsonContentType: false);
+      final headers = await PatientSessionService.instance.authenticatedHeaders(
+        includeJsonContentType: false,
+      );
       if (headers == null) return null;
       final res = await http
           .get(
