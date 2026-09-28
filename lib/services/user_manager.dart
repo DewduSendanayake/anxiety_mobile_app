@@ -4,6 +4,7 @@ import 'sensor_manager.dart';
 import 'chest_strap_service.dart';
 import 'ble_bridge.dart';
 import 'anxiety_feedback_service.dart';
+import 'patient_attention_event_service.dart';
 
 class UserManager {
   // This is the magic line that creates the single, permanent instance of UserManager
@@ -59,6 +60,7 @@ class UserManager {
     // Wire chest strap data to SensorManager via BleBridge
     BleBridge().wireChestStrap();
     unawaited(AnxietyFeedbackService().initializeForUser(userId));
+    PatientAttentionEventService.instance.startPolling();
   }
 
   // LOGOUT METHOD: Call this if the user wants to switch identities
@@ -72,6 +74,7 @@ class UserManager {
     // Unwire BLE routing to SensorManager
     BleBridge().unwireChestStrap();
     unawaited(AnxietyFeedbackService().stop());
+    PatientAttentionEventService.instance.stopPolling();
 
     // Disconnect bluetooth
     ChestStrapService().disconnect();

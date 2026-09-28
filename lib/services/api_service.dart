@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+import 'patient_session_service.dart';
+
 class ApiService {
   // Replace this with your actual Hugging Face Space URL
   static const String baseUrl =
@@ -243,33 +245,45 @@ class ApiService {
   // These methods talk to the R26-DS-012 central backend (the RAGF fusion
   // engine). They replace the dead sendToFusionModel placeholder.
 
-  static const String _backendToken = String.fromEnvironment(
-    'BACKEND_TOKEN',
-    defaultValue: '',
-  );
-
   static String get _backendRoot =>
       centralBackendBaseUrl.trim().replaceFirst(RegExp(r'/$'), '');
-
-  static Map<String, String> get _backendHeaders => {
-        'Content-Type': 'application/json',
-        if (_backendToken.isNotEmpty) 'Authorization': 'Bearer $_backendToken',
-      };
 
   /// Claims a subject for this AURA installation on the central backend.
   /// Idempotent — safe to retry on every app launch.
   static Future<String?> selfEnrol(String participantId) async {
     try {
+      final installationSecret = await PatientSessionService.instance
+          .getOrCreateInstallationSecret();
       final res = await http
           .post(
             Uri.parse('$_backendRoot/v1/subjects/self'),
-            headers: _backendHeaders,
-            body: jsonEncode({'app_user_id': participantId}),
+            headers: const {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({
+              'app_user_id': participantId,
+              'installation_secret': installationSecret,
+            }),
           )
           .timeout(const Duration(seconds: 20));
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
-        return body['subject_id']?.toString();
+        if (body is! Map) return null;
+        final subjectId = body['subject_id']?.toString() ?? '';
+        final accessToken = body['access_token']?.toString() ?? '';
+        final expiresAt = DateTime.tryParse(
+          body['expires_at']?.toString() ?? '',
+        );
+        if (subjectId.isEmpty || accessToken.isEmpty || expiresAt == null) {
+          return null;
+        }
+        await PatientSessionService.instance.saveSession(
+          subjectId: subjectId,
+          accessToken: accessToken,
+          expiresAt: expiresAt,
+        );
+        return subjectId;
       }
       return null;
     } catch (_) {
@@ -287,10 +301,13 @@ class ApiService {
     String? edu,
   }) async {
     try {
+      final headers = await PatientSessionService.instance
+          .authenticatedHeaders();
+      if (headers == null) return false;
       final res = await http
           .post(
             Uri.parse('$_backendRoot/v1/ingest/contextual'),
-            headers: _backendHeaders,
+            headers: headers,
             body: jsonEncode({
               'app_user_id': participantId,
               'gad7_items': gad7Items,
@@ -311,10 +328,13 @@ class ApiService {
     required String participantId,
   }) async {
     try {
+      final headers = await PatientSessionService.instance
+          .authenticatedHeaders();
+      if (headers == null) return false;
       final res = await http
           .post(
             Uri.parse('$_backendRoot/v1/ingest/physiological'),
-            headers: _backendHeaders,
+            headers: headers,
             body: jsonEncode({
               'app_user_id': participantId,
               'device_user_id': participantId,
@@ -331,16 +351,45 @@ class ApiService {
   /// Returns {composite, band, message} or null on failure.
   static Future<Map<String, dynamic>?> getPatientRisk(String subjectId) async {
     try {
+      final headers = await PatientSessionService.instance
+          .authenticatedHeaders();
+      if (headers == null) return null;
       final res = await http
           .get(
             Uri.parse('$_backendRoot/v1/patients/$subjectId/risk'),
-            headers: _backendHeaders,
+            headers: headers,
           )
           .timeout(const Duration(seconds: 15));
       if (res.statusCode == 200) {
         return jsonDecode(res.body) as Map<String, dynamic>;
       }
       return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Reads the patient-safe projection of server-created OPEN events.
+  static Future<List<Map<String, dynamic>>?> getOpenAttentionEvents() async {
+    try {
+      final headers = await PatientSessionService.instance
+          .authenticatedHeaders(includeJsonContentType: false);
+      if (headers == null) return null;
+      final res = await http
+          .get(
+            Uri.parse(
+              '$_backendRoot/v1/patients/me/attention-events?status=OPEN',
+            ),
+            headers: headers,
+          )
+          .timeout(const Duration(seconds: 15));
+      if (res.statusCode != 200) return null;
+      final decoded = jsonDecode(res.body);
+      if (decoded is! Map || decoded['events'] is! List) return null;
+      return (decoded['events'] as List)
+          .whereType<Map>()
+          .map((event) => Map<String, dynamic>.from(event))
+          .toList();
     } catch (_) {
       return null;
     }
