@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'patient_session_service.dart';
@@ -55,18 +56,18 @@ class ApiService {
           .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
-        print(
+        debugPrint(
           'Averaged feature window processed by server and saved to InfluxDB!',
         );
         return true;
       } else {
-        print(
+        debugPrint(
           'Server data quality guard rejected the window: ${response.statusCode} - ${response.body}',
         );
         return false;
       }
     } catch (e) {
-      print('Network exception during feature ingest: $e');
+      debugPrint('Network exception during feature ingest: $e');
       return false;
     }
   }
@@ -150,16 +151,16 @@ class ApiService {
           .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
-        print(
+        debugPrint(
           'User calibration parameters successfully loaded into server memory.',
         );
         return true;
       } else {
-        print('Calibration failed: ${response.body}');
+        debugPrint('Calibration failed: ${response.body}');
         return false;
       }
     } catch (e) {
-      print('Network exception during calibration: $e');
+      debugPrint('Network exception during calibration: $e');
       return false;
     }
   }
@@ -176,14 +177,14 @@ class ApiService {
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
       } else {
-        print('Prediction pipeline failed: ${response.body}');
+        debugPrint('Prediction pipeline failed: ${response.body}');
         return {
           'status': 'error',
           'message': 'Forecast unavailable right now.',
         };
       }
     } catch (e) {
-      print('Network exception during prediction: $e');
+      debugPrint('Network exception during prediction: $e');
       return {'status': 'error', 'message': 'No internet connection.'};
     }
   }
@@ -221,7 +222,7 @@ class ApiService {
           .timeout(const Duration(seconds: 15));
       return response.statusCode == 200;
     } catch (e) {
-      print('Anxiety feedback upload failed: $e');
+      debugPrint('Anxiety feedback upload failed: $e');
       return false;
     }
   }
@@ -255,6 +256,13 @@ class ApiService {
     try {
       final installationSecret = await PatientSessionService.instance
           .getOrCreateInstallationSecret();
+      final payload = <String, dynamic>{
+        'app_user_id': participantId,
+        'gad7_items': gad7Items,
+      };
+      if (gender != null) payload['gender'] = gender.toLowerCase();
+      if (age != null) payload['age'] = age;
+      if (edu != null) payload['edu'] = edu;
       final res = await http
           .post(
             Uri.parse('$_backendRoot/v1/subjects/self'),
@@ -309,13 +317,7 @@ class ApiService {
           .post(
             Uri.parse('$_backendRoot/v1/ingest/contextual'),
             headers: headers,
-            body: jsonEncode({
-              'app_user_id': participantId,
-              'gad7_items': gad7Items,
-              if (gender != null) 'gender': gender.toLowerCase(),
-              if (age != null) 'age': age,
-              if (edu != null) 'edu': edu,
-            }),
+            body: jsonEncode(payload),
           )
           .timeout(const Duration(seconds: 20));
       return res.statusCode == 200;
@@ -439,16 +441,16 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-        print('[Fusion] Score received: $decoded');
+        debugPrint('[Fusion] Score received: $decoded');
         return {'success': true, ...decoded};
       } else {
-        print('[Fusion] Endpoint rejected request: ${response.body}');
+        debugPrint('[Fusion] Endpoint rejected request: ${response.body}');
         return {'success': false, 'message': 'Fusion endpoint error'};
       }
     } catch (e) {
       // Silently fail — fusion is a cross-team integration and should never
       // crash our own app if the teammate's server is offline.
-      print('[Fusion] Could not reach fusion endpoint: $e');
+      debugPrint('[Fusion] Could not reach fusion endpoint: $e');
       return {'success': false, 'message': 'Fusion offline'};
     }
   }
