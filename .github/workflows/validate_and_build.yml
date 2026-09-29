@@ -15,6 +15,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.47.5'
           channel: 'stable'
           cache: true
 
@@ -31,7 +32,9 @@ jobs:
             git diff --name-only -z --diff-filter=ACMRT "$BASE_SHA" "$HEAD_SHA" -- '*.dart'
           )
           if ((${#files[@]})); then
-            dart format --output=none --set-exit-if-changed "${files[@]}"
+            dart format "${files[@]}"
+            git diff -- "${files[@]}"
+            git diff --exit-code -- "${files[@]}"
           fi
 
       - name: Static analysis
@@ -49,3 +52,6 @@ jobs:
 
       - name: Run tests
         run: flutter test
+
+      - name: Build Android validation APK
+        run: flutter build apk --debug
