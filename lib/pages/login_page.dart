@@ -91,8 +91,9 @@ class _LoginPageState extends State<LoginPage> {
         destination = MainNavigationPage(userId: account.participantId);
       }
 
-      Navigator.of(context)
-          .pushReplacement(MaterialPageRoute(builder: (_) => destination));
+      Navigator.of(
+        context,
+      ).pushReplacement(MaterialPageRoute(builder: (_) => destination));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -222,8 +223,9 @@ class _LoginPageState extends State<LoginPage> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface
-                            .withValues(alpha: 0.72),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surface.withValues(alpha: 0.72),
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Row(
@@ -241,9 +243,9 @@ class _LoginPageState extends State<LoginPage> {
                               style: GoogleFonts.poppins(
                                 fontSize: 10.5,
                                 height: 1.45,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
                             ),
                           ),
@@ -561,8 +563,9 @@ class _LoginPageState extends State<LoginPage> {
       hintText: hint,
       prefixIcon: Icon(icon),
       filled: true,
-      fillColor: Theme.of(context).colorScheme.surfaceContainerHighest
-          .withValues(alpha: 0.52),
+      fillColor: Theme.of(
+        context,
+      ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.52),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide.none,
