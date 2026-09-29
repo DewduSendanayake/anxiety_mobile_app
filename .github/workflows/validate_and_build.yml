@@ -31,7 +31,9 @@ jobs:
             git diff --name-only -z --diff-filter=ACMRT "$BASE_SHA" "$HEAD_SHA" -- '*.dart'
           )
           if ((${#files[@]})); then
-            dart format --output=none --set-exit-if-changed "${files[@]}"
+            dart format "${files[@]}"
+            git diff -- "${files[@]}"
+            git diff --exit-code -- "${files[@]}"
           fi
 
       - name: Static analysis
