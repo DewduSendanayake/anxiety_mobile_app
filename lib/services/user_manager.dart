@@ -46,6 +46,8 @@ class UserManager with WidgetsBindingObserver {
     }
 
     sensorManager?.stopCollection();
+    PatientAttentionEventService.instance.stopPolling();
+    FusionRiskService.instance.clear();
     BleBridge().unwireChestStrap();
     _currentUserId = userId;
     debugPrint('User session initialized for identity: $userId');
@@ -84,6 +86,7 @@ class UserManager with WidgetsBindingObserver {
     BleBridge().unwireChestStrap();
     unawaited(AnxietyFeedbackService().stop());
     PatientAttentionEventService.instance.stopPolling();
+    FusionRiskService.instance.clear();
     WidgetsBinding.instance.removeObserver(this);
 
     // Disconnect bluetooth

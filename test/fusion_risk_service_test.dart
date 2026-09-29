@@ -33,4 +33,16 @@ void main() {
     expect(risk.hasScore, isFalse);
     expect(risk.scoreOutOf100, isNull);
   });
+
+  test('switching participants clears an assessment held in memory', () {
+    final service = FusionRiskService.instance;
+    service.latest.value = FusionRisk.fromJson({
+      'fusion_result_id': 321,
+      'composite': 0.8,
+      'tier': 'High',
+      'band': 'RED',
+    });
+    service.clear();
+    expect(service.latest.value, isNull);
+  });
 }

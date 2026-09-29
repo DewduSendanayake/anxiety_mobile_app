@@ -166,6 +166,7 @@ class FusionRiskService {
   final ValueNotifier<FusionRisk?> latest = ValueNotifier(null);
 
   Timer? _pollTimer;
+  int _generation = 0;
 
   static const Duration _pollInterval = Duration(minutes: 5);
   static const Duration _timeout = Duration(seconds: 10);
@@ -173,8 +174,11 @@ class FusionRiskService {
   /// Fetches once. Returns null when unpaired, unreachable, or on any
   /// non-200 response.
   Future<FusionRisk?> fetch() async {
+    final generation = _generation;
     final subjectId = await ParticipantIdentityService.getCentralSubjectId();
+    if (generation != _generation) return null;
     if (subjectId == null || subjectId.isEmpty) {
+      latest.value = null;
       debugPrint('FusionRiskService: not paired with the central backend yet.');
       return null;
     }
@@ -183,6 +187,7 @@ class FusionRiskService {
       final decoded = await ApiService.getPatientRisk(
         subjectId,
       ).timeout(_timeout);
+      if (generation != _generation) return null;
       if (decoded == null) {
         latest.value = null;
         debugPrint('FusionRiskService: authenticated risk is unavailable.');
@@ -193,7 +198,7 @@ class FusionRiskService {
       latest.value = risk;
       return risk;
     } catch (error) {
-      latest.value = null;
+      if (generation == _generation) latest.value = null;
       debugPrint('FusionRiskService: fetch failed: $error');
       return null;
     }
@@ -208,5 +213,12 @@ class FusionRiskService {
   void stopPolling() {
     _pollTimer?.cancel();
     _pollTimer = null;
+  }
+
+  /// Discard a prior participant's assessment, including pending responses.
+  void clear() {
+    stopPolling();
+    _generation++;
+    latest.value = null;
   }
 }
