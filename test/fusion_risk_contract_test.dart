@@ -60,9 +60,9 @@ void main() {
         'valid_until': '2026-09-29T10:10:00Z',
       },
     });
-    expect(risk.scoreOutOf100, 58.0);
+    expect(risk.scoreOutOf100, closeTo(58.0, 1e-9));
     expect(risk.forecast?.scope, 'physiological');
-    expect(risk.forecast?.scoreOutOf100, 84.0);
+    expect(risk.forecast?.scoreOutOf100, closeTo(84.0, 1e-9));
     expect(risk.forecast?.isValidAt(DateTime.utc(2026, 9, 29, 10, 9)), isTrue);
     expect(
       risk.forecast?.isValidAt(DateTime.utc(2026, 9, 29, 10, 11)),
