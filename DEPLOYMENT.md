@@ -8,10 +8,10 @@ We use **GitHub Actions** to automate our workflow. There are two main workflows
 
 ### A. Pull Request Validation (`validate_and_build.yml`)
 - **Trigger**: Every time a Pull Request is opened or updated against the `main` branch.
-- **Actions**: 
+- **Actions** (Flutter 3.47.5):
   - Runs `flutter analyze` to check for code quality issues.
   - Runs `flutter test` to execute widget and unit tests.
-  - Runs formatting and analysis on changed Dart files; the main-branch build produces a debug validation APK.
+  - Runs formatting and analysis on changed Dart files, all Flutter tests, and a debug Android APK build.
 
 ### B. Sync and Release (`sync_and_release.yml`)
 - **Trigger**: Every time code is pushed or merged into the `main` branch.
