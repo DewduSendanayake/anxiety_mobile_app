@@ -7,6 +7,7 @@ void main() {
       'fusion_result_id': 123,
       'composite': 0.58,
       'band': 'AMBER',
+      'tier': 'Medium',
       'updated_at': '2026-09-18T12:00:00Z',
     });
 
