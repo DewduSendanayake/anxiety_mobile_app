@@ -124,8 +124,9 @@ class PatientAttentionEventService {
       }
       final events = <PatientAttentionEvent>[];
       for (final payload in payloads) {
-        if (generation != null && (!_active || generation != _generation))
+        if (generation != null && (!_active || generation != _generation)) {
           break;
+        }
         try {
           final event = PatientAttentionEvent.fromJson(payload);
           events.add(event);

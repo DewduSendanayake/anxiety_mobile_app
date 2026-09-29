@@ -177,9 +177,6 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   // ── Server assessment ───────────────────────────────────────
-  bool get _hasLiveReading =>
-      _chestStrap.hasLiveWornReading && (_lastReading?.isWorn ?? false);
-
   /// The app-wide overall risk is server-authoritative. It must come
   /// exclusively from the latest fusion assessment.
   double? get _overallRisk =>

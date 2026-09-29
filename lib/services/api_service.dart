@@ -305,8 +305,9 @@ class ApiService {
       final body = jsonDecode(res.body);
       if (body is! Map || body['invite_code'] is! String) return null;
       final expiry = DateTime.tryParse(body['expires_at']?.toString() ?? '');
-      if (expiry == null || !expiry.isAfter(DateTime.now().toUtc()))
+      if (expiry == null || !expiry.isAfter(DateTime.now().toUtc())) {
         return null;
+      }
       return AssignmentInvite(body['invite_code'] as String, expiry);
     } catch (_) {
       return null;
@@ -483,12 +484,14 @@ class ApiService {
           sessionService: sessionService,
           participantId: participantId,
           backendBase: backendBase,
-        ))
+        )) {
           return null;
+        }
         current = await sessions.currentSession();
       }
-      if (current == null || current.subjectId != expectedSubjectId)
+      if (current == null || current.subjectId != expectedSubjectId) {
         return null;
+      }
       for (var attempt = 0; attempt < 2; attempt++) {
         final headers = {
           'Accept': 'application/json',
@@ -509,11 +512,13 @@ class ApiService {
               sessionService: sessionService,
               participantId: participantId,
               backendBase: backendBase,
-            ))
+            )) {
           return null;
+        }
         current = await sessions.currentSession();
-        if (current == null || current.subjectId != expectedSubjectId)
+        if (current == null || current.subjectId != expectedSubjectId) {
           return null;
+        }
       }
       return null;
     } finally {
