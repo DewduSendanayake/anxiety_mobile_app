@@ -89,9 +89,7 @@ class ShareParticipantIdPage extends StatelessWidget {
     messenger.showSnackBar(
       SnackBar(
         content: Text(
-          subjectId != null
-              ? 'Aura is now connected to your doctor.'
-              : 'Could not confirm this code. Ask your doctor for a fresh pairing code.',
+          subjectId != null ? 'Aura is now connected to your doctor.' : 'Could not confirm this code. Ask your doctor for a fresh pairing code.',
         ),
       ),
     );
@@ -178,16 +176,15 @@ class ShareParticipantIdPage extends StatelessWidget {
           child: Column(
             children: [
               Text(
-                'Ask your doctor to scan this code',
+                'Share your participant ID',
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: Theme.of(context).textTheme.headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 10),
               Text(
-                'The code contains only your Aura Participant ID. '
-                'It does not contain your name, readings, or diagnosis.',
+                'This QR contains only your Aura Participant ID. It does not give a clinician access to your record. '
+                'To link a clinician, use “Give clinician a code” below. It does not contain your name, readings, or diagnosis.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   height: 1.5,
@@ -254,9 +251,8 @@ class ShareParticipantIdPage extends StatelessWidget {
               const SizedBox(height: 20),
               Text(
                 'Have a pairing code?',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 8),
               Text(
