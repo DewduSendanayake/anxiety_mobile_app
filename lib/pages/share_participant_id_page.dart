@@ -89,7 +89,9 @@ class ShareParticipantIdPage extends StatelessWidget {
     messenger.showSnackBar(
       SnackBar(
         content: Text(
-          subjectId != null ? 'Aura is now connected to your doctor.' : 'Could not confirm this code. Ask your doctor for a fresh pairing code.',
+          subjectId != null
+              ? 'Aura is now connected to your doctor.'
+              : 'Could not confirm this code. Ask your doctor for a fresh pairing code.',
         ),
       ),
     );
@@ -178,8 +180,9 @@ class ShareParticipantIdPage extends StatelessWidget {
               Text(
                 'Share your participant ID',
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w700),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               const SizedBox(height: 10),
               Text(
@@ -251,8 +254,9 @@ class ShareParticipantIdPage extends StatelessWidget {
               const SizedBox(height: 20),
               Text(
                 'Have a pairing code?',
-                style: Theme.of(context).textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w700),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 8),
               Text(
