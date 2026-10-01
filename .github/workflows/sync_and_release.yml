@@ -168,4 +168,3 @@ jobs:
 
       - name: Report signed release
         run: echo "Signed release APK and AAB were built with BACKEND_BASE." >> "$GITHUB_STEP_SUMMARY"
-          fi
