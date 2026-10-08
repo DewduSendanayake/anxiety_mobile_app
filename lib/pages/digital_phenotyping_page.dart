@@ -1,26 +1,25 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  Component 2 — Behavioural Observation Panel  (v2)
+//  Component 2 — Sensing & data details
 //
-//  Adds, on top of the v1 descriptive-observations page:
-//   1. More passive metrics already produced by the RAPIDS pipeline
-//      (home/away time, significant places, sleep proxy, activity proxy)
-//   2. A data-quality / coverage panel ("usable data on N of last 14 days")
-//   3. Change-detection copy for Day 57+, with the false-alarm rate shown
-//      next to any flagged change, not buried in a settings page
-//   4. A check-in history/journal view, kept explicitly separate from
-//      passive data, with a one-line "why separate" explanation
-//   5. A plain-text export the participant can hand to their own clinician
-//      (no score reaches the clinician automatically — human stays in the loop)
-//   6. A static, always-visible crisis-resource banner, independent of any
-//      model output
+//  Opened from the Activity tab ("Behavioural Context"). The Activity tab owns
+//  the participant-facing summary (baseline, observations, change detection);
+//  this page only shows how collection is working:
+//   1. Raw weekly passive metrics (home/away time, places, sleep and movement
+//      proxies), never compared with anyone else
+//   2. Data-quality coverage for the last 14 completed days
+//   3. Collection status with a one-tap fix when collection has stopped
+//   4. Today's on-device measurements
+//   5. A plain-text summary the participant can choose to give a clinician
+//   6. A static, always-visible crisis-resource banner
 //
-//  Nothing here is simulated or scored. Every new value is either a real
-//  pipeline output or an explicit "not available" state, same discipline as
-//  v1's `blockingIssues`.
+//  Nothing here is simulated or scored. Every value is either a real pipeline
+//  output or an explicit "not available" state.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'dart:async';
 import 'dart:convert';
+import 'package:app_settings/app_settings.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -30,55 +29,16 @@ import 'package:call_log/call_log.dart';
 import 'package:usage_stats/usage_stats.dart';
 import 'package:flutter_sms_inbox/flutter_sms_inbox.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/background/background_service.dart' as bg;
 import '../services/background_service_helper.dart';
 import '../services/clinician_longitudinal_context_service.dart';
-import '../theme/theme_controller.dart';
+import '../services/research_permission_service.dart';
+import '../theme/c2_palette.dart';
+import '../widgets/c2/crisis_banner.dart';
 
-// ─────────────────────────────────────────────
-// COLOUR TOKENS
-// ─────────────────────────────────────────────
-class _C {
-  static bool get _dark => ThemeController.instance.isDarkNow;
+// Colour tokens are shared with the Activity tab so both pages match.
+typedef _C = C2Palette;
 
-  static Color get scaffold =>
-      _dark ? const Color(0xFF111218) : const Color(0xFFF5F3FF);
-  static Color get cardBase =>
-      _dark ? const Color(0xFF1A1B24) : const Color(0xFFFFFFFF);
-  static Color get chip =>
-      _dark ? const Color(0xFF29243B) : const Color(0xFFF0ECFF);
-
-  static Color get p500 =>
-      _dark ? const Color(0xFFB8B6FF) : const Color(0xFF5E60CE);
-  static Color get p400 =>
-      _dark ? const Color(0xFFC6B4FF) : const Color(0xFF7C5CBF);
-  static Color get p200 =>
-      _dark ? const Color(0xFF655A88) : const Color(0xFFC4B5FD);
-  static Color get p100 =>
-      _dark ? const Color(0xFF29243B) : const Color(0xFFF0ECFF);
-
-  static Color get primary => p500;
-  static Color get amber =>
-      _dark ? const Color(0xFFFFB75D) : const Color(0xFFF59B24);
-  static Color get amberBg =>
-      _dark ? const Color(0xFF3A2B16) : const Color(0xFFFEF3DC);
-  static Color get rose =>
-      _dark ? const Color(0xFFFF8299) : const Color(0xFFEF5777);
-  static Color get roseBg =>
-      _dark ? const Color(0xFF3B2028) : const Color(0xFFFDEAEE);
-  static Color get teal =>
-      _dark ? const Color(0xFF5ED7C7) : const Color(0xFF0F9D8C);
-  static Color get tealBg =>
-      _dark ? const Color(0xFF173633) : const Color(0xFFE3F5F2);
-
-  static Color get textPrimary =>
-      _dark ? const Color(0xFFF3F1FA) : const Color(0xFF2D3142);
-  static Color get textSecondary =>
-      _dark ? const Color(0xFFC9C5D6) : const Color(0xFF5A607F);
-  static Color get textMuted =>
-      _dark ? const Color(0xFFA9A4B7) : const Color(0xFF9095A7);
-  static Color get border =>
-      _dark ? const Color(0xFF383643) : const Color(0xFFE8E5F4);
-}
 // ─────────────────────────────────────────────
 // DATA MODEL — mirrors component2_output.py; unchanged from v1
 // ─────────────────────────────────────────────
@@ -114,8 +74,6 @@ class Observation {
         value: (j['value'] as num?)?.toDouble(),
         unit: j['unit'] as String? ?? '',
       );
-
-  bool get isFlagged => z != null && z!.abs() >= 1.5;
 }
 
 class ObservationPayload {
@@ -189,15 +147,15 @@ class ObservationPayload {
       participantId: participantId,
       windowStart: DateTime.now().subtract(const Duration(days: 27)),
       windowEnd: DateTime.now(),
-      baselineReady: daysEnrolled >= required * 2,
+      baselineReady: false,
       reportable: false,
       observations: const [],
       blockingIssues: [
         'Personal baseline requires $required days of data before the '
             'reporting window. $daysEnrolled days collected so far.',
       ],
-      daysWithData: daysEnrolled.clamp(0, 28),
-      baselineDaysAvailable: (daysEnrolled - 28).clamp(0, 999),
+      daysWithData: 0,
+      baselineDaysAvailable: 0,
       baselineDaysRequired: required,
       emaReceived: emaReceived,
       emaExpected: emaExpected,
@@ -292,7 +250,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
   PassiveMetrics _passive = const PassiveMetrics();
   List<DayCoverage> _coverage = [];
 
-  static const double _falseAlarmRate = 0.06; // ~6%, from validation on GLOBEM
+  bool _fixing = false;
 
   @override
   void initState() {
@@ -463,32 +421,6 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
 
   // ─── HELPERS ─────────────────────────────────
 
-  Color _zColor(double? z) {
-    if (z == null) return _C.textMuted;
-    final a = z.abs();
-    if (a >= 2.0) return _C.rose;
-    if (a >= 1.5) return _C.amber;
-    return _C.teal;
-  }
-
-  Color _zBg(double? z) {
-    if (z == null) return _C.p100;
-    final a = z.abs();
-    if (a >= 2.0) return _C.roseBg;
-    if (a >= 1.5) return _C.amberBg;
-    return _C.tealBg;
-  }
-
-  IconData _dirIcon(String d) => switch (d) {
-    'above' => Icons.trending_up_rounded,
-    'below' => Icons.trending_down_rounded,
-    'stable' => Icons.trending_flat_rounded,
-    _ => Icons.remove_rounded,
-  };
-
-  List<Observation> get _flaggedObservations =>
-      (_payload?.observations ?? []).where((o) => o.isFlagged).toList();
-
   // ─────────────────────────────────────────────
   // BUILD
   // ─────────────────────────────────────────────
@@ -510,7 +442,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
               )
             : null,
         title: Text(
-          'Behavioural Context',
+          'Sensing & data details',
           style: GoogleFonts.poppins(
             color: _C.textPrimary,
             fontWeight: FontWeight.w600,
@@ -519,20 +451,12 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
         ),
         actions: [
           IconButton(
-            icon: Icon(
-              Icons.ios_share_rounded,
-              color: _C.textMuted,
-              size: 19,
-            ),
+            icon: Icon(Icons.ios_share_rounded, color: _C.textMuted, size: 19),
             tooltip: 'Export for clinician',
             onPressed: _exportForClinician,
           ),
           IconButton(
-            icon: Icon(
-              Icons.refresh_rounded,
-              color: _C.textMuted,
-              size: 20,
-            ),
+            icon: Icon(Icons.refresh_rounded, color: _C.textMuted, size: 20),
             onPressed: () {
               setState(() => _loading = true);
               _load();
@@ -557,19 +481,13 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // (6) Static crisis-resource banner — always visible,
+                      // Static crisis-resource banner — always visible,
                       // independent of any model output.
-                      _crisisBanner(),
+                      const C2CrisisBanner(),
                       const SizedBox(height: 16),
                       _header(),
-                      const SizedBox(height: 16),
-                      _observationCard(),
-                      if (_flaggedObservations.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        _changeDetectionCard(),
-                      ],
                       const SizedBox(height: 18),
-                      _sectionTitle('Your Week'),
+                      _sectionTitle('Your week'),
                       const SizedBox(height: 4),
                       Text(
                         'Raw numbers, not compared with anyone else',
@@ -581,15 +499,15 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
                       const SizedBox(height: 10),
                       _passiveMetricsCard(),
                       const SizedBox(height: 18),
-                      _sectionTitle('Data Quality'),
+                      _sectionTitle('Data quality'),
                       const SizedBox(height: 10),
                       _dataQualityCard(),
                       const SizedBox(height: 18),
-                      _sectionTitle('Collection Status'),
+                      _sectionTitle('Collection status'),
                       const SizedBox(height: 10),
                       _collectionStatusCard(),
                       const SizedBox(height: 18),
-                      _sectionTitle('Today\u2019s Measurements'),
+                      _sectionTitle('Today\u2019s measurements'),
                       const SizedBox(height: 10),
                       _metric(
                         Icons.location_on_rounded,
@@ -640,7 +558,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Text(
-        'Behavioural observations',
+        'How your data is collected',
         style: GoogleFonts.poppins(
           fontSize: 23,
           fontWeight: FontWeight.w700,
@@ -650,8 +568,13 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
       ),
       const SizedBox(height: 3),
       Text(
-        'Measured against your own typical patterns',
-        style: GoogleFonts.poppins(fontSize: 13, color: _C.textMuted),
+        'Your pattern comparisons are on the Activity tab. This page shows '
+        'the raw numbers behind them and whether collection is working.',
+        style: GoogleFonts.poppins(
+          fontSize: 12.5,
+          color: _C.textMuted,
+          height: 1.45,
+        ),
       ),
     ],
   );
@@ -665,397 +588,6 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
       letterSpacing: -0.3,
     ),
   );
-
-  // ─── (6) CRISIS BANNER ───────────────────────
-  // Static, always visible, not tied to any model output or flagged state.
-  // NOTE: Replace the placeholder contacts below with the exact resource
-  // list approved in your NHSL ethics protocol before this ships — a study
-  // app's crisis text should match what the ethics committee signed off on,
-  // not be assembled ad hoc.
-
-  Widget _crisisBanner() => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: _C.roseBg,
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: _C.rose.withValues(alpha: 0.35)),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(Icons.favorite_rounded, size: 17, color: _C.rose),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'If you need to talk to someone right now',
-                style: GoogleFonts.poppins(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: _C.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'This app does not monitor you for crisis. These lines '
-                'are staffed by people, any time.',
-                style: GoogleFonts.poppins(
-                  fontSize: 11,
-                  color: _C.textSecondary,
-                  height: 1.4,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _crisisChip(
-                    'National Mental Health Helpline',
-                    '1926',
-                    'tel:1926',
-                  ),
-                  _crisisChip(
-                    'Sri Lanka Sumithrayo',
-                    '011 2 696 666',
-                    'tel:+94112696666',
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-
-  Widget _crisisChip(String label, String number, String uri) => InkWell(
-    borderRadius: BorderRadius.circular(20),
-    onTap: () async {
-      await Clipboard.setData(ClipboardData(text: number));
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Copied $number to clipboard')));
-      }
-    },
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: _C.cardBase,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _C.rose.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.call_rounded, size: 13, color: _C.rose),
-          const SizedBox(width: 6),
-          Text(
-            '$label \u00b7 $number',
-            style: GoogleFonts.poppins(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: _C.textPrimary,
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  // ─── OBSERVATION CARD ────────────────────────
-
-  Widget _observationCard() {
-    final p = _payload;
-    if (p == null) return const SizedBox.shrink();
-
-    if (!p.reportable) return _baselineBuildingCard(p);
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _C.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.insights_rounded, color: _C.primary, size: 19),
-              const SizedBox(width: 8),
-              Text(
-                'Last 28 days',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: _C.textPrimary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Compared with your own baseline',
-            style: GoogleFonts.poppins(fontSize: 11, color: _C.textMuted),
-          ),
-          const SizedBox(height: 16),
-          ...p.observations.map(_observationRow),
-        ],
-      ),
-    );
-  }
-
-  Widget _observationRow(Observation o) {
-    final hasZ = o.z != null;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: _zBg(o.z),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(_dirIcon(o.direction), size: 18, color: _zColor(o.z)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  o.label,
-                  style: GoogleFonts.poppins(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: _C.textPrimary,
-                  ),
-                ),
-                Text(
-                  hasZ
-                      ? '${o.direction == 'stable' ? 'Within' : 'Outside'} your usual range'
-                      : 'Not enough data yet',
-                  style: GoogleFonts.poppins(fontSize: 11, color: _C.textMuted),
-                ),
-              ],
-            ),
-          ),
-          if (hasZ)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-              decoration: BoxDecoration(
-                color: _zBg(o.z),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                '${o.z! >= 0 ? '+' : ''}${o.z!.toStringAsFixed(1)}\u03c3',
-                style: GoogleFonts.poppins(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: _zColor(o.z),
-                ),
-              ),
-            )
-          else
-            Text(
-              '\u2014',
-              style: GoogleFonts.poppins(fontSize: 13, color: _C.textMuted),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _baselineBuildingCard(ObservationPayload p) {
-    final have = p.baselineDaysAvailable;
-    final need = p.baselineDaysRequired;
-    final frac = need == 0 ? 0.0 : (have / need).clamp(0.0, 1.0);
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: _C.cardBase,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _C.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.hourglass_top_rounded, color: _C.p400, size: 19),
-              const SizedBox(width: 8),
-              Text(
-                'Building your baseline',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: _C.textPrimary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Observations compare your recent behaviour with your own typical '
-            'patterns. That needs $need days of history first.',
-            style: GoogleFonts.poppins(
-              fontSize: 12,
-              color: _C.textSecondary,
-              height: 1.45,
-            ),
-          ),
-          const SizedBox(height: 16),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(
-              value: frac,
-              minHeight: 8,
-              backgroundColor: _C.p100,
-              valueColor: AlwaysStoppedAnimation(_C.p400),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Day $have of $need',
-            style: GoogleFonts.poppins(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: _C.p500,
-            ),
-          ),
-          if (p.blockingIssues.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            ...p.blockingIssues.map(
-              (b) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Icon(
-                        Icons.info_outline_rounded,
-                        size: 14,
-                        color: _C.textMuted,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        b,
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          color: _C.textMuted,
-                          height: 1.4,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  // ─── (3) CHANGE DETECTION CARD ───────────────
-  // Only rendered once at least one observation crosses the flag threshold.
-  // Copy states the shift plainly, and puts the false-alarm rate right next
-  // to it, so a flagged change reads as "worth noticing" not "diagnostic".
-
-  Widget _changeDetectionCard() {
-    final flagged = _flaggedObservations;
-    if (flagged.isEmpty) return const SizedBox.shrink();
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _C.amberBg,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _C.amber.withValues(alpha: 0.35)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.notifications_active_outlined,
-                size: 17,
-                color: _C.amber,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Change noticed',
-                style: GoogleFonts.poppins(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w700,
-                  color: _C.textPrimary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ...flagged.map(
-            (o) => Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Text(
-                'Your ${o.label.toLowerCase()} this week was '
-                '${o.z! >= 0 ? 'higher' : 'lower'} than your usual range.',
-                style: GoogleFonts.poppins(
-                  fontSize: 12.5,
-                  color: _C.textPrimary,
-                  height: 1.4,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                Icons.info_outline_rounded,
-                size: 13,
-                color: _C.textMuted,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'About ${(_falseAlarmRate * 100).toStringAsFixed(0)}% of flags '
-                  'like this happen without anything meaningful behind them. '
-                  'This is a nudge to notice, not a diagnosis.',
-                  style: GoogleFonts.poppins(
-                    fontSize: 11,
-                    color: _C.textMuted,
-                    height: 1.4,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
 
   // ─── (1) PASSIVE METRICS CARD ────────────────
   // Same raw-numbers, no-scoring treatment as v1's "Today's Measurements",
@@ -1072,7 +604,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
           p.homeHours != null && p.awayHours != null
               ? '${p.homeHours!.toStringAsFixed(1)}h home \u00b7 ${p.awayHours!.toStringAsFixed(1)}h away'
               : 'Not available yet',
-          'From your location-clustering step',
+          'Average per day over your last 7 usable days',
         ),
         const SizedBox(height: 10),
         _metric(
@@ -1081,7 +613,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
           p.significantPlaces != null
               ? '${p.significantPlaces} places'
               : 'Not available yet',
-          'Distinct location clusters this week',
+          'Different places you spent time at, on average per day',
         ),
         const SizedBox(height: 10),
         _metric(
@@ -1096,11 +628,11 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
         const SizedBox(height: 10),
         _metric(
           Icons.directions_walk_rounded,
-          'Activity proxy',
+          'Movement proxy',
           p.activityDataAvailable && p.activityProxyScore != null
-              ? p.activityProxyScore!.toStringAsFixed(2)
-              : 'No accelerometer data available',
-          'Raw movement index \u2014 unitless, not compared with anyone else',
+              ? '${(p.activityProxyScore! * 100).toStringAsFixed(1)}% high-motion readings'
+              : 'No movement data yet',
+          'From the phone\u2019s motion sensor \u2014 not a step or exercise count',
         ),
       ],
     );
@@ -1154,9 +686,9 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
           ),
           const SizedBox(height: 10),
           Text(
-            'This reflects sensor coverage only. It doesn\u2019t indicate '
-            'anything about your behaviour or wellbeing \u2014 in our '
-            'validation, missing data carried no meaningful signal.',
+            'This shows how much sensing data reached Aura. Missing days '
+            'happen (phone off, battery saver, permissions) and say nothing '
+            'about your wellbeing.',
             style: GoogleFonts.poppins(
               fontSize: 11,
               color: _C.textMuted,
@@ -1207,6 +739,46 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
               ),
             ],
           ),
+          if (!ok) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Aura cannot collect new data right now. This usually means a '
+              'permission was turned off or battery saver stopped the app.',
+              style: GoogleFonts.poppins(
+                fontSize: 11.5,
+                color: _C.textSecondary,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _fixing ? null : _fixCollection,
+                icon: _fixing
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.build_circle_outlined, size: 18),
+                label: Text(
+                  _fixing ? 'Checking\u2026' : 'Fix collection',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _C.primary,
+                  foregroundColor: _C.cardBase,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
           Row(
             children: [
@@ -1220,8 +792,8 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
               const SizedBox(width: 10),
               Expanded(
                 child: _statTile(
-                  'Days with data',
-                  '${_payload?.daysWithData ?? 0}/28',
+                  'Usable days (last 14)',
+                  '${_coverage.where((d) => d.usable).length}/${_coverage.length}',
                 ),
               ),
             ],
@@ -1229,6 +801,39 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
         ],
       ),
     );
+  }
+
+  /// Re-runs permission onboarding and restarts the collector. If it still
+  /// cannot start, opens the app's system settings so the participant can
+  /// re-enable a permission or turn off battery optimisation.
+  Future<void> _fixCollection() async {
+    if (kIsWeb) return;
+    setState(() => _fixing = true);
+    var running = false;
+    try {
+      await ResearchPermissionService.requestMissingPermissions(force: true);
+      running = await bg.startBackgroundServiceIfPermitted();
+    } catch (e) {
+      debugPrint('Fix collection error: $e');
+    }
+    await _fetchServiceStatus();
+    if (!mounted) return;
+    setState(() => _fixing = false);
+    if (running || _serviceRunning) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Collection is running again.')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Opening settings. Allow location and turn off battery '
+            'optimisation for Aura.',
+          ),
+        ),
+      );
+      await AppSettings.openAppSettings();
+    }
   }
 
   Widget _statTile(String label, String value, {bool warn = false}) =>
@@ -1384,11 +989,15 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
   Future<void> _exportForClinician() async {
     final p = _payload;
     final participantId =
-        p?.participantId ?? widget.userId ?? await BackgroundServiceHelper.getCachedId();
+        p?.participantId ??
+        widget.userId ??
+        await BackgroundServiceHelper.getCachedId();
 
     try {
       final clinicianContext =
-          await ClinicianLongitudinalContextService.buildAndCache(participantId);
+          await ClinicianLongitudinalContextService.buildAndCache(
+            participantId,
+          );
       final buf = StringBuffer();
       final now = DateTime.now();
 
@@ -1400,11 +1009,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
         return '${(value.toDouble() * 100).round()}%';
       }
 
-      String scoreLine(
-        String label,
-        Map<String, dynamic> trend,
-        int maxScore,
-      ) {
+      String scoreLine(String label, Map<String, dynamic> trend, int maxScore) {
         if (trend['available'] != true || trend['latest_score'] == null) {
           return '$label: no local trend recorded yet';
         }
@@ -1463,8 +1068,9 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
       buf.writeln('');
 
       // 2) Physiological event confirmations
-      final physiological =
-          mapOf(clinicianContext['physiological_event_confirmations']);
+      final physiological = mapOf(
+        clinicianContext['physiological_event_confirmations'],
+      );
       final physiological30 = mapOf(physiological['thirty_day']);
       buf.writeln('2. PHYSIOLOGICAL EVENT CONFIRMATIONS (30 DAYS)');
       buf.writeln('Alert check-ins: ${physiological30['events'] ?? 0}');
@@ -1524,7 +1130,9 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
       final c2 = mapOf(clinicianContext['c2_behavioral_changes']);
       final quality = mapOf(c2['data_quality']);
       final change = mapOf(c2['change_detection']);
-      final patterns = c2['patterns'] is List ? c2['patterns'] as List : const [];
+      final patterns = c2['patterns'] is List
+          ? c2['patterns'] as List
+          : const [];
 
       buf.writeln('4. COMPONENT 2 BEHAVIOURAL CONTEXT');
       buf.writeln('Validation status: not_validated');
@@ -1567,7 +1175,9 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
       // Additional current raw context already visible on this C2 screen.
       buf.writeln('ADDITIONAL CURRENT PASSIVE CONTEXT');
       final usableDays = _coverage.where((d) => d.usable).length;
-      buf.writeln('Usable sensing data: $usableDays of ${_coverage.length} recent days');
+      buf.writeln(
+        'Usable sensing data: $usableDays of ${_coverage.length} recent days',
+      );
       buf.writeln('Screen time today: ${_screenHours.toStringAsFixed(1)} hrs');
       buf.writeln('Communication today: $_callCount calls, $_smsCount SMS');
       if (_passive.homeHours != null && _passive.awayHours != null) {
@@ -1609,9 +1219,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
       debugPrint('Clinician export error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not prepare clinician summary'),
-          ),
+          const SnackBar(content: Text('Could not prepare clinician summary')),
         );
       }
     }
