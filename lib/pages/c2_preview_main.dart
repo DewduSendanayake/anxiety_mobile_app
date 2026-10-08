@@ -12,7 +12,8 @@
 //   ?state=change        Day 60 — the same, seeded without the backend sync
 //   ?state=observations  Day 40 — personal-baseline observations only
 //   ?state=baseline      Day 12 — "Building your personal baseline"
-// Add &theme=dark to capture the dark theme.
+// Add &theme=dark to capture the dark theme, and &page=summary to open the
+// "Prepare for my appointment" screen for that state.
 
 import 'dart:convert';
 
@@ -22,6 +23,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../theme/app_theme.dart';
 import '../theme/theme_controller.dart';
+import 'clinician_summary_page.dart';
 import 'component2_bootstrap_page.dart';
 import 'participant_behavior_page.dart';
 
@@ -45,7 +47,12 @@ Future<void> main() async {
       _previewAllowed &&
       const {'baseline', 'observations', 'change'}.contains(state);
   if (seeded) await _seedState(state!);
-  runApp(_C2PreviewApp(seeded: seeded));
+  runApp(
+    _C2PreviewApp(
+      seeded: seeded,
+      summary: _previewAllowed && query['page'] == 'summary',
+    ),
+  );
 }
 
 /// Writes a labelled synthetic payload for an earlier point in the timeline.
@@ -152,8 +159,9 @@ Future<void> _seedState(String state) async {
 
 class _C2PreviewApp extends StatelessWidget {
   final bool seeded;
+  final bool summary;
 
-  const _C2PreviewApp({required this.seeded});
+  const _C2PreviewApp({required this.seeded, required this.summary});
 
   @override
   Widget build(BuildContext context) {
@@ -171,6 +179,8 @@ class _C2PreviewApp extends StatelessWidget {
                   child: Text('The Component 2 preview is development-only.'),
                 ),
               )
+            : summary
+            ? const ClinicianSummaryPage(userId: _previewParticipantId)
             : seeded
             ? const ParticipantBehaviorPage(userId: _previewParticipantId)
             : const Component2BootstrapPage(userId: _previewParticipantId),

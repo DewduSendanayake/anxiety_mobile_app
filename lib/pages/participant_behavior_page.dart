@@ -12,6 +12,7 @@ import '../services/component2_data_service.dart';
 import '../services/self_report_history_service.dart';
 import '../theme/c2_palette.dart';
 import '../widgets/c2/crisis_banner.dart';
+import 'clinician_summary_page.dart';
 import 'digital_phenotyping_page.dart';
 
 typedef _C = C2Palette;
@@ -293,6 +294,8 @@ class _ParticipantBehaviorPageState extends State<ParticipantBehaviorPage> {
                   _sectionTitle('Check-ins'),
                   const SizedBox(height: 8),
                   _checkInCard(),
+                  const SizedBox(height: 12),
+                  _appointmentCard(),
                   const SizedBox(height: 18),
                   _collectionDetails(),
                   const SizedBox(height: 18),
@@ -972,6 +975,55 @@ class _ParticipantBehaviorPageState extends State<ParticipantBehaviorPage> {
           ),
         ),
       ],
+    ),
+  );
+
+  Widget _appointmentCard() => _card(
+    child: InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ClinicianSummaryPage(userId: widget.userId),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: _C.p100,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(Icons.description_outlined, color: _C.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Prepare for my appointment',
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: _C.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'A one-page summary you choose to share as a PDF.',
+                  style: GoogleFonts.poppins(
+                    fontSize: 11.5,
+                    color: _C.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(Icons.chevron_right_rounded, color: _C.textMuted),
+        ],
+      ),
     ),
   );
 

@@ -146,6 +146,9 @@ Pick a timeline state with the URL query (add `&theme=dark` for dark mode):
 | `/?state=observations` | Day 40, personal-baseline observations, no change card |
 | `/?state=baseline` | Day 12, "Building your personal baseline" |
 
+Add `&page=summary` to any of these to open the "Prepare for my appointment"
+clinician-summary screen (PDF share and copy as text).
+
 Every state shows a "Preview data" ribbon so captured screenshots are visibly
 synthetic.
 

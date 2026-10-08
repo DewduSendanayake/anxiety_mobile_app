@@ -21,7 +21,6 @@ import 'dart:convert';
 import 'package:app_settings/app_settings.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:geolocator/geolocator.dart';
@@ -31,137 +30,13 @@ import 'package:flutter_sms_inbox/flutter_sms_inbox.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/background/background_service.dart' as bg;
 import '../services/background_service_helper.dart';
-import '../services/clinician_longitudinal_context_service.dart';
+import 'clinician_summary_page.dart';
 import '../services/research_permission_service.dart';
 import '../theme/c2_palette.dart';
 import '../widgets/c2/crisis_banner.dart';
 
 // Colour tokens are shared with the Activity tab so both pages match.
 typedef _C = C2Palette;
-
-// ─────────────────────────────────────────────
-// DATA MODEL — mirrors component2_output.py; unchanged from v1
-// ─────────────────────────────────────────────
-
-/// A single behavioural observation expressed against the participant's own
-/// baseline. [z] is null when no baseline exists yet.
-class Observation {
-  final String key;
-  final String label;
-  final double? z;
-  final String direction; // above | below | stable | no_baseline | unknown
-  final String confidence; // high | medium | low | insufficient
-  final double? value;
-  final String unit;
-
-  const Observation({
-    required this.key,
-    required this.label,
-    required this.z,
-    required this.direction,
-    required this.confidence,
-    this.value,
-    this.unit = '',
-  });
-
-  factory Observation.fromJson(String key, Map<String, dynamic> j) =>
-      Observation(
-        key: key,
-        label: j['label'] as String? ?? key,
-        z: (j['z'] as num?)?.toDouble(),
-        direction: j['direction'] as String? ?? 'unknown',
-        confidence: j['confidence'] as String? ?? 'low',
-        value: (j['value'] as num?)?.toDouble(),
-        unit: j['unit'] as String? ?? '',
-      );
-}
-
-class ObservationPayload {
-  final String participantId;
-  final DateTime windowStart;
-  final DateTime windowEnd;
-  final bool baselineReady;
-  final bool reportable;
-  final List<Observation> observations;
-  final List<String> blockingIssues;
-  final int daysWithData;
-  final int baselineDaysAvailable;
-  final int baselineDaysRequired;
-  final int emaReceived;
-  final int emaExpected;
-
-  const ObservationPayload({
-    required this.participantId,
-    required this.windowStart,
-    required this.windowEnd,
-    required this.baselineReady,
-    required this.reportable,
-    required this.observations,
-    required this.blockingIssues,
-    required this.daysWithData,
-    required this.baselineDaysAvailable,
-    required this.baselineDaysRequired,
-    required this.emaReceived,
-    required this.emaExpected,
-  });
-
-  factory ObservationPayload.fromJson(Map<String, dynamic> j) {
-    final obsMap = (j['observations'] as Map<String, dynamic>? ?? {});
-    final q = (j['data_quality'] as Map<String, dynamic>? ?? {});
-    final w = (j['window'] as Map<String, dynamic>? ?? {});
-    return ObservationPayload(
-      participantId: j['participant_id'] as String? ?? 'unknown',
-      windowStart:
-          DateTime.tryParse(w['start'] as String? ?? '') ?? DateTime.now(),
-      windowEnd: DateTime.tryParse(w['end'] as String? ?? '') ?? DateTime.now(),
-      baselineReady: j['baseline_ready'] as bool? ?? false,
-      reportable: j['reportable'] as bool? ?? false,
-      observations: obsMap.entries
-          .map(
-            (e) => Observation.fromJson(e.key, e.value as Map<String, dynamic>),
-          )
-          .toList(),
-      blockingIssues:
-          (j['blocking_issues'] as List?)?.map((e) => e.toString()).toList() ??
-          [],
-      daysWithData: (q['days_with_data'] as num?)?.toInt() ?? 0,
-      baselineDaysAvailable:
-          (q['baseline_days_available'] as num?)?.toInt() ?? 0,
-      baselineDaysRequired:
-          (q['baseline_days_required'] as num?)?.toInt() ?? 28,
-      emaReceived: (q['ema_received'] as num?)?.toInt() ?? 0,
-      emaExpected: (q['ema_expected'] as num?)?.toInt() ?? 0,
-    );
-  }
-
-  /// Local fallback used until the analysis backend is wired up. Reports the
-  /// baseline-building state honestly rather than inventing observations.
-  factory ObservationPayload.buildingBaseline({
-    required String participantId,
-    required int daysEnrolled,
-    required int emaReceived,
-    required int emaExpected,
-  }) {
-    const required = 28;
-    return ObservationPayload(
-      participantId: participantId,
-      windowStart: DateTime.now().subtract(const Duration(days: 27)),
-      windowEnd: DateTime.now(),
-      baselineReady: false,
-      reportable: false,
-      observations: const [],
-      blockingIssues: [
-        'Personal baseline requires $required days of data before the '
-            'reporting window. $daysEnrolled days collected so far.',
-      ],
-      daysWithData: 0,
-      baselineDaysAvailable: 0,
-      baselineDaysRequired: required,
-      emaReceived: emaReceived,
-      emaExpected: emaExpected,
-    );
-  }
-}
 
 // ─────────────────────────────────────────────
 // NEW MODEL (1) — Passive metrics already computed by RAPIDS, shown raw,
@@ -246,7 +121,6 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
   bool _serviceRunning = false;
   int _daysEnrolled = 0;
 
-  ObservationPayload? _payload;
   PassiveMetrics _passive = const PassiveMetrics();
   List<DayCoverage> _coverage = [];
 
@@ -260,11 +134,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
 
   Future<void> _load() async {
     await Future.wait([_fetchDeviceMetrics(), _fetchServiceStatus()]);
-    await Future.wait([
-      _fetchObservations(),
-      _fetchPassiveMetrics(),
-      _fetchCoverage(),
-    ]);
+    await Future.wait([_fetchPassiveMetrics(), _fetchCoverage()]);
     if (mounted) setState(() => _loading = false);
   }
 
@@ -281,30 +151,6 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
     } catch (e) {
       debugPrint('Service status error: $e');
     }
-  }
-
-  /// Loads the observation payload. Until the analysis backend is available
-  /// this reports the baseline-building state — it never fabricates values.
-  Future<void> _fetchObservations() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final cached = prefs.getString('c2_observation_payload');
-      if (cached != null && cached.isNotEmpty) {
-        _payload = ObservationPayload.fromJson(
-          jsonDecode(cached) as Map<String, dynamic>,
-        );
-        return;
-      }
-    } catch (e) {
-      debugPrint('Observation payload parse error: $e');
-    }
-    _payload = ObservationPayload.buildingBaseline(
-      participantId:
-          widget.userId ?? await BackgroundServiceHelper.getCachedId(),
-      daysEnrolled: _daysEnrolled,
-      emaReceived: 0,
-      emaExpected: 0,
-    );
   }
 
   /// (1) Passive metrics — raw numbers only, no scoring, shown regardless of
@@ -452,7 +298,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
         actions: [
           IconButton(
             icon: Icon(Icons.ios_share_rounded, color: _C.textMuted, size: 19),
-            tooltip: 'Export for clinician',
+            tooltip: 'Prepare for my appointment',
             onPressed: _exportForClinician,
           ),
           IconButton(
@@ -937,7 +783,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
             Icon(Icons.description_outlined, size: 18, color: _C.primary),
             const SizedBox(width: 8),
             Text(
-              'Export for your clinician',
+              'Prepare for my appointment',
               style: GoogleFonts.poppins(
                 fontSize: 13.5,
                 fontWeight: FontWeight.w700,
@@ -948,9 +794,9 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
         ),
         const SizedBox(height: 6),
         Text(
-          'A privacy-safe longitudinal summary combining self-reports, physiological '
-          'event confirmations, intervention follow-ups and behavioural context. '
-          'Nothing is sent automatically — you choose whether to share it.',
+          'Preview a one-page summary of your check-ins, what helped and '
+          'your behavioural patterns, choose what to include, then share it '
+          'as a PDF. Nothing is sent automatically.',
           style: GoogleFonts.poppins(
             fontSize: 11.5,
             color: _C.textSecondary,
@@ -964,7 +810,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
             onPressed: _exportForClinician,
             icon: const Icon(Icons.ios_share_rounded, size: 16),
             label: Text(
-              'Prepare clinician summary',
+              'Open summary',
               style: GoogleFonts.poppins(
                 fontSize: 12.5,
                 fontWeight: FontWeight.w600,
@@ -984,245 +830,15 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
     ),
   );
 
-  /// Builds a participant-controlled plain-text clinician summary from the
-  /// four descriptive streams. Nothing is transmitted automatically.
-  Future<void> _exportForClinician() async {
-    final p = _payload;
-    final participantId =
-        p?.participantId ??
-        widget.userId ??
-        await BackgroundServiceHelper.getCachedId();
-
-    try {
-      final clinicianContext =
-          await ClinicianLongitudinalContextService.buildAndCache(
-            participantId,
-          );
-      final buf = StringBuffer();
-      final now = DateTime.now();
-
-      Map<String, dynamic> mapOf(dynamic value) =>
-          value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
-
-      String pct(dynamic value) {
-        if (value is! num) return 'Not available';
-        return '${(value.toDouble() * 100).round()}%';
-      }
-
-      String scoreLine(String label, Map<String, dynamic> trend, int maxScore) {
-        if (trend['available'] != true || trend['latest_score'] == null) {
-          return '$label: no local trend recorded yet';
-        }
-        final latest = trend['latest_score'];
-        final previous = trend['previous_score'];
-        final delta = trend['delta'] as num?;
-        final change = delta == null
-            ? 'first locally retained result'
-            : delta > 0
-            ? '+${delta.toStringAsFixed(delta % 1 == 0 ? 0 : 1)} from previous'
-            : delta < 0
-            ? '${delta.toStringAsFixed(delta % 1 == 0 ? 0 : 1)} from previous'
-            : 'unchanged from previous';
-        return '$label: $latest / $maxScore'
-            '${previous == null ? '' : ' (previous $previous)'} · $change';
-      }
-
-      buf.writeln('CLINICIAN LONGITUDINAL CONTEXT SUMMARY');
-      buf.writeln('Generated: ${now.toIso8601String()}');
-      buf.writeln('Participant ID: $participantId');
-      buf.writeln('');
-      buf.writeln(
-        'Participant-controlled descriptive summary. It is not a diagnosis, '
-        'does not replace clinical assessment, and is not sent automatically.',
-      );
-      buf.writeln('');
-
-      // 1) Self-report trend
-      final selfReport = mapOf(clinicianContext['self_report_trend']);
-      final sevenDay = mapOf(selfReport['seven_day']);
-      final ema = mapOf(sevenDay['ema']);
-      final gad7 = mapOf(selfReport['gad7']);
-      final pss10 = mapOf(selfReport['pss10']);
-
-      buf.writeln('1. SELF-REPORT TREND');
-      buf.writeln('EMA check-ins in last 7 days: ${ema['count'] ?? 0}');
-      if (ema['mean_anxiety'] != null) {
-        buf.writeln('Average EMA anxiety: ${ema['mean_anxiety']} / 5');
-      }
-      if (ema['mean_stress'] != null) {
-        buf.writeln('Average EMA stress: ${ema['mean_stress']} / 4');
-      }
-      if (ema['mean_fatigue'] != null) {
-        buf.writeln('Average EMA fatigue: ${ema['mean_fatigue']} / 5');
-      }
-      if (ema['mean_social_connection'] != null) {
-        buf.writeln(
-          'Average EMA social connection: ${ema['mean_social_connection']} / 5',
-        );
-      }
-      if (ema['common_context'] != null) {
-        buf.writeln('Most common EMA context: ${ema['common_context']}');
-      }
-      buf.writeln(scoreLine('GAD-7', gad7, 21));
-      buf.writeln(scoreLine('PSS-10', pss10, 40));
-      buf.writeln('');
-
-      // 2) Physiological event confirmations
-      final physiological = mapOf(
-        clinicianContext['physiological_event_confirmations'],
-      );
-      final physiological30 = mapOf(physiological['thirty_day']);
-      buf.writeln('2. PHYSIOLOGICAL EVENT CONFIRMATIONS (30 DAYS)');
-      buf.writeln('Alert check-ins: ${physiological30['events'] ?? 0}');
-      buf.writeln('Answered: ${physiological30['answered'] ?? 0}');
-      buf.writeln(
-        'Participant-confirmed anxiety: '
-        '${physiological30['confirmed_anxiety'] ?? 0}',
-      );
-      buf.writeln(
-        'Did not confirm anxiety: ${physiological30['not_confirmed'] ?? 0}',
-      );
-      buf.writeln(
-        'Confirmation rate: ${pct(physiological30['confirmation_rate'])}',
-      );
-      if (physiological30['common_context'] != null) {
-        buf.writeln(
-          'Common situation during alert check-ins: '
-          '${physiological30['common_context']}',
-        );
-      }
-      buf.writeln(
-        'Interpretation: these are participant confirmations of app check-ins; '
-        'they do not prove every physiological alert was a clinical anxiety episode.',
-      );
-      buf.writeln('');
-
-      // 3) Intervention response
-      final intervention = mapOf(clinicianContext['intervention_response']);
-      final intervention30 = mapOf(intervention['thirty_day']);
-      buf.writeln('3. INTERVENTION RESPONSE (30 DAYS)');
-      buf.writeln(
-        'Actions/interventions attempted: '
-        '${intervention30['intervention_attempts'] ?? 0}',
-      );
-      buf.writeln(
-        'Follow-ups answered: ${intervention30['followups_answered'] ?? 0}',
-      );
-      buf.writeln(
-        'Reported feeling better: ${intervention30['felt_better_count'] ?? 0}',
-      );
-      buf.writeln(
-        'Reported improvement rate: ${pct(intervention30['felt_better_rate'])}',
-      );
-      if (intervention30['most_helpful_action'] != null) {
-        buf.writeln(
-          'Most frequently helpful action: '
-          '${intervention30['most_helpful_action']}',
-        );
-      }
-      buf.writeln(
-        'Interpretation: follow-up improvement is participant reported and '
-        'observational; it does not establish treatment efficacy.',
-      );
-      buf.writeln('');
-
-      // 4) C2 behavioural changes
-      final c2 = mapOf(clinicianContext['c2_behavioral_changes']);
-      final quality = mapOf(c2['data_quality']);
-      final change = mapOf(c2['change_detection']);
-      final patterns = c2['patterns'] is List
-          ? c2['patterns'] as List
-          : const [];
-
-      buf.writeln('4. COMPONENT 2 BEHAVIOURAL CONTEXT');
-      buf.writeln('Validation status: not_validated');
-      buf.writeln('Fusion eligible: false');
-      buf.writeln('Clinical/fusion score: not provided');
-      buf.writeln(
-        'Personal baseline ready: ${c2['baseline_ready'] == true ? 'Yes' : 'No'}',
-      );
-      if (quality['recent_usable_days'] != null) {
-        buf.writeln(
-          'Recent usable sensing days: ${quality['recent_usable_days']}',
-        );
-      }
-      if (quality['baseline_usable_days'] != null) {
-        buf.writeln(
-          'Usable baseline sensing days: ${quality['baseline_usable_days']}',
-        );
-      }
-      for (final raw in patterns.take(6)) {
-        if (raw is! Map) continue;
-        final label = raw['label'] ?? raw['key'] ?? 'Behaviour';
-        final direction = raw['direction'] ?? 'unknown';
-        buf.writeln('$label: $direction relative to personal baseline');
-      }
-      if (change['detected'] == true) {
-        buf.writeln(
-          'Sustained behavioural change detected: '
-          '${change['feature'] ?? 'behaviour'} · '
-          '${change['direction'] ?? 'changed'}',
-        );
-      } else {
-        buf.writeln('Sustained behavioural change detected: No');
-      }
-      buf.writeln(
-        'Interpretation: C2 is descriptive within-person behavioural context '
-        'only and contributes no numerical value to the multimodal composite.',
-      );
-      buf.writeln('');
-
-      // Additional current raw context already visible on this C2 screen.
-      buf.writeln('ADDITIONAL CURRENT PASSIVE CONTEXT');
-      final usableDays = _coverage.where((d) => d.usable).length;
-      buf.writeln(
-        'Usable sensing data: $usableDays of ${_coverage.length} recent days',
-      );
-      buf.writeln('Screen time today: ${_screenHours.toStringAsFixed(1)} hrs');
-      buf.writeln('Communication today: $_callCount calls, $_smsCount SMS');
-      if (_passive.homeHours != null && _passive.awayHours != null) {
-        buf.writeln(
-          'Time at home: ${_passive.homeHours!.toStringAsFixed(1)} hrs; '
-          'away: ${_passive.awayHours!.toStringAsFixed(1)} hrs',
-        );
-      }
-      if (_passive.significantPlaces != null) {
-        buf.writeln(
-          'Significant places visited: ${_passive.significantPlaces}',
-        );
-      }
-      if (_passive.sleepProxyWindow != null) {
-        buf.writeln('Sleep proxy window: ${_passive.sleepProxyWindow}');
-      }
-      if (_passive.activityDataAvailable &&
-          _passive.activityProxyScore != null) {
-        buf.writeln(
-          'Activity proxy: ${_passive.activityProxyScore!.toStringAsFixed(2)}',
-        );
-      }
-      buf.writeln('');
-      buf.writeln('PRIVACY');
-      buf.writeln(
-        'No exact GPS coordinates, raw location trail, app package names, '
-        'call/SMS content, or Component 2 experimental probability are included.',
-      );
-
-      await Clipboard.setData(ClipboardData(text: buf.toString()));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Clinician summary copied to clipboard'),
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint('Clinician export error: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not prepare clinician summary')),
-        );
-      }
-    }
+  /// Opens the participant-controlled summary screen, where the participant
+  /// previews, chooses sections and shares a PDF. Nothing is sent
+  /// automatically.
+  void _exportForClinician() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ClinicianSummaryPage(userId: widget.userId),
+      ),
+    );
   }
 
   // ─── DISCLAIMER ──────────────────────────────
