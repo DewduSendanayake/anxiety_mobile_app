@@ -296,7 +296,7 @@ class _ProfilePageState extends State<ProfilePage> {
     await ParticipantIdentityService.updateDisplayName(displayName);
     // If the patient previously opted in, update the encrypted name record.
     // A failed update must not be reported as a successful remote sync.
-    final shared = await PatientNameSharingService.isShared();
+    final shared = await PatientNameSharingService.isShared(prefs.getString(ParticipantIdentityService.participantIdKey) ?? '');
     final synced = !shared || await PatientNameSharingService.syncIfShared(
       prefs.getString(ParticipantIdentityService.participantIdKey) ?? '',
     );
