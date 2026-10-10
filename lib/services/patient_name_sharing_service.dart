@@ -8,15 +8,20 @@ import 'patient_session_service.dart';
 class PatientNameSharingService {
   static const consentKey = 'clinician_display_name_shared';
 
-  static Future<bool> isShared() async =>
-      (await SharedPreferences.getInstance()).getBool(consentKey) ?? false;
+  // Consent belongs to a specific pseudonymous participant, not to the phone.
+  // A second Aura account must never inherit the prior account's sharing opt-in.
+  static String _keyFor(String participantId) => '$consentKey:$participantId';
+
+  static Future<bool> isShared(String participantId) async {
+    if (!ParticipantIdentityService.isParticipantId(participantId)) return false;
+    return (await SharedPreferences.getInstance()).getBool(_keyFor(participantId)) ?? false;
+  }
 
   static Future<String?> _subjectFor(String participantId) async {
     if (!ParticipantIdentityService.isParticipantId(participantId)) return null;
     final expected = await ParticipantIdentityService.getCentralSubjectId();
     final active = await PatientSessionService.instance.currentSession();
-    if (active != null &&
-        (expected == null || active.subjectId == expected)) {
+    if (active != null && expected != null && active.subjectId == expected) {
       return active.subjectId;
     }
     final result = await ApiService.selfEnrol(
@@ -39,12 +44,12 @@ class PatientNameSharingService {
       expectedSubjectId: subject,
       participantId: participantId,
     );
-    if (success) await prefs.setBool(consentKey, true);
+    if (success) await prefs.setBool(_keyFor(participantId), true);
     return success;
   }
 
   static Future<bool> syncIfShared(String participantId) async {
-    if (!await isShared()) return true;
+    if (!await isShared(participantId)) return true;
     return share(participantId);
   }
 
@@ -56,7 +61,7 @@ class PatientNameSharingService {
       participantId: participantId,
     );
     if (success) {
-      await (await SharedPreferences.getInstance()).setBool(consentKey, false);
+      await (await SharedPreferences.getInstance()).setBool(_keyFor(participantId), false);
     }
     return success;
   }
