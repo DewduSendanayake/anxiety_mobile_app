@@ -5,6 +5,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../services/api_service.dart';
 import '../services/participant_identity_service.dart';
 import '../services/patient_session_service.dart';
+import '../services/patient_name_sharing_service.dart';
 
 class ShareParticipantIdPage extends StatelessWidget {
   final String participantId;
@@ -168,6 +169,41 @@ class ShareParticipantIdPage extends StatelessWidget {
     );
   }
 
+  Future<void> _manageNameSharing(BuildContext context) async {
+    final current = await PatientNameSharingService.isShared();
+    if (!context.mounted) return;
+    final consent = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(current ? 'Stop sharing your name?' : 'Share your name with your clinician?'),
+        content: Text(current
+            ? 'Stop sharing the display name you entered in Aura with assigned clinicians. The research Participant ID stays unchanged.'
+            : 'Your Aura display name will be securely shared through the Central Backend with clinicians assigned to your patient record. It may identify you. You can stop sharing later. Clinical notes and research IDs remain separate.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(current ? 'Stop sharing' : 'Share name'),
+          ),
+        ],
+      ),
+    );
+    if (consent != true) return;
+    final success = current
+        ? await PatientNameSharingService.revoke(participantId)
+        : await PatientNameSharingService.share(participantId);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(success
+          ? current ? 'Your name is no longer shared with clinicians.'
+              : 'Your display name is now shared with assigned clinicians.'
+          : 'Could not update name sharing. Your previous sharing status was not changed. Check your connection and patient session.')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -273,6 +309,12 @@ class ShareParticipantIdPage extends StatelessWidget {
                 onPressed: () => _inviteClinician(context),
                 icon: const Icon(Icons.person_add_alt_1_outlined),
                 label: const Text('Give clinician a code'),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => _manageNameSharing(context),
+                icon: const Icon(Icons.person_outline),
+                label: const Text('Manage clinician name sharing'),
               ),
               const SizedBox(height: 14),
               FilledButton.icon(
