@@ -14,6 +14,11 @@ class PatientNameSharingService {
   static Future<String?> _subjectFor(String participantId) async {
     if (!ParticipantIdentityService.isParticipantId(participantId)) return null;
     final expected = await ParticipantIdentityService.getCentralSubjectId();
+    final active = await PatientSessionService.instance.currentSession();
+    if (active != null &&
+        (expected == null || active.subjectId == expected)) {
+      return active.subjectId;
+    }
     final result = await ApiService.selfEnrol(
       participantId,
       expectedSubjectId: expected,
