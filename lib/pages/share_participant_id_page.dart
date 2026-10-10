@@ -170,7 +170,7 @@ class ShareParticipantIdPage extends StatelessWidget {
   }
 
   Future<void> _manageNameSharing(BuildContext context) async {
-    final current = await PatientNameSharingService.isShared();
+    final current = await PatientNameSharingService.isShared(participantId);
     if (!context.mounted) return;
     final consent = await showDialog<bool>(
       context: context,
