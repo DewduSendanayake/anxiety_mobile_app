@@ -5,6 +5,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../services/api_service.dart';
 import '../services/participant_identity_service.dart';
 import '../services/patient_session_service.dart';
+import '../services/patient_name_sharing_service.dart';
+import '../widgets/clinician_invitation_dialog.dart';
 
 class ShareParticipantIdPage extends StatelessWidget {
   final String participantId;
@@ -135,36 +137,42 @@ class ShareParticipantIdPage extends StatelessWidget {
     }
     await showDialog<void>(
       context: context,
+      builder: (_) => ClinicianInvitationDialog(invite: invite),
+    );
+  }
+
+  Future<void> _manageNameSharing(BuildContext context) async {
+    final current = await PatientNameSharingService.isShared(participantId);
+    if (!context.mounted) return;
+    final consent = await showDialog<bool>(
+      context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Clinician invitation'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Give this one-use code to your doctor. It does not contain your name or readings.',
-            ),
-            const SizedBox(height: 12),
-            SelectableText(invite.code),
-            const SizedBox(height: 8),
-            Text(
-              'Expires at ${invite.expiresAt.toLocal().hour.toString().padLeft(2, '0')}:${invite.expiresAt.toLocal().minute.toString().padLeft(2, '0')}',
-            ),
-          ],
-        ),
+        title: Text(current ? 'Stop sharing your name?' : 'Share your name with your clinician?'),
+        content: Text(current
+            ? 'Stop sharing the display name you entered in Aura with assigned clinicians. The research Participant ID stays unchanged.'
+            : 'Your Aura display name will be securely shared through the Central Backend with clinicians assigned to your patient record. It may identify you. You can stop sharing later. Clinical notes and research IDs remain separate.'),
         actions: [
           TextButton(
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: invite.code));
-              if (dialogContext.mounted) Navigator.pop(dialogContext);
-            },
-            child: const Text('Copy code'),
-          ),
-          TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Close'),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(current ? 'Stop sharing' : 'Share name'),
           ),
         ],
       ),
+    );
+    if (consent != true) return;
+    final success = current
+        ? await PatientNameSharingService.revoke(participantId)
+        : await PatientNameSharingService.share(participantId);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(success
+          ? current ? 'Your name is no longer shared with clinicians.'
+              : 'Your display name is now shared with assigned clinicians.'
+          : 'Could not update name sharing. Your previous sharing status was not changed. Check your connection and patient session.')),
     );
   }
 
@@ -187,7 +195,7 @@ class ShareParticipantIdPage extends StatelessWidget {
               const SizedBox(height: 10),
               Text(
                 'This QR contains only your Aura Participant ID. It does not give a clinician access to your record. '
-                'To link a clinician, use “Give clinician a code” below. It does not contain your name, readings, or diagnosis.',
+                'To link a clinician, use “Give clinician a code” below for a one-use invitation QR or manual code. The invitation contains no name, readings, or diagnosis.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   height: 1.5,
@@ -273,6 +281,12 @@ class ShareParticipantIdPage extends StatelessWidget {
                 onPressed: () => _inviteClinician(context),
                 icon: const Icon(Icons.person_add_alt_1_outlined),
                 label: const Text('Give clinician a code'),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => _manageNameSharing(context),
+                icon: const Icon(Icons.person_outline),
+                label: const Text('Manage clinician name sharing'),
               ),
               const SizedBox(height: 14),
               FilledButton.icon(

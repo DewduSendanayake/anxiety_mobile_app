@@ -18,6 +18,7 @@ import 'services/participant_identity_service.dart';
 import 'services/rating_settings.dart';
 import 'theme/theme_controller.dart';
 import 'services/api_service.dart';
+import 'services/patient_name_sharing_service.dart';
 
 class ProfilePage extends StatefulWidget {
   final bool isTab;
@@ -293,6 +294,12 @@ class _ProfilePageState extends State<ProfilePage> {
     final displayName = _displayNameController.text.trim();
 
     await ParticipantIdentityService.updateDisplayName(displayName);
+    // If the patient previously opted in, update the encrypted name record.
+    // A failed update must not be reported as a successful remote sync.
+    final shared = await PatientNameSharingService.isShared(prefs.getString(ParticipantIdentityService.participantIdKey) ?? '');
+    final synced = !shared || await PatientNameSharingService.syncIfShared(
+      prefs.getString(ParticipantIdentityService.participantIdKey) ?? '',
+    );
 
     final profile = {
       'age': _ageController.text.trim(),
@@ -349,7 +356,9 @@ class _ProfilePageState extends State<ProfilePage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Profile updated successfully!',
+              synced
+                  ? 'Profile updated successfully!'
+                  : 'Profile saved on this phone, but the shared clinician name could not be updated. Retry from Connect to Doctor.',
               style: GoogleFonts.poppins(fontSize: 13),
             ),
             backgroundColor: const Color(0xFF5E60CE),
@@ -889,7 +898,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 textCapitalization: TextCapitalization.words,
                 decoration: _inputDec('What should Aura call you?').copyWith(
                   helperText:
-                      'You can change this later. It stays on this phone and does not change your Participant ID.',
+                      'This stays on your phone unless you explicitly enable clinician name sharing in Connect to Doctor. Your Participant ID will not change.',
                   helperMaxLines: 3,
                 ),
                 validator: (v) {

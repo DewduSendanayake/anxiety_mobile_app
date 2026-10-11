@@ -274,6 +274,60 @@ class ApiService {
     }
   }
 
+  /// Patient-controlled sharing: only an authenticated patient can change this
+  /// backend record. Never include display names in research/QR model payloads.
+  static Future<bool> updateClinicianDisplayName({
+    required String displayName,
+    required String expectedSubjectId,
+    http.Client? client,
+    PatientSessionService? sessionService,
+    String? participantId,
+    String? backendBase,
+  }) async {
+    final name = displayName.trim();
+    final root = backendRoot(backendBase);
+    if (root == null || name.isEmpty || name.length > 80) return false;
+    try {
+      final response = await _requestWithRecovery(
+        Uri.parse('$root/v1/patients/me/display-name'),
+        expectedSubjectId: expectedSubjectId,
+        putBody: jsonEncode({'display_name': name}),
+        client: client,
+        sessionService: sessionService,
+        participantId: participantId,
+        backendBase: backendBase,
+      );
+      return response?.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> revokeClinicianDisplayName({
+    required String expectedSubjectId,
+    http.Client? client,
+    PatientSessionService? sessionService,
+    String? participantId,
+    String? backendBase,
+  }) async {
+    final root = backendRoot(backendBase);
+    if (root == null) return false;
+    try {
+      final response = await _requestWithRecovery(
+        Uri.parse('$root/v1/patients/me/display-name'),
+        expectedSubjectId: expectedSubjectId,
+        delete: true,
+        client: client,
+        sessionService: sessionService,
+        participantId: participantId,
+        backendBase: backendBase,
+      );
+      return response?.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Existing patient-first subjects authorize clinicians through a short-lived
   /// patient-issued invite; the clinician app redeems the code with its JWT.
   static Future<AssignmentInvite?> createAssignmentInvite({
@@ -468,6 +522,8 @@ class ApiService {
     Uri url, {
     required String expectedSubjectId,
     String? postBody,
+    String? putBody,
+    bool delete = false,
     http.Client? client,
     PatientSessionService? sessionService,
     String? participantId,
@@ -496,12 +552,16 @@ class ApiService {
         final headers = {
           'Accept': 'application/json',
           'Authorization': 'Bearer ${current!.accessToken}',
-          if (postBody != null) 'Content-Type': 'application/json',
+          if (postBody != null || putBody != null) 'Content-Type': 'application/json',
         };
         final result =
-            await (postBody == null
-                    ? transport.get(url, headers: headers)
-                    : transport.post(url, headers: headers, body: postBody))
+            await (delete
+                    ? transport.delete(url, headers: headers)
+                    : putBody != null
+                        ? transport.put(url, headers: headers, body: putBody)
+                        : postBody == null
+                            ? transport.get(url, headers: headers)
+                            : transport.post(url, headers: headers, body: postBody))
                 .timeout(const Duration(seconds: 20));
         if (result.statusCode != 401) return result;
         await sessions.clearSession();
