@@ -701,42 +701,35 @@ class _ProfilePageState extends State<ProfilePage> {
         participantId != null &&
         ParticipantIdentityService.isParticipantId(participantId);
 
-    return _infoCard(
-      'Doctor Connection',
-      Icons.qr_code_2_rounded,
-      [
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(
-            Icons.medical_information_outlined,
-            color: AppTheme.kPrimaryDeep,
-          ),
-          title: Text(
-            canShare ? 'Show my Patient ID QR' : 'Patient ID unavailable',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-          ),
-          subtitle: Text(
-            canShare
-                ? 'Let your doctor scan this while you are together.'
-                : 'Complete your Aura setup before connecting to a doctor.',
-            style: GoogleFonts.poppins(fontSize: 12),
-          ),
-          trailing: canShare
-              ? const Icon(Icons.chevron_right_rounded)
-              : null,
-          onTap: canShare
-              ? () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ShareParticipantIdPage(
-                        participantId: participantId!,
-                      ),
-                    ),
-                  )
-              : null,
+    return _infoCard('Doctor Connection', Icons.qr_code_2_rounded, [
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(
+          Icons.medical_information_outlined,
+          color: AppTheme.kPrimaryDeep,
         ),
-      ],
-    );
+        title: Text(
+          canShare ? 'Show my Patient ID QR' : 'Patient ID unavailable',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          canShare
+              ? 'Let your doctor scan this while you are together.'
+              : 'Complete your Aura setup before connecting to a doctor.',
+          style: GoogleFonts.poppins(fontSize: 12),
+        ),
+        trailing: canShare ? const Icon(Icons.chevron_right_rounded) : null,
+        onTap: canShare
+            ? () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ShareParticipantIdPage(participantId: participantId!),
+                ),
+              )
+            : null,
+      ),
+    ]);
   }
 
   Widget _buildAppearanceCard() {
