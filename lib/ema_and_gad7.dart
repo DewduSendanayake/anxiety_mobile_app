@@ -372,7 +372,7 @@ class _Gad7ScreenState extends State<Gad7Screen> {
       } catch (_) {}
       final c4 = C4Demographics.fromSavedProfile(profile);
       if (c4 != null) {
-        await ApiService.submitContextualIntake(
+        ApiService.submitContextualIntake(
           participantId: pid,
           gad7Items: _answers.cast<int>(),
           gender: c4.gender,
