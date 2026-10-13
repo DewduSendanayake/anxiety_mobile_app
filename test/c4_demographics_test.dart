@@ -24,17 +24,18 @@ void main() {
     });
   });
 
-  test('C4 does not guess a completed degree from ongoing undergraduate study', () {
-    final profile = Map<String, dynamic>.from(validProfile)
-      ..remove('c4_education');
-    expect(C4Demographics.fromSavedProfile(profile), isNull);
-  });
+  test(
+    'C4 does not guess a completed degree from ongoing undergraduate study',
+    () {
+      final profile = Map<String, dynamic>.from(validProfile)
+        ..remove('c4_education');
+      expect(C4Demographics.fromSavedProfile(profile), isNull);
+    },
+  );
 
   test('C4 never invents missing smoking or drinking responses', () {
-    final noSmoke = Map<String, dynamic>.from(validProfile)
-      ..remove('c4_smoke');
-    final noDrink = Map<String, dynamic>.from(validProfile)
-      ..remove('c4_drink');
+    final noSmoke = Map<String, dynamic>.from(validProfile)..remove('c4_smoke');
+    final noDrink = Map<String, dynamic>.from(validProfile)..remove('c4_drink');
 
     expect(C4Demographics.fromSavedProfile(noSmoke), isNull);
     expect(C4Demographics.fromSavedProfile(noDrink), isNull);
