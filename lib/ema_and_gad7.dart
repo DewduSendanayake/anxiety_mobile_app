@@ -7,6 +7,8 @@ import 'package:intl/intl.dart';
 import 'background_service_helper.dart';
 import 'services/notification_helper.dart';
 import 'theme/app_theme.dart';
+import 'services/api_service.dart';
+import 'services/c4_demographics.dart';
 
 String weeklyCheckInWeekKey([DateTime? value]) {
   final date = value ?? DateTime.now();
@@ -357,6 +359,30 @@ class _Gad7ScreenState extends State<Gad7Screen> {
 
     await prefs.setString('last_gad7_submitted', today);
     await prefs.setString('last_gad7_week', weeklyCheckInWeekKey());
+
+    // Send GAD-7 answers to the central backend for C4/DCAR scoring.
+    // Also read the saved profile for demographics so the contextual
+    // model gets the full feature vector.
+    final pid = prefs.getString('participant_id') ?? '';
+    if (pid.isNotEmpty) {
+      Map<String, dynamic> profile = {};
+      try {
+        final raw = prefs.getString('user_profile_data') ?? '{}';
+        profile = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      } catch (_) {}
+      final c4 = C4Demographics.fromSavedProfile(profile);
+      if (c4 != null) {
+        ApiService.submitContextualIntake(
+          participantId: pid,
+          gad7Items: _answers.cast<int>(),
+          gender: c4.gender,
+          age: c4.age,
+          edu: c4.education,
+          smoke: c4.smoking,
+          drink: c4.drinking,
+        );
+      }
+    }
     await NotificationHelper.cancelWeeklyCheckIn('anxiety');
 
     if (mounted) {
@@ -388,7 +414,10 @@ class _Gad7ScreenState extends State<Gad7Screen> {
               Text(
                 'Thank you for completing this week\'s check-in. Your answers help the research team understand how anxiety changes over time.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontSize: 13,
+                ),
               ),
             ],
           ),
@@ -548,7 +577,9 @@ class _Gad7ScreenState extends State<Gad7Screen> {
                                             ? Theme.of(
                                                 context,
                                               ).colorScheme.onSurface
-                                            : Colors.grey.shade700,
+                                            : Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
                                         fontWeight: isSelected
                                             ? FontWeight.w600
                                             : FontWeight.normal,

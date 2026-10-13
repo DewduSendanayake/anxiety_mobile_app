@@ -22,6 +22,8 @@ dependencies:
 
   # Data Storage
   shared_preferences: ^2.2.0
+  flutter_secure_storage: ^9.2.4
+  crypto: ^3.0.3
   intl: ^0.18.1
   connectivity_plus: ^4.0.1
 
@@ -51,6 +53,10 @@ dependencies:
   image_picker: ^1.1.2
   flutter_blue_plus: ^1.31.0
 
+  # Component 2: participant-controlled clinician summary (PDF + share sheet)
+  pdf: ^3.13.0
+  printing: ^5.15.0
+
   #################################
 
 dev_dependencies:
@@ -72,4 +78,3 @@ flutter:
   assets:
     - assets/meditation_hero.jpg
     - assets/welcome_illustration.png
-

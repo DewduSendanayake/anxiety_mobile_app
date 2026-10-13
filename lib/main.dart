@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -21,7 +20,10 @@ import 'background_service_helper.dart';
 import 'services/notification_helper.dart';
 import 'services/user_manager.dart';
 import 'services/participant_identity_service.dart';
+import 'services/api_service.dart';
 import 'services/anxiety_feedback_service.dart';
+import 'services/fusion_risk_service.dart';
+import 'services/patient_attention_event_service.dart';
 import 'services/research_permission_service.dart';
 import 'services/background/background_service.dart' as bg;
 import 'services/background/service_config.dart';
@@ -39,6 +41,7 @@ Future<bool> _hasCurrentConsent() async {
 }
 
 Future<void> _resumeExistingParticipant(String userId) async {
+  await _refreshPatientSession(userId);
   UserManager().login(userId);
   if (!kIsWeb) {
     // Existing participants can bypass LoginPage on later launches. Request
@@ -49,6 +52,13 @@ Future<void> _resumeExistingParticipant(String userId) async {
     await bg.startBackgroundServiceIfPermitted();
   }
   await BackgroundServiceHelper.retryOfflineQueue();
+}
+
+Future<void> _refreshPatientSession(String participantId) async {
+  final subjectId = await ApiService.selfEnrol(participantId);
+  if (subjectId != null && subjectId.isNotEmpty) {
+    await ParticipantIdentityService.saveCentralSubjectId(subjectId);
+  }
 }
 
 String _dateKey(DateTime date) {
@@ -186,7 +196,8 @@ void main() async {
           await NotificationHelper.init(
             backgroundCallback: notificationTapBackground,
           );
-          NotificationHelper.onNotificationResponse = _handleNotificationResponse;
+          NotificationHelper.onNotificationResponse =
+              _handleNotificationResponse;
         } catch (e, st) {
           debugPrint('Notification init error: $e');
           debugPrint('$st');
@@ -211,6 +222,10 @@ void main() async {
                   : event != ConnectivityResult.none;
               if (connected && await _hasCurrentConsent()) {
                 await BackgroundServiceHelper.retryOfflineQueue();
+                if (UserManager().isLoggedIn) {
+                  unawaited(PatientAttentionEventService.instance.refreshNow());
+                  unawaited(FusionRiskService.instance.fetch());
+                }
               }
             } catch (e) {
               debugPrint('Connectivity callback error: $e');
@@ -230,6 +245,7 @@ void main() async {
         final prefs = await SharedPreferences.getInstance();
         final userId = prefs.getString('user_id');
         if (userId != null && userId.isNotEmpty && hasCurrentConsentAtStartup) {
+          await _refreshPatientSession(userId);
           UserManager().login(userId);
 
           if (!kIsWeb) {

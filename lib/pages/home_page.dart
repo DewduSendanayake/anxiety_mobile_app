@@ -166,24 +166,23 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
     super.dispose();
   }
 
-void _onFusionRiskChanged() {
-    if (mounted) setState(() {});
-}
+  void _onFusionRiskChanged() {
+    if (mounted) {
+      _observeOverallLevel();
+      setState(() {});
+    }
+  }
+
   // ── Combined Risk Logic ─────────────────────────────────────
   bool get _hasLiveReading =>
       _chestStrap.hasLiveWornReading && (_lastReading?.isWorn ?? false);
 
   /// Uses the combined score when it is fresh. If only the chest strap is
   /// available, that reading becomes the current overall score.
-  double? get _overallRisk {
-    final backendRisk = FusionRiskService.instance.latest.value;
-    if (backendRisk != null && backendRisk.hasScore) {
-      return backendRisk.scoreOutOf100;
-    }
-    final combinedRisk = AnxietyFeedbackService().latestFusionRisk;
-    if (combinedRisk != null) return combinedRisk;
-    return _hasLiveReading ? _lastReading!.riskScore : null;
-}
+  /// Overall anxiety is determined only by the Central Backend fusion.
+  /// Chest-strap-only and locally combined values are not overall risk.
+  double? get _overallRisk =>
+      officialOverallRisk(FusionRiskService.instance.latest.value);
 
   bool get _hasOverallRisk => _overallRisk != null;
 

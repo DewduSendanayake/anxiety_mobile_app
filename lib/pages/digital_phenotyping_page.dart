@@ -1,28 +1,26 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  Component 2 — Behavioural Observation Panel  (v2)
+//  Component 2 — Sensing & data details
 //
-//  Adds, on top of the v1 descriptive-observations page:
-//   1. More passive metrics already produced by the RAPIDS pipeline
-//      (home/away time, significant places, sleep proxy, activity proxy)
-//   2. A data-quality / coverage panel ("usable data on N of last 14 days")
-//   3. Change-detection copy for Day 57+, with the false-alarm rate shown
-//      next to any flagged change, not buried in a settings page
-//   4. A check-in history/journal view, kept explicitly separate from
-//      passive data, with a one-line "why separate" explanation
-//   5. A plain-text export the participant can hand to their own clinician
-//      (no score reaches the clinician automatically — human stays in the loop)
-//   6. A static, always-visible crisis-resource banner, independent of any
-//      model output
+//  Opened from the Activity tab ("Behavioural Context"). The Activity tab owns
+//  the participant-facing summary (baseline, observations, change detection);
+//  this page only shows how collection is working:
+//   1. Raw weekly passive metrics (home/away time, places, sleep and movement
+//      proxies), never compared with anyone else
+//   2. Data-quality coverage for the last 14 completed days
+//   3. Collection status with a one-tap fix when collection has stopped
+//   4. Today's on-device measurements
+//   5. A plain-text summary the participant can choose to give a clinician
+//   6. A static, always-visible crisis-resource banner
 //
-//  Nothing here is simulated or scored. Every new value is either a real
-//  pipeline output or an explicit "not available" state, same discipline as
-//  v1's `blockingIssues`.
+//  Nothing here is simulated or scored. Every value is either a real pipeline
+//  output or an explicit "not available" state.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'dart:async';
 import 'dart:convert';
+import 'package:app_settings/app_settings.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:geolocator/geolocator.dart';
@@ -30,160 +28,15 @@ import 'package:call_log/call_log.dart';
 import 'package:usage_stats/usage_stats.dart';
 import 'package:flutter_sms_inbox/flutter_sms_inbox.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/background/background_service.dart' as bg;
 import '../services/background_service_helper.dart';
+import 'clinician_summary_page.dart';
+import '../services/research_permission_service.dart';
+import '../theme/c2_palette.dart';
+import '../widgets/c2/crisis_banner.dart';
 
-// ─────────────────────────────────────────────
-// COLOUR TOKENS — unchanged from v1
-// ─────────────────────────────────────────────
-class _C {
-  static const scaffold = Color(0xFFF5F3FF);
-  static const cardBase = Color(0xFFFFFFFF);
-  static const chip = Color(0xFFF0ECFF);
-
-  static const p500 = Color(0xFF5E60CE);
-  static const p400 = Color(0xFF7C5CBF);
-  static const p200 = Color(0xFFC4B5FD);
-  static const p100 = Color(0xFFF0ECFF);
-
-  static const primary = Color(0xFF5E60CE);
-  static const amber = Color(0xFFF59B24);
-  static const amberBg = Color(0xFFFEF3DC);
-  static const rose = Color(0xFFEF5777);
-  static const roseBg = Color(0xFFFDEAEE);
-  static const teal = Color(0xFF0F9D8C);
-  static const tealBg = Color(0xFFE3F5F2);
-
-  static const textPrimary = Color(0xFF2D3142);
-  static const textSecondary = Color(0xFF5A607F);
-  static const textMuted = Color(0xFF9095A7);
-  static const border = Color(0xFFE8E5F4);
-}
-
-// ─────────────────────────────────────────────
-// DATA MODEL — mirrors component2_output.py; unchanged from v1
-// ─────────────────────────────────────────────
-
-/// A single behavioural observation expressed against the participant's own
-/// baseline. [z] is null when no baseline exists yet.
-class Observation {
-  final String key;
-  final String label;
-  final double? z;
-  final String direction; // above | below | stable | no_baseline | unknown
-  final String confidence; // high | medium | low | insufficient
-  final double? value;
-  final String unit;
-
-  const Observation({
-    required this.key,
-    required this.label,
-    required this.z,
-    required this.direction,
-    required this.confidence,
-    this.value,
-    this.unit = '',
-  });
-
-  factory Observation.fromJson(String key, Map<String, dynamic> j) =>
-      Observation(
-        key: key,
-        label: j['label'] as String? ?? key,
-        z: (j['z'] as num?)?.toDouble(),
-        direction: j['direction'] as String? ?? 'unknown',
-        confidence: j['confidence'] as String? ?? 'low',
-        value: (j['value'] as num?)?.toDouble(),
-        unit: j['unit'] as String? ?? '',
-      );
-
-  bool get isFlagged => z != null && z!.abs() >= 1.5;
-}
-
-class ObservationPayload {
-  final String participantId;
-  final DateTime windowStart;
-  final DateTime windowEnd;
-  final bool baselineReady;
-  final bool reportable;
-  final List<Observation> observations;
-  final List<String> blockingIssues;
-  final int daysWithData;
-  final int baselineDaysAvailable;
-  final int baselineDaysRequired;
-  final int emaReceived;
-  final int emaExpected;
-
-  const ObservationPayload({
-    required this.participantId,
-    required this.windowStart,
-    required this.windowEnd,
-    required this.baselineReady,
-    required this.reportable,
-    required this.observations,
-    required this.blockingIssues,
-    required this.daysWithData,
-    required this.baselineDaysAvailable,
-    required this.baselineDaysRequired,
-    required this.emaReceived,
-    required this.emaExpected,
-  });
-
-  factory ObservationPayload.fromJson(Map<String, dynamic> j) {
-    final obsMap = (j['observations'] as Map<String, dynamic>? ?? {});
-    final q = (j['data_quality'] as Map<String, dynamic>? ?? {});
-    final w = (j['window'] as Map<String, dynamic>? ?? {});
-    return ObservationPayload(
-      participantId: j['participant_id'] as String? ?? 'unknown',
-      windowStart:
-          DateTime.tryParse(w['start'] as String? ?? '') ?? DateTime.now(),
-      windowEnd: DateTime.tryParse(w['end'] as String? ?? '') ?? DateTime.now(),
-      baselineReady: j['baseline_ready'] as bool? ?? false,
-      reportable: j['reportable'] as bool? ?? false,
-      observations: obsMap.entries
-          .map(
-            (e) => Observation.fromJson(e.key, e.value as Map<String, dynamic>),
-          )
-          .toList(),
-      blockingIssues:
-          (j['blocking_issues'] as List?)?.map((e) => e.toString()).toList() ??
-          [],
-      daysWithData: (q['days_with_data'] as num?)?.toInt() ?? 0,
-      baselineDaysAvailable:
-          (q['baseline_days_available'] as num?)?.toInt() ?? 0,
-      baselineDaysRequired:
-          (q['baseline_days_required'] as num?)?.toInt() ?? 28,
-      emaReceived: (q['ema_received'] as num?)?.toInt() ?? 0,
-      emaExpected: (q['ema_expected'] as num?)?.toInt() ?? 0,
-    );
-  }
-
-  /// Local fallback used until the analysis backend is wired up. Reports the
-  /// baseline-building state honestly rather than inventing observations.
-  factory ObservationPayload.buildingBaseline({
-    required String participantId,
-    required int daysEnrolled,
-    required int emaReceived,
-    required int emaExpected,
-  }) {
-    const required = 28;
-    return ObservationPayload(
-      participantId: participantId,
-      windowStart: DateTime.now().subtract(const Duration(days: 27)),
-      windowEnd: DateTime.now(),
-      baselineReady: daysEnrolled >= required * 2,
-      reportable: false,
-      observations: const [],
-      blockingIssues: [
-        'Personal baseline requires $required days of data before the '
-            'reporting window. $daysEnrolled days collected so far.',
-      ],
-      daysWithData: daysEnrolled.clamp(0, 28),
-      baselineDaysAvailable: (daysEnrolled - 28).clamp(0, 999),
-      baselineDaysRequired: required,
-      emaReceived: emaReceived,
-      emaExpected: emaExpected,
-    );
-  }
-}
+// Colour tokens are shared with the Activity tab so both pages match.
+typedef _C = C2Palette;
 
 // ─────────────────────────────────────────────
 // NEW MODEL (1) — Passive metrics already computed by RAPIDS, shown raw,
@@ -244,27 +97,6 @@ class DayCoverage {
 }
 
 // ─────────────────────────────────────────────
-// NEW MODEL (4) — Check-in history, kept structurally separate from
-// passive data. Free-text answers are shown verbatim, never summarised
-// or re-scored.
-// ─────────────────────────────────────────────
-class CheckInEntry {
-  final DateTime timestamp;
-  final Map<String, String>
-  answers; // question label -> participant's own words
-
-  const CheckInEntry({required this.timestamp, required this.answers});
-
-  factory CheckInEntry.fromJson(Map<String, dynamic> j) => CheckInEntry(
-    timestamp:
-        DateTime.tryParse(j['timestamp'] as String? ?? '') ?? DateTime.now(),
-    answers: (j['answers'] as Map<String, dynamic>? ?? {}).map(
-      (k, v) => MapEntry(k, v.toString()),
-    ),
-  );
-}
-
-// ─────────────────────────────────────────────
 // PAGE
 // ─────────────────────────────────────────────
 class DigitalPhenotypingPage extends StatefulWidget {
@@ -289,12 +121,10 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
   bool _serviceRunning = false;
   int _daysEnrolled = 0;
 
-  ObservationPayload? _payload;
   PassiveMetrics _passive = const PassiveMetrics();
   List<DayCoverage> _coverage = [];
-  List<CheckInEntry> _checkIns = [];
 
-  static const double _falseAlarmRate = 0.06; // ~6%, from validation on GLOBEM
+  bool _fixing = false;
 
   @override
   void initState() {
@@ -304,12 +134,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
 
   Future<void> _load() async {
     await Future.wait([_fetchDeviceMetrics(), _fetchServiceStatus()]);
-    await Future.wait([
-      _fetchObservations(),
-      _fetchPassiveMetrics(),
-      _fetchCoverage(),
-      _fetchCheckIns(),
-    ]);
+    await Future.wait([_fetchPassiveMetrics(), _fetchCoverage()]);
     if (mounted) setState(() => _loading = false);
   }
 
@@ -326,30 +151,6 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
     } catch (e) {
       debugPrint('Service status error: $e');
     }
-  }
-
-  /// Loads the observation payload. Until the analysis backend is available
-  /// this reports the baseline-building state — it never fabricates values.
-  Future<void> _fetchObservations() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final cached = prefs.getString('c2_observation_payload');
-      if (cached != null && cached.isNotEmpty) {
-        _payload = ObservationPayload.fromJson(
-          jsonDecode(cached) as Map<String, dynamic>,
-        );
-        return;
-      }
-    } catch (e) {
-      debugPrint('Observation payload parse error: $e');
-    }
-    _payload = ObservationPayload.buildingBaseline(
-      participantId:
-          widget.userId ?? await BackgroundServiceHelper.getCachedId(),
-      daysEnrolled: _daysEnrolled,
-      emaReceived: 0,
-      emaExpected: 0,
-    );
   }
 
   /// (1) Passive metrics — raw numbers only, no scoring, shown regardless of
@@ -393,24 +194,6 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
           usable: false,
         );
       });
-    }
-  }
-
-  /// (4) Check-in history, participant's own words, never re-scored here.
-  Future<void> _fetchCheckIns() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final cached = prefs.getString('c2_checkin_history');
-      if (cached != null && cached.isNotEmpty) {
-        final list = jsonDecode(cached) as List;
-        _checkIns =
-            list
-                .map((e) => CheckInEntry.fromJson(e as Map<String, dynamic>))
-                .toList()
-              ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
-      }
-    } catch (e) {
-      debugPrint('Check-in history parse error: $e');
     }
   }
 
@@ -484,32 +267,6 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
 
   // ─── HELPERS ─────────────────────────────────
 
-  Color _zColor(double? z) {
-    if (z == null) return _C.textMuted;
-    final a = z.abs();
-    if (a >= 2.0) return _C.rose;
-    if (a >= 1.5) return _C.amber;
-    return _C.teal;
-  }
-
-  Color _zBg(double? z) {
-    if (z == null) return _C.p100;
-    final a = z.abs();
-    if (a >= 2.0) return _C.roseBg;
-    if (a >= 1.5) return _C.amberBg;
-    return _C.tealBg;
-  }
-
-  IconData _dirIcon(String d) => switch (d) {
-    'above' => Icons.trending_up_rounded,
-    'below' => Icons.trending_down_rounded,
-    'stable' => Icons.trending_flat_rounded,
-    _ => Icons.remove_rounded,
-  };
-
-  List<Observation> get _flaggedObservations =>
-      (_payload?.observations ?? []).where((o) => o.isFlagged).toList();
-
   // ─────────────────────────────────────────────
   // BUILD
   // ─────────────────────────────────────────────
@@ -522,7 +279,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
         elevation: 0,
         leading: Navigator.canPop(context)
             ? IconButton(
-                icon: const Icon(
+                icon: Icon(
                   Icons.arrow_back_ios_new_rounded,
                   color: _C.textPrimary,
                   size: 20,
@@ -531,7 +288,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
               )
             : null,
         title: Text(
-          'Behavioural Context',
+          'Sensing & data details',
           style: GoogleFonts.poppins(
             color: _C.textPrimary,
             fontWeight: FontWeight.w600,
@@ -540,20 +297,12 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(
-              Icons.ios_share_rounded,
-              color: _C.textMuted,
-              size: 19,
-            ),
-            tooltip: 'Export for clinician',
+            icon: Icon(Icons.ios_share_rounded, color: _C.textMuted, size: 19),
+            tooltip: 'Prepare for my appointment',
             onPressed: _exportForClinician,
           ),
           IconButton(
-            icon: const Icon(
-              Icons.refresh_rounded,
-              color: _C.textMuted,
-              size: 20,
-            ),
+            icon: Icon(Icons.refresh_rounded, color: _C.textMuted, size: 20),
             onPressed: () {
               setState(() => _loading = true);
               _load();
@@ -563,7 +312,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
       ),
       body: SafeArea(
         child: _loading
-            ? const Center(child: CircularProgressIndicator(color: _C.primary))
+            ? Center(child: CircularProgressIndicator(color: _C.primary))
             : RefreshIndicator(
                 onRefresh: _load,
                 color: _C.primary,
@@ -578,19 +327,13 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // (6) Static crisis-resource banner — always visible,
+                      // Static crisis-resource banner — always visible,
                       // independent of any model output.
-                      _crisisBanner(),
+                      const C2CrisisBanner(),
                       const SizedBox(height: 16),
                       _header(),
-                      const SizedBox(height: 16),
-                      _observationCard(),
-                      if (_flaggedObservations.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        _changeDetectionCard(),
-                      ],
                       const SizedBox(height: 18),
-                      _sectionTitle('Your Week'),
+                      _sectionTitle('Your week'),
                       const SizedBox(height: 4),
                       Text(
                         'Raw numbers, not compared with anyone else',
@@ -602,15 +345,15 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
                       const SizedBox(height: 10),
                       _passiveMetricsCard(),
                       const SizedBox(height: 18),
-                      _sectionTitle('Data Quality'),
+                      _sectionTitle('Data quality'),
                       const SizedBox(height: 10),
                       _dataQualityCard(),
                       const SizedBox(height: 18),
-                      _sectionTitle('Collection Status'),
+                      _sectionTitle('Collection status'),
                       const SizedBox(height: 10),
                       _collectionStatusCard(),
                       const SizedBox(height: 18),
-                      _sectionTitle('Today\u2019s Measurements'),
+                      _sectionTitle('Today\u2019s measurements'),
                       const SizedBox(height: 10),
                       _metric(
                         Icons.location_on_rounded,
@@ -643,12 +386,6 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
                         'Affects collection reliability',
                       ),
                       const SizedBox(height: 18),
-                      _sectionTitle('Check-ins'),
-                      const SizedBox(height: 10),
-                      _checkInSeparationCard(),
-                      const SizedBox(height: 10),
-                      _checkInHistoryLink(context),
-                      const SizedBox(height: 18),
                       _clinicianExportCard(),
                       const SizedBox(height: 18),
                       _disclaimerCard(),
@@ -667,7 +404,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Text(
-        'Behavioural observations',
+        'How your data is collected',
         style: GoogleFonts.poppins(
           fontSize: 23,
           fontWeight: FontWeight.w700,
@@ -677,8 +414,13 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
       ),
       const SizedBox(height: 3),
       Text(
-        'Measured against your own typical patterns',
-        style: GoogleFonts.poppins(fontSize: 13, color: _C.textMuted),
+        'Your pattern comparisons are on the Activity tab. This page shows '
+        'the raw numbers behind them and whether collection is working.',
+        style: GoogleFonts.poppins(
+          fontSize: 12.5,
+          color: _C.textMuted,
+          height: 1.45,
+        ),
       ),
     ],
   );
@@ -692,397 +434,6 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
       letterSpacing: -0.3,
     ),
   );
-
-  // ─── (6) CRISIS BANNER ───────────────────────
-  // Static, always visible, not tied to any model output or flagged state.
-  // NOTE: Replace the placeholder contacts below with the exact resource
-  // list approved in your NHSL ethics protocol before this ships — a study
-  // app's crisis text should match what the ethics committee signed off on,
-  // not be assembled ad hoc.
-
-  Widget _crisisBanner() => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: _C.roseBg,
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: _C.rose.withValues(alpha: 0.35)),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Icon(Icons.favorite_rounded, size: 17, color: _C.rose),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'If you need to talk to someone right now',
-                style: GoogleFonts.poppins(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: _C.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'This app does not monitor you for crisis. These lines '
-                'are staffed by people, any time.',
-                style: GoogleFonts.poppins(
-                  fontSize: 11,
-                  color: _C.textSecondary,
-                  height: 1.4,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _crisisChip(
-                    'National Mental Health Helpline',
-                    '1926',
-                    'tel:1926',
-                  ),
-                  _crisisChip(
-                    'Sri Lanka Sumithrayo',
-                    '011 2 696 666',
-                    'tel:+94112696666',
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-
-  Widget _crisisChip(String label, String number, String uri) => InkWell(
-    borderRadius: BorderRadius.circular(20),
-    onTap: () async {
-      await Clipboard.setData(ClipboardData(text: number));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Copied $number to clipboard')),
-        );
-      }
-    },
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: _C.cardBase,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _C.rose.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.call_rounded, size: 13, color: _C.rose),
-          const SizedBox(width: 6),
-          Text(
-            '$label \u00b7 $number',
-            style: GoogleFonts.poppins(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: _C.textPrimary,
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  // ─── OBSERVATION CARD ────────────────────────
-
-  Widget _observationCard() {
-    final p = _payload;
-    if (p == null) return const SizedBox.shrink();
-
-    if (!p.reportable) return _baselineBuildingCard(p);
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _C.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.insights_rounded, color: _C.primary, size: 19),
-              const SizedBox(width: 8),
-              Text(
-                'Last 28 days',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: _C.textPrimary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Compared with your own baseline',
-            style: GoogleFonts.poppins(fontSize: 11, color: _C.textMuted),
-          ),
-          const SizedBox(height: 16),
-          ...p.observations.map(_observationRow),
-        ],
-      ),
-    );
-  }
-
-  Widget _observationRow(Observation o) {
-    final hasZ = o.z != null;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: _zBg(o.z),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(_dirIcon(o.direction), size: 18, color: _zColor(o.z)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  o.label,
-                  style: GoogleFonts.poppins(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: _C.textPrimary,
-                  ),
-                ),
-                Text(
-                  hasZ
-                      ? '${o.direction == 'stable' ? 'Within' : 'Outside'} your usual range'
-                      : 'Not enough data yet',
-                  style: GoogleFonts.poppins(fontSize: 11, color: _C.textMuted),
-                ),
-              ],
-            ),
-          ),
-          if (hasZ)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-              decoration: BoxDecoration(
-                color: _zBg(o.z),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                '${o.z! >= 0 ? '+' : ''}${o.z!.toStringAsFixed(1)}\u03c3',
-                style: GoogleFonts.poppins(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: _zColor(o.z),
-                ),
-              ),
-            )
-          else
-            Text(
-              '\u2014',
-              style: GoogleFonts.poppins(fontSize: 13, color: _C.textMuted),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _baselineBuildingCard(ObservationPayload p) {
-    final have = p.baselineDaysAvailable;
-    final need = p.baselineDaysRequired;
-    final frac = need == 0 ? 0.0 : (have / need).clamp(0.0, 1.0);
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: _C.cardBase,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _C.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.hourglass_top_rounded, color: _C.p400, size: 19),
-              const SizedBox(width: 8),
-              Text(
-                'Building your baseline',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: _C.textPrimary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Observations compare your recent behaviour with your own typical '
-            'patterns. That needs $need days of history first.',
-            style: GoogleFonts.poppins(
-              fontSize: 12,
-              color: _C.textSecondary,
-              height: 1.45,
-            ),
-          ),
-          const SizedBox(height: 16),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(
-              value: frac,
-              minHeight: 8,
-              backgroundColor: _C.p100,
-              valueColor: const AlwaysStoppedAnimation(_C.p400),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Day $have of $need',
-            style: GoogleFonts.poppins(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: _C.p500,
-            ),
-          ),
-          if (p.blockingIssues.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            ...p.blockingIssues.map(
-              (b) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(top: 2),
-                      child: Icon(
-                        Icons.info_outline_rounded,
-                        size: 14,
-                        color: _C.textMuted,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        b,
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          color: _C.textMuted,
-                          height: 1.4,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  // ─── (3) CHANGE DETECTION CARD ───────────────
-  // Only rendered once at least one observation crosses the flag threshold.
-  // Copy states the shift plainly, and puts the false-alarm rate right next
-  // to it, so a flagged change reads as "worth noticing" not "diagnostic".
-
-  Widget _changeDetectionCard() {
-    final flagged = _flaggedObservations;
-    if (flagged.isEmpty) return const SizedBox.shrink();
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _C.amberBg,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _C.amber.withValues(alpha: 0.35)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.notifications_active_outlined,
-                size: 17,
-                color: _C.amber,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Change noticed',
-                style: GoogleFonts.poppins(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w700,
-                  color: _C.textPrimary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ...flagged.map(
-            (o) => Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Text(
-                'Your ${o.label.toLowerCase()} this week was '
-                '${o.z! >= 0 ? 'higher' : 'lower'} than your usual range.',
-                style: GoogleFonts.poppins(
-                  fontSize: 12.5,
-                  color: _C.textPrimary,
-                  height: 1.4,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Icon(
-                Icons.info_outline_rounded,
-                size: 13,
-                color: _C.textMuted,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'About ${(_falseAlarmRate * 100).toStringAsFixed(0)}% of flags '
-                  'like this happen without anything meaningful behind them. '
-                  'This is a nudge to notice, not a diagnosis.',
-                  style: GoogleFonts.poppins(
-                    fontSize: 11,
-                    color: _C.textMuted,
-                    height: 1.4,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
 
   // ─── (1) PASSIVE METRICS CARD ────────────────
   // Same raw-numbers, no-scoring treatment as v1's "Today's Measurements",
@@ -1099,7 +450,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
           p.homeHours != null && p.awayHours != null
               ? '${p.homeHours!.toStringAsFixed(1)}h home \u00b7 ${p.awayHours!.toStringAsFixed(1)}h away'
               : 'Not available yet',
-          'From your location-clustering step',
+          'Average per day over your last 7 usable days',
         ),
         const SizedBox(height: 10),
         _metric(
@@ -1108,7 +459,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
           p.significantPlaces != null
               ? '${p.significantPlaces} places'
               : 'Not available yet',
-          'Distinct location clusters this week',
+          'Different places you spent time at, on average per day',
         ),
         const SizedBox(height: 10),
         _metric(
@@ -1123,11 +474,11 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
         const SizedBox(height: 10),
         _metric(
           Icons.directions_walk_rounded,
-          'Activity proxy',
+          'Movement proxy',
           p.activityDataAvailable && p.activityProxyScore != null
-              ? p.activityProxyScore!.toStringAsFixed(2)
-              : 'No accelerometer data available',
-          'Raw movement index \u2014 unitless, not compared with anyone else',
+              ? '${(p.activityProxyScore! * 100).toStringAsFixed(1)}% high-motion readings'
+              : 'No movement data yet',
+          'From the phone\u2019s motion sensor \u2014 not a step or exercise count',
         ),
       ],
     );
@@ -1181,9 +532,9 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
           ),
           const SizedBox(height: 10),
           Text(
-            'This reflects sensor coverage only. It doesn\u2019t indicate '
-            'anything about your behaviour or wellbeing \u2014 in our '
-            'validation, missing data carried no meaningful signal.',
+            'This shows how much sensing data reached Aura. Missing days '
+            'happen (phone off, battery saver, permissions) and say nothing '
+            'about your wellbeing.',
             style: GoogleFonts.poppins(
               fontSize: 11,
               color: _C.textMuted,
@@ -1234,6 +585,46 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
               ),
             ],
           ),
+          if (!ok) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Aura cannot collect new data right now. This usually means a '
+              'permission was turned off or battery saver stopped the app.',
+              style: GoogleFonts.poppins(
+                fontSize: 11.5,
+                color: _C.textSecondary,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _fixing ? null : _fixCollection,
+                icon: _fixing
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.build_circle_outlined, size: 18),
+                label: Text(
+                  _fixing ? 'Checking\u2026' : 'Fix collection',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _C.primary,
+                  foregroundColor: _C.cardBase,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
           Row(
             children: [
@@ -1247,8 +638,8 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
               const SizedBox(width: 10),
               Expanded(
                 child: _statTile(
-                  'Days with data',
-                  '${_payload?.daysWithData ?? 0}/28',
+                  'Usable days (last 14)',
+                  '${_coverage.where((d) => d.usable).length}/${_coverage.length}',
                 ),
               ),
             ],
@@ -1256,6 +647,39 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
         ],
       ),
     );
+  }
+
+  /// Re-runs permission onboarding and restarts the collector. If it still
+  /// cannot start, opens the app's system settings so the participant can
+  /// re-enable a permission or turn off battery optimisation.
+  Future<void> _fixCollection() async {
+    if (kIsWeb) return;
+    setState(() => _fixing = true);
+    var running = false;
+    try {
+      await ResearchPermissionService.requestMissingPermissions(force: true);
+      running = await bg.startBackgroundServiceIfPermitted();
+    } catch (e) {
+      debugPrint('Fix collection error: $e');
+    }
+    await _fetchServiceStatus();
+    if (!mounted) return;
+    setState(() => _fixing = false);
+    if (running || _serviceRunning) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Collection is running again.')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Opening settings. Allow location and turn off battery '
+            'optimisation for Aura.',
+          ),
+        ),
+      );
+      await AppSettings.openAppSettings();
+    }
   }
 
   Widget _statTile(String label, String value, {bool warn = false}) =>
@@ -1342,92 +766,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
     ),
   );
 
-  // ─── (4) CHECK-IN SEPARATION + HISTORY LINK ──
-
-  Widget _checkInSeparationCard() => Container(
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: _C.tealBg,
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: _C.teal.withValues(alpha: 0.3)),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Icon(Icons.edit_note_rounded, size: 17, color: _C.teal),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            'Your check-ins are kept separate from the passive data on '
-            'this page, because this study hasn\u2019t established a link '
-            'between the two \u2014 so your check-ins always reflect what '
-            'you actually told us, not a model\u2019s guess.',
-            style: GoogleFonts.poppins(
-              fontSize: 11.5,
-              color: _C.textSecondary,
-              height: 1.5,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-
-  Widget _checkInHistoryLink(BuildContext context) => InkWell(
-    borderRadius: BorderRadius.circular(16),
-    onTap: () => Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => CheckInHistoryPage(entries: _checkIns)),
-    ),
-    child: Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: _C.cardBase,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _C.border),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: const BoxDecoration(
-              color: _C.chip,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.history_edu_rounded,
-              color: _C.primary,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'View check-in history',
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: _C.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${_checkIns.length} entries, in your own words',
-                  style: GoogleFonts.poppins(fontSize: 11, color: _C.textMuted),
-                ),
-              ],
-            ),
-          ),
-          const Icon(Icons.chevron_right_rounded, color: _C.textMuted),
-        ],
-      ),
-    ),
-  );
-
-  // ─── (5) CLINICIAN EXPORT ─────────────────────
+  // ─── CLINICIAN EXPORT ─────────────────────
 
   Widget _clinicianExportCard() => Container(
     padding: const EdgeInsets.all(16),
@@ -1441,10 +780,10 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
       children: [
         Row(
           children: [
-            const Icon(Icons.description_outlined, size: 18, color: _C.primary),
+            Icon(Icons.description_outlined, size: 18, color: _C.primary),
             const SizedBox(width: 8),
             Text(
-              'Export for your clinician',
+              'Prepare for my appointment',
               style: GoogleFonts.poppins(
                 fontSize: 13.5,
                 fontWeight: FontWeight.w700,
@@ -1455,9 +794,9 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
         ),
         const SizedBox(height: 6),
         Text(
-          'A plain-text summary of this week\u2019s raw figures, for you to '
-          'share yourself. Nothing is sent automatically \u2014 you stay in '
-          'control of what your clinician sees.',
+          'Preview a one-page summary of your check-ins, what helped and '
+          'your behavioural patterns, choose what to include, then share it '
+          'as a PDF. Nothing is sent automatically.',
           style: GoogleFonts.poppins(
             fontSize: 11.5,
             color: _C.textSecondary,
@@ -1471,7 +810,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
             onPressed: _exportForClinician,
             icon: const Icon(Icons.ios_share_rounded, size: 16),
             label: Text(
-              'Export this week',
+              'Open summary',
               style: GoogleFonts.poppins(
                 fontSize: 12.5,
                 fontWeight: FontWeight.w600,
@@ -1479,7 +818,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
             ),
             style: OutlinedButton.styleFrom(
               foregroundColor: _C.primary,
-              side: const BorderSide(color: _C.p200),
+              side: BorderSide(color: _C.p200),
               padding: const EdgeInsets.symmetric(vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -1491,89 +830,15 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
     ),
   );
 
-  /// Builds a plain-text weekly summary and opens the share sheet so the
-  /// participant can send it wherever they choose (email, print, hand a
-  /// phone to their clinician directly). No score is included — only the
-  /// same raw figures shown on this page, matching `display_permitted: false`.
-  Future<void> _exportForClinician() async {
-    final p = _payload;
-    final buf = StringBuffer();
-    final now = DateTime.now();
-
-    buf.writeln('WEEKLY BEHAVIOURAL DATA SUMMARY');
-    buf.writeln('Generated ${now.toIso8601String()}');
-    buf.writeln(
-      'Participant ID: ${p?.participantId ?? widget.userId ?? 'unknown'}',
+  /// Opens the participant-controlled summary screen, where the participant
+  /// previews, chooses sections and shares a PDF. Nothing is sent
+  /// automatically.
+  void _exportForClinician() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ClinicianSummaryPage(userId: widget.userId),
+      ),
     );
-    buf.writeln('');
-    buf.writeln('This is a plain export of raw, participant-facing figures.');
-    buf.writeln('It contains no risk score, prediction, or model output.');
-    buf.writeln('Nothing here should be treated as a diagnosis.');
-    buf.writeln('');
-    buf.writeln('-- Data coverage --');
-    final usableDays = _coverage.where((d) => d.usable).length;
-    buf.writeln('Usable data on $usableDays of ${_coverage.length} days.');
-    buf.writeln('');
-    buf.writeln('-- This week, raw figures --');
-    buf.writeln('Screen time today: ${_screenHours.toStringAsFixed(1)} hrs');
-    buf.writeln('Communication today: $_callCount calls, $_smsCount SMS');
-    if (_passive.homeHours != null && _passive.awayHours != null) {
-      buf.writeln(
-        'Time at home: ${_passive.homeHours!.toStringAsFixed(1)} hrs, '
-        'away: ${_passive.awayHours!.toStringAsFixed(1)} hrs',
-      );
-    }
-    if (_passive.significantPlaces != null) {
-      buf.writeln('Significant places visited: ${_passive.significantPlaces}');
-    }
-    if (_passive.sleepProxyWindow != null) {
-      buf.writeln('Sleep proxy window: ${_passive.sleepProxyWindow}');
-    }
-    if (_passive.activityDataAvailable && _passive.activityProxyScore != null) {
-      buf.writeln(
-        'Activity proxy: ${_passive.activityProxyScore!.toStringAsFixed(2)}',
-      );
-    }
-    buf.writeln('');
-    if (p != null && p.reportable && p.observations.isNotEmpty) {
-      buf.writeln('-- Observations vs. own baseline --');
-      for (final o in p.observations) {
-        final z = o.z != null
-            ? '${o.z! >= 0 ? '+' : ''}${o.z!.toStringAsFixed(2)}\u03c3'
-            : 'n/a';
-        buf.writeln(
-          '${o.label}: $z (${o.direction}, confidence: ${o.confidence})',
-        );
-      }
-      buf.writeln('');
-      buf.writeln(
-        'Note: roughly ${(_falseAlarmRate * 100).toStringAsFixed(0)}% of flagged '
-        'shifts like these occur without further significance (validation '
-        'false-alarm rate).',
-      );
-    } else {
-      buf.writeln(
-        'Baseline not yet established \u2014 no comparative observations '
-        'available this week.',
-      );
-    }
-    buf.writeln('');
-    buf.writeln('-- Check-ins --');
-    buf.writeln(
-      '${_checkIns.length} check-in entries recorded, kept separate '
-      'from passive data and available to the participant in the app.',
-    );
-
-    try {
-      await Clipboard.setData(ClipboardData(text: buf.toString()));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Copied summary to clipboard')),
-        );
-      }
-    } catch (e) {
-      debugPrint('Export error: $e');
-    }
   }
 
   // ─── DISCLAIMER ──────────────────────────────
@@ -1588,7 +853,7 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Icon(Icons.shield_outlined, size: 17, color: _C.p500),
+        Icon(Icons.shield_outlined, size: 17, color: _C.p500),
         const SizedBox(width: 10),
         Expanded(
           child: Text(
@@ -1605,137 +870,4 @@ class _DigitalPhenotypingPageState extends State<DigitalPhenotypingPage> {
       ],
     ),
   );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// (4) CHECK-IN HISTORY PAGE
-// A simple, chronological journal of past check-in answers, shown verbatim.
-// No aggregation, scoring, or cross-referencing against passive data here —
-// that separation is the point.
-// ─────────────────────────────────────────────────────────────────────────────
-class CheckInHistoryPage extends StatelessWidget {
-  final List<CheckInEntry> entries;
-  const CheckInHistoryPage({super.key, required this.entries});
-
-  String _formatDate(DateTime d) {
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    final hour = d.hour % 12 == 0 ? 12 : d.hour % 12;
-    final ampm = d.hour >= 12 ? 'PM' : 'AM';
-    final minute = d.minute.toString().padLeft(2, '0');
-    return '${months[d.month - 1]} ${d.day}, ${d.year} \u00b7 $hour:$minute $ampm';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _C.scaffold,
-      appBar: AppBar(
-        backgroundColor: _C.scaffold,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: _C.textPrimary,
-            size: 20,
-          ),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          'Check-in history',
-          style: GoogleFonts.poppins(
-            color: _C.textPrimary,
-            fontWeight: FontWeight.w600,
-            fontSize: 17,
-          ),
-        ),
-      ),
-      body: SafeArea(
-        child: entries.isEmpty
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    'No check-ins yet. They\u2019ll show up here, in your own '
-                    'words, as soon as you complete one.',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.poppins(
-                      fontSize: 13,
-                      color: _C.textMuted,
-                    ),
-                  ),
-                ),
-              )
-            : ListView.separated(
-                padding: const EdgeInsets.all(20),
-                itemCount: entries.length,
-                separatorBuilder: (context, index) => const SizedBox(height: 12),
-                itemBuilder: (context, i) {
-                  final e = entries[i];
-                  return Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: _C.cardBase,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: _C.border),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _formatDate(e.timestamp),
-                          style: GoogleFonts.poppins(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                            color: _C.p500,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        ...e.answers.entries.map(
-                          (qa) => Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  qa.key,
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 11.5,
-                                    color: _C.textMuted,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  qa.value,
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 13.5,
-                                    color: _C.textPrimary,
-                                    height: 1.4,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-      ),
-    );
-  }
 }
