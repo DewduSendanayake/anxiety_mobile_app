@@ -332,7 +332,7 @@ class _ProfilePageState extends State<ProfilePage> {
     final pid = prefs.getString('participant_id') ?? '';
     final c4 = C4Demographics.fromSavedProfile(profile);
     if (pid.isNotEmpty && c4 != null) {
-      await ApiService.submitContextualIntake(
+      ApiService.submitContextualIntake(
         participantId: pid,
         gender: c4.gender,
         age: c4.age,
