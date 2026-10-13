@@ -724,7 +724,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 context,
                 MaterialPageRoute(
                   builder: (_) =>
-                      ShareParticipantIdPage(participantId: participantId!),
+                      ShareParticipantIdPage(participantId: participantId),
                 ),
               )
             : null,
@@ -842,12 +842,12 @@ class _ProfilePageState extends State<ProfilePage> {
                   alignment: Alignment.centerLeft,
                   child: TextButton(
                     onPressed: () => setState(() => _isEditing = false),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.kPrimaryDeep,
+                    ),
                     child: Text(
                       'Back to Profile',
                       style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
-                    ),
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppTheme.kPrimaryDeep,
                     ),
                   ),
                 ),
