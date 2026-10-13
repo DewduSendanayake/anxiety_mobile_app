@@ -331,7 +331,7 @@ class ApiService {
       if (root == null || subjectId == null) return false;
       final payload = <String, dynamic>{
         'app_user_id': participantId,
-        if (gad7Items != null) 'gad7_items': gad7Items,
+        'gad7_items': ?gad7Items,
       };
       if (gender != null) payload['gender'] = gender.toLowerCase();
       if (age != null) payload['age'] = age;
