@@ -385,7 +385,7 @@ class ApiService {
         'subject_id': subjectId,
         'app_user_id': participantId,
         ...?demographics?.toJson(),
-        if (gad7Items != null) 'gad7_items': gad7Items,
+        'gad7_items': ?gad7Items,
       };
       final res = await _requestWithRecovery(
         Uri.parse('$root/v1/ingest/contextual'),
