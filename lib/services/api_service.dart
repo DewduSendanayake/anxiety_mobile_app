@@ -361,7 +361,8 @@ class ApiService {
       );
     }
     try {
-      final storedParticipant = await ParticipantIdentityService.getParticipantId();
+      final storedParticipant =
+          await ParticipantIdentityService.getParticipantId();
       if (storedParticipant != participantId) {
         return const ContextualIntakeOutcome(
           accepted: false,
@@ -375,7 +376,8 @@ class ApiService {
         return const ContextualIntakeOutcome(
           accepted: false,
           c4Scored: false,
-          reason: 'Central Backend connection or subject enrolment unavailable.',
+          reason:
+              'Central Backend connection or subject enrolment unavailable.',
         );
       }
 
@@ -398,7 +400,8 @@ class ApiService {
         return ContextualIntakeOutcome(
           accepted: false,
           c4Scored: false,
-          reason: 'Central Backend did not accept the submission (HTTP ${res?.statusCode ?? 'unavailable'}).',
+          reason:
+              'Central Backend did not accept the submission (HTTP ${res?.statusCode ?? 'unavailable'}).',
         );
       }
       final decoded = jsonDecode(res!.body);
