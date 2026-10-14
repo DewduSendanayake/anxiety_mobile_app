@@ -62,7 +62,7 @@ void main() {
         requests++;
         expect(request.url.path, '/v1/ingest/contextual');
         expect(request.method, 'POST');
-        expect(request.headers['Authorization'], '***');
+        expect(request.headers['Authorization'], startsWith('Bearer '));
         final payload = jsonDecode(request.body) as Map<String, dynamic>;
         expect(payload, {
           'subject_id': subjectId,
@@ -93,7 +93,7 @@ void main() {
       );
 
       expect(requests, 1);
-      expect(result.accepted, isTrue);
+      expect(result.accepted, isTrue, reason: result.reason);
       expect(result.c4Scored, isTrue);
     },
   );
