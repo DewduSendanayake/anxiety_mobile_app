@@ -362,10 +362,7 @@ class _ProfilePageState extends State<ProfilePage> {
         setState(() => _isEditing = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              saveNotice,
-              style: GoogleFonts.poppins(fontSize: 13),
-            ),
+            content: Text(saveNotice, style: GoogleFonts.poppins(fontSize: 13)),
             backgroundColor: c4Submission?.c4Scored == true
                 ? const Color(0xFF5E60CE)
                 : Colors.orange.shade800,
