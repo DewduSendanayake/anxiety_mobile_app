@@ -53,85 +53,88 @@ void main() {
     })!;
   }
 
-  test('profile submission sends exact C4 fields, no fabricated GAD-7',
-      () async {
-    final session = await authenticatedSession();
-    var requests = 0;
-    final client = MockClient((request) async {
-      requests++;
-      expect(request.url.path, '/v1/ingest/contextual');
-      expect(request.method, 'POST');
-      expect(request.headers['Authorization'], 'Bearer patient.jwt');
-      final payload = jsonDecode(request.body) as Map<String, dynamic>;
-      expect(payload, {
-        'subject_id': subjectId,
-        'app_user_id': participantId,
-        'age': 21,
-        'gender': 'female',
-        'edu': "bachelor's degree",
-        'smoke': 'never smokes',
-        'drink': 'never drinks',
-      });
-      expect(payload.containsKey('gad7_items'), isFalse);
-      return http.Response(
-        jsonEncode({
+  test(
+    'profile submission sends exact C4 fields, no fabricated GAD-7',
+    () async {
+      final session = await authenticatedSession();
+      var requests = 0;
+      final client = MockClient((request) async {
+        requests++;
+        expect(request.url.path, '/v1/ingest/contextual');
+        expect(request.method, 'POST');
+        expect(request.headers['Authorization'], '***');
+        final payload = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(payload, {
           'subject_id': subjectId,
-          'status': 'ok',
-          'score': 0.018284733498692758,
-        }),
-        200,
-      );
-    });
-
-    final result = await ApiService.submitContextualIntake(
-      participantId: participantId,
-      demographics: validDemographics(),
-      client: client,
-      sessionService: session,
-      backendBase: root,
-    );
-
-    expect(requests, 1);
-    expect(result.accepted, isTrue);
-    expect(result.c4Scored, isTrue);
-  });
-
-  test('real completed GAD-7 reaches backend even without eligible C4',
-      () async {
-    final session = await authenticatedSession();
-    const answers = <int>[0, 1, 2, 3, 1, 0, 2];
-    final client = MockClient((request) async {
-      final payload = jsonDecode(request.body) as Map<String, dynamic>;
-      expect(payload, {
-        'subject_id': subjectId,
-        'app_user_id': participantId,
-        'gad7_items': answers,
+          'app_user_id': participantId,
+          'age': 21,
+          'gender': 'female',
+          'edu': "bachelor's degree",
+          'smoke': 'never smokes',
+          'drink': 'never drinks',
+        });
+        expect(payload.containsKey('gad7_items'), isFalse);
+        return http.Response(
+          jsonEncode({
+            'subject_id': subjectId,
+            'status': 'ok',
+            'score': 0.018284733498692758,
+          }),
+          200,
+        );
       });
-      return http.Response(
-        jsonEncode({
-          'subject_id': subjectId,
-          'status': 'poor_signal',
-          'score': null,
-          'gad7_total': 9,
-        }),
-        200,
+
+      final result = await ApiService.submitContextualIntake(
+        participantId: participantId,
+        demographics: validDemographics(),
+        client: client,
+        sessionService: session,
+        backendBase: root,
       );
-    });
 
-    final result = await ApiService.submitContextualIntake(
-      participantId: participantId,
-      gad7Items: answers,
-      client: client,
-      sessionService: session,
-      backendBase: root,
-    );
+      expect(requests, 1);
+      expect(result.accepted, isTrue);
+      expect(result.c4Scored, isTrue);
+    },
+  );
 
-    expect(result.accepted, isTrue);
-    expect(result.c4Scored, isFalse);
-  });
+  test(
+    'real completed GAD-7 reaches backend even without eligible C4',
+    () async {
+      final session = await authenticatedSession();
+      const answers = <int>[0, 1, 2, 3, 1, 0, 2];
+      final client = MockClient((request) async {
+        final payload = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(payload, {
+          'subject_id': subjectId,
+          'app_user_id': participantId,
+          'gad7_items': answers,
+        });
+        return http.Response(
+          jsonEncode({
+            'subject_id': subjectId,
+            'status': 'poor_signal',
+            'score': null,
+            'gad7_total': 9,
+          }),
+          200,
+        );
+      });
 
-  test('backend 503 never becomes a false successful profile sync',
-      () async {
+      final result = await ApiService.submitContextualIntake(
+        participantId: participantId,
+        gad7Items: answers,
+        client: client,
+        sessionService: session,
+        backendBase: root,
+      );
+
+      expect(result.accepted, isTrue);
+      expect(result.c4Scored, isFalse);
+    },
+  );
+
+  test('backend 503 never becomes a false successful profile sync', () async {
     final session = await authenticatedSession();
     final client = MockClient((_) async => http.Response('Unavailable', 503));
 
@@ -152,7 +155,11 @@ void main() {
     final session = await authenticatedSession();
     final client = MockClient(
       (_) async => http.Response(
-        jsonEncode({'subject_id': 'other-subject', 'status': 'ok', 'score': 0.8}),
+        jsonEncode({
+          'subject_id': 'other-subject',
+          'status': 'ok',
+          'score': 0.8,
+        }),
         200,
       ),
     );
@@ -169,44 +176,45 @@ void main() {
     expect(result.c4Scored, isFalse);
   });
 
-  test('no completed input or malformed GAD-7 cannot generate requests',
-      () async {
-    final session = await authenticatedSession();
-    var requests = 0;
-    final client = MockClient((_) async {
-      requests++;
-      return http.Response('unexpected', 200);
-    });
+  test(
+    'no completed input or malformed GAD-7 cannot generate requests',
+    () async {
+      final session = await authenticatedSession();
+      var requests = 0;
+      final client = MockClient((_) async {
+        requests++;
+        return http.Response('unexpected', 200);
+      });
 
-    final missing = await ApiService.submitContextualIntake(
-      participantId: participantId,
-      client: client,
-      sessionService: session,
-      backendBase: root,
-    );
-    final incomplete = await ApiService.submitContextualIntake(
-      participantId: participantId,
-      gad7Items: <int>[0, 1, 2],
-      client: client,
-      sessionService: session,
-      backendBase: root,
-    );
-    final outOfRange = await ApiService.submitContextualIntake(
-      participantId: participantId,
-      gad7Items: <int>[0, 1, 2, 3, 4, 1, 2],
-      client: client,
-      sessionService: session,
-      backendBase: root,
-    );
+      final missing = await ApiService.submitContextualIntake(
+        participantId: participantId,
+        client: client,
+        sessionService: session,
+        backendBase: root,
+      );
+      final incomplete = await ApiService.submitContextualIntake(
+        participantId: participantId,
+        gad7Items: <int>[0, 1, 2],
+        client: client,
+        sessionService: session,
+        backendBase: root,
+      );
+      final outOfRange = await ApiService.submitContextualIntake(
+        participantId: participantId,
+        gad7Items: <int>[0, 1, 2, 3, 4, 1, 2],
+        client: client,
+        sessionService: session,
+        backendBase: root,
+      );
 
-    expect(missing.accepted, isFalse);
-    expect(incomplete.accepted, isFalse);
-    expect(outOfRange.accepted, isFalse);
-    expect(requests, 0);
-  });
+      expect(missing.accepted, isFalse);
+      expect(incomplete.accepted, isFalse);
+      expect(outOfRange.accepted, isFalse);
+      expect(requests, 0);
+    },
+  );
 
-  test('a different participant cannot reuse this device session',
-      () async {
+  test('a different participant cannot reuse this device session', () async {
     final session = await authenticatedSession();
     var requests = 0;
     final client = MockClient((_) async {
