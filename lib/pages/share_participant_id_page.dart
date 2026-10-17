@@ -5,6 +5,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../services/api_service.dart';
 import '../services/participant_identity_service.dart';
 import '../services/patient_session_service.dart';
+import '../widgets/clinician_invitation_dialog.dart';
 
 class ShareParticipantIdPage extends StatelessWidget {
   final String participantId;
@@ -111,6 +112,7 @@ class ShareParticipantIdPage extends StatelessWidget {
         session = await PatientSessionService.instance.currentSession();
       }
     }
+    if (!context.mounted) return;
     if (session == null) {
       messenger.showSnackBar(
         const SnackBar(
@@ -135,36 +137,7 @@ class ShareParticipantIdPage extends StatelessWidget {
     }
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Clinician invitation'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Give this one-use code to your doctor. It does not contain your name or readings.',
-            ),
-            const SizedBox(height: 12),
-            SelectableText(invite.code),
-            const SizedBox(height: 8),
-            Text(
-              'Expires at ${invite.expiresAt.toLocal().hour.toString().padLeft(2, '0')}:${invite.expiresAt.toLocal().minute.toString().padLeft(2, '0')}',
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: invite.code));
-              if (dialogContext.mounted) Navigator.pop(dialogContext);
-            },
-            child: const Text('Copy code'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
+      builder: (_) => ClinicianInvitationDialog(invite: invite),
     );
   }
 
@@ -187,7 +160,7 @@ class ShareParticipantIdPage extends StatelessWidget {
               const SizedBox(height: 10),
               Text(
                 'This QR contains only your Aura Participant ID. It does not give a clinician access to your record. '
-                'To link a clinician, use “Give clinician a code” below. It does not contain your name, readings, or diagnosis.',
+                'To link a clinician, choose “Give clinician a code” below to generate a one-use invitation QR and a manual code. Neither QR contains your name, readings, or diagnosis.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   height: 1.5,
