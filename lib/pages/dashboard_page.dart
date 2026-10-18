@@ -787,12 +787,6 @@ class _DashboardPageState extends State<DashboardPage>
   }
 
   // ── Risk Score Color ────────────────────────────────────────
-  Color _riskColor(double score) {
-    if (score <= 20) return const Color(0xFF4CAF50);
-    if (score <= 45) return const Color(0xFFFFA726);
-    if (score <= 70) return const Color(0xFFFF7043);
-    return const Color(0xFFEF5350);
-  }
 
   Color _statusColor(String status) {
     switch (status) {

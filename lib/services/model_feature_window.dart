@@ -77,8 +77,9 @@ class CalibrationMinuteSequence {
       );
     }
     if (window.startMilliseconds < startedAtMilliseconds ||
-        window.endMilliseconds == _lastEnd)
+        window.endMilliseconds == _lastEnd) {
       return false;
+    }
     if (!window.isReady || window.ageAt(packetTimestamp) > 90000) {
       throw StateError(
         'A complete valid sensor minute was not received. Check the strap and retry.',

@@ -36,7 +36,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
   // Allow one boundary-alignment minute; collect ten complete firmware blocks.
   static const int _totalSeconds = (_baselineMinutes + 1) * 60;
   static const int _minimumReadings = _baselineMinutes;
-  // Floors protect the divisor; they cannot replace measured resting variation.
+  // Floors protect the divisor when complete sensor minutes are very steady.
   static const List<double> _minimumFeatureStds = [
     1.0, // heart rate (bpm)
     15.0, // beat interval (ms)
@@ -178,8 +178,9 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
           reading.modelWindow,
           reading.timestamp,
           reading.isWorn,
-        ))
+        )) {
           return;
+        }
       } on StateError catch (error) {
         _failCollection(error.message.toString());
         return;
@@ -300,20 +301,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
       }
     }
 
-    if (List.generate(
-      10,
-      (f) => finalStds[f] <= _minimumFeatureStds[f],
-    ).every((atFloor) => atFloor)) {
-      setState(() {
-        _errorMessage =
-            'Aura could not measure your normal variation. '
-            'Check that fresh readings are arriving, let the readings settle, '
-            'and repeat setup.';
-        _phase = _Phase.error;
-      });
-      return;
-    }
-
+    // Real complete minutes may be steady; their verified boundaries establish
+    // freshness. Stability floors protect normalization without requiring noise.
     setState(() {
       _canRetryUpload = true;
       _uploading = true;
