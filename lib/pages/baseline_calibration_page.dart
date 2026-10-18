@@ -33,8 +33,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
     with TickerProviderStateMixin {
   // ── Constants ──────────────────────────────────────────────────
   static const int _baselineMinutes = 10;
-  // Allow one boundary-alignment minute; collect ten complete firmware blocks.
-  static const int _totalSeconds = (_baselineMinutes + 1) * 60;
+  // Allow boundary alignment plus BLE delivery grace; collect ten full blocks.
+  static const int _totalSeconds = (_baselineMinutes + 1) * 60 + 5;
   static const int _minimumReadings = _baselineMinutes;
   // Floors protect the divisor when complete sensor minutes are very steady.
   static const List<double> _minimumFeatureStds = [
