@@ -61,8 +61,6 @@ class _DashboardPageState extends State<DashboardPage>
   String _historyMessage = '';
   String _historyMetric = 'risk_index';
   double? _currentModelRisk;
-  // Final score returned by the teammate's fusion model when configured.
-  double? _fusionRiskScore;
   final List<_TimedAnxietyReading> _recentAnxietyReadings = [];
   final ScrollController _forecastScrollController = ScrollController();
   bool _keepForecastAtLatest = true;
@@ -535,15 +533,12 @@ class _DashboardPageState extends State<DashboardPage>
         return;
       }
       final now = DateTime.now();
-      if (currentRisk != null) {
-        _recentAnxietyReadings.add(
-          _TimedAnxietyReading(now, currentRisk.clamp(0.0, 100.0).toDouble()),
-        );
-        _recentAnxietyReadings.removeWhere(
-          (reading) =>
-              now.difference(reading.time) > const Duration(minutes: 30),
-        );
-      }
+      _recentAnxietyReadings.add(
+        _TimedAnxietyReading(now, currentRisk.clamp(0.0, 100.0).toDouble()),
+      );
+      _recentAnxietyReadings.removeWhere(
+        (reading) => now.difference(reading.time) > const Duration(minutes: 30),
+      );
 
       setState(() {
         _predictionStatus = "success";
@@ -579,7 +574,6 @@ class _DashboardPageState extends State<DashboardPage>
         _predictionStatus = "buffering";
         _forecastData = [];
         _currentModelRisk = null;
-        _fusionRiskScore = null;
         _forecastCoverage = coverage;
         _statusMessage = message;
       });
@@ -588,7 +582,6 @@ class _DashboardPageState extends State<DashboardPage>
         _predictionStatus = "not_calibrated";
         _forecastData = [];
         _currentModelRisk = null;
-        _fusionRiskScore = null;
         _forecastCoverage = 0.0;
         _statusMessage = message;
       });
@@ -598,7 +591,6 @@ class _DashboardPageState extends State<DashboardPage>
         _predictionStatus = "error";
         _forecastData = [];
         _currentModelRisk = null;
-        _fusionRiskScore = null;
         _forecastCoverage = 0.0;
         _statusMessage = message;
       });
@@ -1214,6 +1206,8 @@ class _DashboardPageState extends State<DashboardPage>
     );
   }
 
+  // Retain the legacy layout without changing the live dashboard's buffering UI.
+  // ignore: unused_element
   Widget _buildBufferingScreen() {
     final progress = _forecastCoverage.clamp(0.0, 1.0).toDouble();
     final collectedMinutes = (progress * 10).round();
