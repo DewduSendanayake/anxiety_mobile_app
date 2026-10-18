@@ -196,7 +196,10 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
       }
 
       setState(() {
-        _elapsedSeconds = min(_collectionClock.elapsed.inSeconds, _totalSeconds);
+        _elapsedSeconds = min(
+          _collectionClock.elapsed.inSeconds,
+          _totalSeconds,
+        );
       });
 
       if (_elapsedSeconds >= _totalSeconds) {
@@ -296,7 +299,8 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
 
     if (featuresPerWindow.isEmpty) {
       setState(() {
-        _errorMessage = 'Aura did not receive enough readings. Please try again.';
+        _errorMessage =
+            'Aura did not receive enough readings. Please try again.';
         _phase = _Phase.error;
       });
       return;
@@ -1141,9 +1145,7 @@ class _BaselineCalibrationPageState extends State<BaselineCalibrationPage>
                     },
               icon: const Icon(Icons.refresh_rounded),
               label: Text(
-                _canRetryUpload
-                    ? 'Try Saving Again'
-                    : 'Back to Setup',
+                _canRetryUpload ? 'Try Saving Again' : 'Back to Setup',
                 style: GoogleFonts.poppins(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,

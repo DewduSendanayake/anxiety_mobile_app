@@ -529,7 +529,8 @@ class _DashboardPageState extends State<DashboardPage>
           _forecastData = [];
           _currentModelRisk = null;
           _forecastCoverage = 0.0;
-          _statusMessage = 'The current physiological risk is not available right now.';
+          _statusMessage =
+              'The current physiological risk is not available right now.';
         });
         return;
       }
@@ -564,9 +565,9 @@ class _DashboardPageState extends State<DashboardPage>
       // Notify the central backend to fetch C1's latest prediction, then
       // refresh fusion so the home page does not wait for its polling interval.
       if (parsedForecast.isNotEmpty && _cachedId.isNotEmpty) {
-        ApiService.submitPhysiologicalWindow(
-          participantId: _cachedId,
-        ).then((sent) {
+        ApiService.submitPhysiologicalWindow(participantId: _cachedId).then((
+          sent,
+        ) {
           if (sent) FusionRiskService.instance.fetch();
         });
       }
