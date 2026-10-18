@@ -1081,7 +1081,7 @@ class _DashboardPageState extends State<DashboardPage>
               ),
               const SizedBox(height: 12),
               Text(
-                'Aura needs to learn what your readings look like while you are calm. This takes 3 minutes and helps make your anxiety results more accurate.',
+                'Aura needs to learn what your readings look like while you are calm. Let the chest-strap readings settle, then complete the 10-minute resting setup.',
                 style: GoogleFonts.poppins(
                   fontSize: 13,
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -1455,8 +1455,8 @@ class _DashboardPageState extends State<DashboardPage>
         ? _currentReading?.riskScore
         : null;
     final currentRisk =
-        (liveCurrentRisk ??
-                _currentModelRisk ??
+        (_currentModelRisk ??
+                liveCurrentRisk ??
                 _scaleForecastValue(forecast.first))
             .clamp(0.0, 100.0)
             .toDouble();
