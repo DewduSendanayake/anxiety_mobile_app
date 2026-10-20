@@ -303,6 +303,8 @@ class AnxietyFeedbackService {
 
   static const String _eventsKey = 'anxiety_alert_events_v1';
   static const String _pendingUploadsKey = 'anxiety_feedback_pending_v1';
+  // Lets the home-screen summary refresh when an alert or response is saved.
+  static final ValueNotifier<int> eventRevision = ValueNotifier(0);
   String? _userId;
   bool _forecastRequestInFlight = false;
   DateTime? _latestForecastAt;
@@ -420,6 +422,9 @@ class AnxietyFeedbackService {
       predictedLeadMinutes: leadMinutes,
     );
     await _upsertEvent(event);
+    // Persist the alert and its available readings even before the check-in.
+    await _markUploadPending(event.eventId);
+    unawaited(retryPendingUploads());
     return NotificationHelper.showAnxietyAlert(
       eventId: event.eventId,
       leadMinutes: leadMinutes,
@@ -487,6 +492,7 @@ class AnxietyFeedbackService {
     events.sort((a, b) => b.detectedAt.compareTo(a.detectedAt));
     final retained = events.take(100).map((event) => event.toJson()).toList();
     await prefs.setString(_eventsKey, jsonEncode(retained));
+    eventRevision.value++;
   }
 
   static Future<void> _upsertEvent(AnxietyAlertEvent event) async {
@@ -559,6 +565,7 @@ class AnxietyFeedbackService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_eventsKey);
     await prefs.remove(_pendingUploadsKey);
+    eventRevision.value++;
   }
 
   static Future<Map<String, dynamic>> getLocalWeeklySummary(
