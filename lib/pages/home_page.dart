@@ -33,6 +33,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Map<String, dynamic>? _weeklySummary;
   bool _weeklyLoading = false;
+  bool _weeklyNeedsRefresh = false;
   String? _weeklyError;
 
   // ── Notification state ─────────────────────────────────────
@@ -96,7 +97,12 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _onAlertHistoryChanged() {
-    if (mounted && !_weeklyLoading) _loadWeeklySummary();
+    if (!mounted) return;
+    if (_weeklyLoading) {
+      _weeklyNeedsRefresh = true;
+    } else {
+      _loadWeeklySummary();
+    }
   }
 
   void _onConnectionChanged() {
@@ -158,6 +164,11 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
           _weeklyError =
               'Could not load your weekly summary. Please try again.';
         });
+      }
+    } finally {
+      if (mounted && _weeklyNeedsRefresh) {
+        _weeklyNeedsRefresh = false;
+        _loadWeeklySummary();
       }
     }
   }
