@@ -7,6 +7,7 @@ import '../services/fusion_risk_service.dart';
 import '../services/chest_strap_service.dart';
 import '../services/api_service.dart';
 import '../services/anxiety_feedback_service.dart';
+import '../services/patient_attention_event_service.dart';
 import '../services/anxiety_level_update_throttle.dart';
 
 /// Home Page: the first tab the user sees.
@@ -90,7 +91,12 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
     // chest strap connects or disconnects.
     _chestStrap.connectionState.addListener(_onConnectionChanged);
     _chestStrap.liveReadingAvailable.addListener(_onLiveAvailabilityChanged);
+    AnxietyFeedbackService.eventRevision.addListener(_onAlertHistoryChanged);
     _loadWeeklySummary();
+  }
+
+  void _onAlertHistoryChanged() {
+    if (mounted && !_weeklyLoading) _loadWeeklySummary();
   }
 
   void _onConnectionChanged() {
@@ -126,10 +132,19 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
       });
     }
     try {
+      // First sync backend-authoritative OPEN events into the local alert store.
+      // Historical answered events remain in local/feedback history.
+      await PatientAttentionEventService.instance.fetchOpenEvents();
+      final localSummary =
+          await AnxietyFeedbackService.getLocalWeeklySummary(userId);
       final onlineSummary = await ApiService.getWeeklyFeedbackSummary(userId);
-      final summary = onlineSummary['status'] == 'success'
-          ? onlineSummary
-          : await AnxietyFeedbackService.getLocalWeeklySummary(userId);
+      // Both sources can contain the same event. Never add their totals or
+      // allow a stale zero from the C1 feedback API to hide local fusion alerts.
+      final onlineCount = onlineSummary['status'] == 'success'
+          ? (onlineSummary['alerts'] as num?)?.toInt() ?? 0
+          : -1;
+      final localCount = (localSummary['alerts'] as num?)?.toInt() ?? 0;
+      final summary = onlineCount > localCount ? onlineSummary : localSummary;
       if (mounted) {
         setState(() {
           _weeklySummary = summary;
@@ -152,6 +167,7 @@ class HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _chestStrap.connectionState.removeListener(_onConnectionChanged);
     _chestStrap.liveReadingAvailable.removeListener(_onLiveAvailabilityChanged);
     _readingSubscription?.cancel();
+    AnxietyFeedbackService.eventRevision.removeListener(_onAlertHistoryChanged);
     _notificationThrottleTimer?.cancel();
     _forecastExpiryTimer?.cancel();
     _fadeController.dispose();
